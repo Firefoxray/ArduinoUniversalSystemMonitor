@@ -1,6 +1,6 @@
--Ray Co. Arduino Desktop System Monitor – Installation Guide -
--Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.-
--Ray Barrett-
+Ray Co. Arduino Desktop System Monitor - Installation Guide
+Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.-
+Ray Barrett-
 -Version 5.3-
 -Last Modified: March 15, 2026; 11:13 AM
 
