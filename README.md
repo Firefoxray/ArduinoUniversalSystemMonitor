@@ -77,7 +77,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.0  - Added Fedora KDE 43 support
 7.1  - Reorganized folder structure, separated Windows components
 7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
-7.3  - Added basic Java GUI debugger/emulator and a new Python debugger file in root
+7.3  - Added basic Java GUI debugger/emulator and debug mirror support in the main Python monitor (config-driven)
 ```
 
 ---
@@ -236,3 +236,14 @@ Location:
 
 Use it with a virtual serial pair such as:
 `/tmp/fakearduino_in` and `/tmp/fakearduino_out`
+
+Debug mirror is now enabled from `monitor_config.json`:
+
+```json
+{
+  "debug_enabled": true,
+  "debug_port": "/tmp/fakearduino_in"
+}
+```
+
+The main `UniversalArduinoMonitor.py` still sends the original Arduino positional payload, and when debug mode is enabled it also emits the Java-compatible `KEY:VALUE` stream on `debug_port`.
