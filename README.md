@@ -181,7 +181,17 @@ sudo systemctl daemon-reload
 sudo systemctl enable arduino-monitor
 sudo systemctl start arduino-monitor
 ```
+### Serial Permissions Fix (IMPORTANT)
 
+If the Arduino is not detected or you get permission errors, run:
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+Then log out and log back in (or reboot).
+
+This allows your user to access serial devices like `/dev/ttyACM0`.
 ---
 
 # Running the Program
