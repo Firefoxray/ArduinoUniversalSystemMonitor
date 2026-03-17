@@ -87,7 +87,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildRepoPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBorder(BorderFactory.createTitledBorder("Project Location / Privileges"));
-        panel.add(new JLabel("Repo Root:"));
+        panel.add(new JLabel("Program Root:"));
         panel.add(repoField);
 
         JButton browseButton = new JButton("Browse");
