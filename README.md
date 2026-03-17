@@ -107,6 +107,27 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 ## Linux Setup (Automatic - Recommended)
 
+First, make sure `git` is installed:
+
+### Ubuntu / Linux Mint / Debian
+
+```bash
+sudo apt update
+sudo apt install -y git
+```
+
+### Fedora
+
+```bash
+sudo dnf install -y git
+```
+
+### Arch
+
+```bash
+sudo pacman -Sy --noconfirm git
+```
+
 ```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
 cd ArduinoUniversalSystemMonitor
@@ -122,10 +143,12 @@ git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git && cd 
 
 During `./install.sh`, the script installs system packages, Python dependencies, config/service files, and then prompts:
 
-`would you like to install and flash your arduino's now [y/N]:`
+`Would you like to install and flash your Arduino(s) now? [y/N]:`
 
 - Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
 - The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`), and flashes supported connected boards.
+- The Linux installer/update scripts use a project virtual environment (`.venv`) so Ubuntu/Mint pip "externally managed environment" issues are avoided.
+- Install flow order is: dependency setup -> Arduino flash prompt -> systemd service start.
 
 A default `monitor_config.json` is automatically created during installation.
 
