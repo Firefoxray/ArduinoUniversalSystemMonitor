@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.4  
+**Version:** 7.5  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -50,8 +50,8 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 - Python 3.8+
 - Arduino IDE 1.8.19+
-- Arduino UNO R4 (USB-C) or UNO R3 (USB-B)
-- Arduino 3.5" TFT Display
+- **Option A:** Arduino UNO R4 (USB-C) + Arduino 3.5" TFT Display
+- **Option B:** Arduino UNO R3 (USB-B) + 2.8" TFT UNO R3 Display
 
 ### Windows Only
 - LibreHardwareMonitor
@@ -79,6 +79,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
 7.3  - Added basic Java GUI debugger/emulator and config-driven debug output support for the Java fake display
 7.4  - Added install.sh improvements, config auto-generation, standardized install path (~/ArduinoUniversalSystemMonitor), and update.sh support
+7.5  - Re-added 2.8" TFT UNO R3 support, updated documentation, and clarified hardware requirements/options
 ```
 
 ---
@@ -106,15 +107,18 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 1. Install Arduino IDE  
 2. Open **Boards Manager** and install:
-   - Arduino UNO R4 Boards  
+   - Arduino UNO R4 Boards
+   - Arduino AVR Boards (for UNO R3)
 3. Install libraries:
    - Arduino TFT Touchscreen  
    - DIYables TFT Touch Shield  
+   - MCUFRIEND_kbv (required for the UNO R3 + 2.8" TFT sketch)
 
 **IMPORTANT:** Plug in the Arduino before continuing.
 
-4. Open:
-   - `UniversalArduinoMonitor35` for the 3.5" display  
+4. Open the sketch that matches your hardware:
+   - `UniversalArduinoMonitor35` for UNO R4 + 3.5" display
+   - `UniversalArduinoMonitor28` for UNO R3 + 2.8" TFT UNO R3 display
 
 5. Select the correct board and port, then click **Upload**
 
