@@ -36,6 +36,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 5.4  - Laptop support (no charging % yet)
 5.5  - Dropped Windows XP support
 6.0  - Stable release, Linux packages separated
+7.0  - Added Fedora KDE 43 Support seperately
 ```
 
 ---
