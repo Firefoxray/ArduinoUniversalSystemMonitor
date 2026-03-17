@@ -1,97 +1,161 @@
-Ray Co. Arduino Desktop System Monitor - Installation Guide
-Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.-
-Ray Barrett-
--Version 5.3-
--Last Modified: March 15, 2026; 11:13 AM
+# Ray Co. Arduino Desktop System Monitor
 
--Requirements
-Python 3.8+ recommended (3.8 required for Windows 7 compatibility)
-Arduino IDE 1.8.19+
-Arduino UNO R4 (USB C Cable) or Arduino UNO R3 (USB B Cable)
-Arduino 3.5inch TFT Display or Arduino 2.8inch TFT Display
+Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
--Windows Only
-LibreHardwareMonitor
+**Author:** Ray Barrett  
+**Version:** 5.3  
+**Last Modified:** March 15, 2026  
 
--Changelog-
-4.0 - Initial
-4.1 - Fixed ReadMe
-4.2 - Enlarged Text for OS and Hostname, Fixed on Linux
-4.3 - Fixing OS Naming
-4.4 - Faster Polling and Improved Logic on Windows
-4.5 - ReAdded Uptime
-5.0 - Fully Fixed A Bunch, GPU Page fully fixed.
-5.1 - Fixed timing tuning for 7 & 10
-5.2 - Added SLOW 2.8 TFT & R3 Uno Support
-5.3 - Added Faster and Slower Backup Versions; Fixed readme
-5.4 - Added Laptop Support (No Charging % Yet)
-5.5 - Removed V4 From Readme; Dropped all Windows XP Future Support
-6.0 - Stable Release, Linux Packages Included Seperated
+---
 
--TODO-
-Ship with Python, PIP, and the Libraries already installed
-Find a way to program Arduino without IDE.
-Maybe make it 8-12 Core compatible
+## Requirements
 
--CONFIRMED WORKING SYSTEMS-
-Windows 11 Pro
-Windows 7 Ultimate
-Linux Mint 22.3
-Windows 10 LTSC
+- Python 3.8+ (3.8 required for Windows 7 compatibility)
+- Arduino IDE 1.8.19+
+- Arduino UNO R4 (USB-C) or UNO R3 (USB-B)
+- Arduino 3.5" TFT Display or 2.8" TFT Display
 
+### Windows Only
+- LibreHardwareMonitor
 
--Arduino Install-
+---
 
-Install Arduino IDE
+## Changelog
 
-Open Boards Manager and install "Arduino UNO R4 Boards".
+```
+4.0  - Initial
+4.1  - Fixed ReadMe
+4.2  - Enlarged Text for OS and Hostname, Fixed on Linux
+4.3  - Fixing OS Naming
+4.4  - Faster Polling and Improved Logic on Windows
+4.5  - Re-added Uptime
+5.0  - Major fixes, GPU page fully fixed
+5.1  - Timing tuning for Windows 7 & 10
+5.2  - Added 2.8 TFT & R3 support
+5.3  - Backup versions + ReadMe fixes
+5.4  - Laptop support (no charging % yet)
+5.5  - Dropped Windows XP support
+6.0  - Stable release, Linux packages separated
+```
 
-Go to libraries and find "Arduino TFT Touchscreen" and "DIYables TFT Touch Shield" libraries and install
+---
 
-MAKE SURE THE ARDUINO IS NOW PLUGGED IN
+## TODO
 
-Open "UniversalArduinoMonitor35" in the Arduino IDE if you have a 3.5inch TFT Display
-Open "UniversalArduinoMonitor28" in the Arduino IDE if you have a 2.8inch TFT Display
+- Bundle Python + pip + libraries
+- Arduino programming without IDE
+- Improve multi-core CPU support (8–12 cores)
 
-In the Arduino IDE, choose the correct port and press Upload.
+---
 
--Python Script Install-
+## Confirmed Working Systems
 
-Install Python 3.8+ recommended (3.8 required for Windows 7 compatibility)
+- Windows 11 Pro  
+- Windows 10 LTSC  
+- Windows 7 Ultimate  
+- Linux Mint 22.3
+- Fedora KDE 43  
 
-Run this to install the libraries: pip3 install psutil pyserial (or: python3 -m pip install psutil pyserial)
+---
 
+# Installation
 
--WINDOWS INSTRUCTIONS-
-Install LibreHardwareMonitor and open it.
+---
 
-Navigate to the options button, press it, then enable Start Minimized, Minimize To Tray, Minimize On Close, and Run On Windows Startup
+## Arduino Setup
 
-Navigate to "Remote Web Server" under options, then press Start.
+1. Install Arduino IDE  
+2. Open **Boards Manager** and install:
+   - Arduino UNO R4 Boards  
+3. Install libraries:
+   - Arduino TFT Touchscreen  
+   - DIYables TFT Touch Shield  
 
-Create folder C:\ArduinoMonitor and place "UniversalArduinoMonitor.py" inside it
+**IMPORTANT:** Plug in Arduino before continuing
 
-Press WIN + R, type "shell:startup", and place "DELAYED_RUN_UniversalArduinoMonitor.bat" there.
+4. Open:
+   - `UniversalArduinoMonitor35` (3.5" display)  
+   - `UniversalArduinoMonitor28` (2.8" display)  
 
--LINUX INSTRUCTIONS-
-Open a terminal and create the script file:
+5. Select correct port and click **Upload**
 
-	nano ~/UniversalArduinoMonitor.py
-	
-Paste the contents of UniversalArduinoMonitor.py into this file. 
+---
 
-Save by pressing
-CTRL + O
-ENTER
-CTRL + X
+## Python Setup
 
-Open a terminal and create the script/service file: 
+Install Python 3.8+
 
-	sudo nano /etc/systemd/system/arduino-monitor.service
-	
-Paste this code snippet inside (Replace YOUR_USERNAME with your actual LOWERCASE Linux username.)
+Install required libraries:
 
------
+```bash
+pip3 install psutil pyserial
+```
+
+or
+
+```bash
+python3 -m pip install psutil pyserial
+```
+
+---
+
+## Windows Setup
+
+1. Install LibreHardwareMonitor and open it  
+2. Enable:
+   - Start Minimized  
+   - Minimize to Tray  
+   - Run on Startup  
+
+3. Enable **Remote Web Server**
+
+4. Create folder:
+```
+C:\ArduinoMonitor
+```
+
+5. Place:
+```
+UniversalArduinoMonitor.py
+```
+
+6. Press `WIN + R`, type:
+```
+shell:startup
+```
+
+7. Place:
+```
+DELAYED_RUN_UniversalArduinoMonitor.bat
+```
+
+---
+
+## Linux Setup
+
+### Step 1 — Create Script
+
+```bash
+nano ~/UniversalArduinoMonitor.py
+```
+
+Paste the script, then save:
+
+```
+CTRL + O → ENTER → CTRL + X
+```
+
+---
+
+### Step 2 — Create Systemd Service
+
+```bash
+sudo nano /etc/systemd/system/arduino-monitor.service
+```
+
+Paste:
+
+```ini
 [Unit]
 Description=Arduino System Monitor
 After=network.target
@@ -103,45 +167,77 @@ User=YOUR_USERNAME
 
 [Install]
 WantedBy=multi-user.target
------
+```
 
-Save by pressing
-CTRL + O
-ENTER
-CTRL + X
+Replace `YOUR_USERNAME` with your Linux username.
 
-Then enable the service with the following commands:
+---
 
------
-	sudo systemctl daemon-reload
-	sudo systemctl enable arduino-monitor
-	sudo systemctl start arduino-monitor
-----
+### Step 3 — Enable Service
 
--Final Run Instructions-
-MAKE SURE ARDUINO IS NOW PLUGGED IN
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable arduino-monitor
+sudo systemctl start arduino-monitor
+```
 
--Windows-
-Run "UniversalArduinoMonitor.py" or the provided batch file to start the program.
+---
 
--Linux-
-With the Terminal open, run this code to start the program:
+# Running the Program
 
-	sudo systemctl start arduino-monitor
+**IMPORTANT:** Make sure Arduino is plugged in
 
-To stop the program, run this:
+## Windows
 
-	sudo systemctl stop arduino-monitor
+Run:
+```
+UniversalArduinoMonitor.py
+```
 
-To restart the program and check the status, run these:
+or use the batch file.
 
-	sudo systemctl restart arduino-monitor
-	sudo systemctl status arduino-monitor
+---
 
--END-
+## Linux
 
-The program should now startup with Windows & Linux, and should display and update stats on the plugged in Arduino. Enjoy.
+Start:
+```bash
+sudo systemctl start arduino-monitor
+```
 
--TROUBLESHOOTING-
+Stop:
+```bash
+sudo systemctl stop arduino-monitor
+```
 
-Use backup's first
+Restart:
+```bash
+sudo systemctl restart arduino-monitor
+```
+
+Check status:
+```bash
+sudo systemctl status arduino-monitor
+```
+
+---
+
+# Done
+
+The system should now:
+- Start automatically  
+- Send stats to Arduino  
+- Display live system data  
+
+---
+
+# Troubleshooting
+
+- Use backup versions first  
+- Check Arduino port  
+- Ensure Python dependencies are installed  
+- Verify service is running:
+
+```bash
+sudo systemctl status arduino-monitor
+```
