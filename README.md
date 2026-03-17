@@ -37,6 +37,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 5.5  - Dropped Windows XP support
 6.0  - Stable release, Linux packages separated
 7.0  - Added Fedora KDE 43 support separately
+7.1  - Reorganized folder structure, seperated windows out.
 ```
 
 ---
