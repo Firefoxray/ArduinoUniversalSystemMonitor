@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.2  
+**Version:** 7.3  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -36,6 +36,13 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
   - AMD (DRM/sysfs)
   - Intel (DRM/sysfs / intel tools)
 - Behavior may vary depending on drivers and system configuration.
+
+## Project Structure
+
+- Python Monitor (main system)
+- Arduino Display (hardware UI)
+- Java Fake Display (debug tool)
+- Virtual serial (socat) for testing
 
 ---
 
