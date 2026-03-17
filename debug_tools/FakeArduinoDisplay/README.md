@@ -2,10 +2,10 @@
 
 A desktop Java application suite for the Universal Arduino System Monitor.
 
-It now includes:
+It includes:
 
-- **UniversalMonitorControlCenter** (new): a launcher/control panel for install, uninstall, update, flashing, fake-port management, and opening the debug display.
-- **JavaSerialFakeDisplay** (existing): the full serial debugger + Arduino-style fake TFT window.
+- **UniversalMonitorControlCenter**: launcher/control panel for install, uninstall, update, flashing, Linux service control, fake-port management, and opening the debug display.
+- **JavaSerialFakeDisplay**: full serial debugger + Arduino-style fake TFT window.
 
 ------------------------------------------------------------------------
 
@@ -16,12 +16,31 @@ It now includes:
   - `uninstall_monitor.sh`
   - `update.sh`
   - `arduino_install.sh`
+- Manage Linux service state (`arduino-monitor.service`):
+  - Service On
+  - Service Off
+  - Service Restart
+  - Service Status
+  - Green/Red status indicator
 - Manage virtual serial ports with `socat`
   - Start fake ports using configurable input/output paths
   - Stop fake ports from the UI
+- Live preview feed in the embedded Arduino panel from the configured output port
 - Open the existing debug display app with one click
-- Show a built-in Arduino-style preview panel
 - Stream command output logs in-app
+
+------------------------------------------------------------------------
+
+## sudo / Admin behavior
+
+Most Linux app management and service actions need root privileges.
+
+You can either:
+
+1. Run the Java app as root, or
+2. Enter your sudo password in the Control Center password field.
+
+If the password field is empty, the app prompts when needed.
 
 ------------------------------------------------------------------------
 
@@ -51,22 +70,16 @@ Default fake ports used by the UI:
 - Input: `/tmp/fakearduino_in`
 - Output: `/tmp/fakearduino_out`
 
-------------------------------------------------------------------------
+For preview to update:
 
-## Existing Debug Display
-
-`JavaSerialFakeDisplay` still supports:
-
-- Live serial parsing (`KEY:VALUE|KEY:VALUE` packets)
-- Multi-page Arduino-style display preview
-- Raw serial logs and parsed field view
-- Click preview area to switch pages
+- Python monitor debug output should write to **input** (`/tmp/fakearduino_in`)
+- Control Center preview and Java debug tool should read from **output** (`/tmp/fakearduino_out`)
 
 ------------------------------------------------------------------------
 
 ## Entry Point
 
-Gradle `application` now defaults to:
+Gradle `application` defaults to:
 
 - `UniversalMonitorControlCenter`
 

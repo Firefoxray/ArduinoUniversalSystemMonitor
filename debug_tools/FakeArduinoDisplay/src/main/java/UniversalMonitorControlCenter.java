@@ -1,3 +1,5 @@
+import com.fazecast.jSerialComm.SerialPort;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
@@ -13,30 +15,52 @@ import java.util.List;
 
 public class UniversalMonitorControlCenter extends JFrame {
 
+    private static final String SERVICE_NAME = "arduino-monitor.service";
+
     private final JTextField repoField = new JTextField(40);
+    private final JPasswordField sudoPasswordField = new JPasswordField(18);
+
     private final JTextField fakeInField = new JTextField("/tmp/fakearduino_in", 22);
     private final JTextField fakeOutField = new JTextField("/tmp/fakearduino_out", 22);
+
     private final JTextArea outputArea = new JTextArea();
+
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
     private final JButton stopFakePortsButton = new JButton("Stop Fake Ports");
+    private final JButton connectPreviewButton = new JButton("Connect Preview Port");
+    private final JButton disconnectPreviewButton = new JButton("Disconnect Preview Port");
+
     private final JButton installButton = new JButton("Install on Linux");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update from GitHub");
     private final JButton flashButton = new JButton("Flash Arduino");
     private final JButton launchDebugButton = new JButton("Open Debug Display");
 
+    private final JButton serviceOnButton = new JButton("Service On");
+    private final JButton serviceOffButton = new JButton("Service Off");
+    private final JButton serviceRestartButton = new JButton("Service Restart");
+    private final JButton serviceStatusButton = new JButton("Service Status");
+
+    private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
+
+    private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
+
     private volatile Process fakePortsProcess;
+    private volatile SerialPort previewPort;
+    private volatile boolean previewReading;
+    private Thread previewReaderThread;
 
     public UniversalMonitorControlCenter() {
         super("Universal Arduino System Monitor - Control Center");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        setSize(1460, 920);
+        setSize(1500, 940);
         setLocationRelativeTo(null);
 
         setLayout(new BorderLayout(10, 10));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(10, 10, 10, 10));
 
         repoField.setText(detectRepoRoot().toString());
+        sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
         topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
@@ -52,11 +76,17 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         wireActions();
         updatePortButtons();
+        setServiceIndicator("UNKNOWN", Color.GRAY);
+
+        Timer serviceTimer = new Timer(7000, e -> refreshServiceStatus(false));
+        serviceTimer.setRepeats(true);
+        serviceTimer.start();
+        refreshServiceStatus(false);
     }
 
     private JPanel buildRepoPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        panel.setBorder(BorderFactory.createTitledBorder("Project Location"));
+        panel.setBorder(BorderFactory.createTitledBorder("Project Location / Privileges"));
         panel.add(new JLabel("Repo Root:"));
         panel.add(repoField);
 
@@ -68,40 +98,57 @@ public class UniversalMonitorControlCenter extends JFrame {
         openFolderButton.addActionListener(e -> openRepoFolder());
         panel.add(openFolderButton);
 
+        panel.add(new JLabel("sudo password:"));
+        panel.add(sudoPasswordField);
+
         return panel;
     }
 
     private JPanel buildActionPanel() {
-        JPanel panel = new JPanel(new GridLayout(2, 1, 10, 10));
+        JPanel panel = new JPanel(new GridLayout(3, 1, 10, 10));
 
         JPanel appActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management"));
+        appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
         appActions.add(installButton);
         appActions.add(uninstallButton);
         appActions.add(updateButton);
         appActions.add(flashButton);
         appActions.add(launchDebugButton);
 
+        JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
+        serviceIndicator.setOpaque(true);
+        serviceIndicator.setPreferredSize(new Dimension(100, 30));
+        servicePanel.add(serviceOnButton);
+        servicePanel.add(serviceOffButton);
+        servicePanel.add(serviceRestartButton);
+        servicePanel.add(serviceStatusButton);
+        servicePanel.add(new JLabel("Indicator:"));
+        servicePanel.add(serviceIndicator);
+
         JPanel fakePorts = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        fakePorts.setBorder(BorderFactory.createTitledBorder("Virtual Serial Ports"));
+        fakePorts.setBorder(BorderFactory.createTitledBorder("Virtual Serial Ports + Preview Feed"));
         fakePorts.add(new JLabel("Input:"));
         fakePorts.add(fakeInField);
         fakePorts.add(new JLabel("Output:"));
         fakePorts.add(fakeOutField);
         fakePorts.add(startFakePortsButton);
         fakePorts.add(stopFakePortsButton);
+        fakePorts.add(connectPreviewButton);
+        fakePorts.add(disconnectPreviewButton);
 
         panel.add(appActions);
+        panel.add(servicePanel);
         panel.add(fakePorts);
         return panel;
     }
 
     private JPanel buildPreviewPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Arduino Preview"));
-        panel.add(new JavaSerialFakeDisplay.FakeDisplayPanel(), BorderLayout.CENTER);
+        panel.setBorder(BorderFactory.createTitledBorder("Arduino Preview (live from output port)"));
+        panel.add(fakeDisplayPanel, BorderLayout.CENTER);
 
-        JLabel helper = new JLabel("Use 'Open Debug Display' for full serial tools.");
+        JLabel helper = new JLabel("Preview listens to Output port path. For full parser/log view use 'Open Debug Display'.");
         helper.setBorder(new EmptyBorder(8, 8, 8, 8));
         panel.add(helper, BorderLayout.SOUTH);
         return panel;
@@ -117,14 +164,21 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void wireActions() {
-        installButton.addActionListener(e -> runRepoScript("install.sh"));
-        uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh"));
-        updateButton.addActionListener(e -> runUpdateWorkflow());
-        flashButton.addActionListener(e -> runRepoScript("arduino_install.sh"));
+        installButton.addActionListener(e -> runRepoScript("install.sh", true));
+        uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
+        updateButton.addActionListener(e -> runRepoScript("update.sh", true));
+        flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
         launchDebugButton.addActionListener(e -> SwingUtilities.invokeLater(() -> new JavaSerialFakeDisplay().setVisible(true)));
+
+        serviceOnButton.addActionListener(e -> runServiceCommand("start"));
+        serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
+        serviceRestartButton.addActionListener(e -> runServiceCommand("restart"));
+        serviceStatusButton.addActionListener(e -> refreshServiceStatus(true));
 
         startFakePortsButton.addActionListener(e -> startFakePorts());
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
+        connectPreviewButton.addActionListener(e -> connectPreviewPort());
+        disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
     }
 
     private void browseRepoPath() {
@@ -146,26 +200,75 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private void runUpdateWorkflow() {
-        List<String> command = new ArrayList<String>();
-        command.add("bash");
-        command.add("-lc");
-        command.add("chmod +x update.sh && ./update.sh");
-        runCommand(command, repoPath().toFile(), "update.sh");
-    }
-
-    private void runRepoScript(String scriptName) {
+    private void runRepoScript(String scriptName, boolean needsSudo) {
         Path script = repoPath().resolve(scriptName);
         if (!Files.exists(script)) {
             log("[ERROR] Missing script: " + script);
             return;
         }
 
-        List<String> command = new ArrayList<String>();
-        command.add("bash");
-        command.add("-lc");
-        command.add("chmod +x " + scriptName + " && ./" + scriptName);
-        runCommand(command, repoPath().toFile(), scriptName);
+        String command = "cd " + escape(repoPath().toString()) + " && chmod +x " + scriptName + " && ./" + scriptName;
+        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true);
+    }
+
+    private void runServiceCommand(String action) {
+        String label = "service " + action;
+        String command = "systemctl " + action + " " + SERVICE_NAME;
+        runCommand(command, repoPath().toFile(), label, true, true);
+
+        Timer delayed = new Timer(1200, e -> refreshServiceStatus(false));
+        delayed.setRepeats(false);
+        delayed.start();
+    }
+
+    private void refreshServiceStatus(boolean allowPrompt) {
+        Thread t = new Thread(() -> {
+            CommandSpec spec = buildShellCommand("systemctl is-active " + SERVICE_NAME, true, allowPrompt);
+            if (spec == null) {
+                return;
+            }
+
+            try {
+                ProcessBuilder pb = new ProcessBuilder(spec.command);
+                pb.directory(repoPath().toFile());
+                pb.redirectErrorStream(true);
+                if (spec.sudoPassword != null) {
+                    pb.environment().put("SUDO_PASS", spec.sudoPassword);
+                }
+                Process process = pb.start();
+
+                StringBuilder out = new StringBuilder();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (!line.trim().isEmpty()) {
+                        out.append(line.trim()).append("\n");
+                    }
+                }
+                int code = process.waitFor();
+                String status = out.toString().trim();
+
+                if (code == 0 && status.contains("active")) {
+                    setServiceIndicator("ON", new Color(24, 170, 24));
+                } else if (status.contains("inactive") || status.contains("failed") || status.contains("unknown")) {
+                    setServiceIndicator("OFF", new Color(190, 35, 35));
+                } else {
+                    setServiceIndicator("UNKNOWN", Color.GRAY);
+                }
+
+                if (allowPrompt) {
+                    log("[SERVICE] status output: " + (status.isEmpty() ? "<no output>" : status.replace("\n", " | ")));
+                }
+            } catch (Exception ex) {
+                setServiceIndicator("UNKNOWN", Color.GRAY);
+                if (allowPrompt) {
+                    log("[ERROR] Failed service status check: " + ex.getMessage());
+                }
+            }
+        }, "service-status-thread");
+
+        t.setDaemon(true);
+        t.start();
     }
 
     private void startFakePorts() {
@@ -182,40 +285,36 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         String commandText = "socat -d -d pty,raw,echo=0,link=" + escape(fakeIn) + " pty,raw,echo=0,link=" + escape(fakeOut);
-        List<String> command = new ArrayList<String>();
-        command.add("bash");
-        command.add("-lc");
-        command.add(commandText);
-
         log("[RUN] " + commandText);
 
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ProcessBuilder pb = new ProcessBuilder(command);
-                    pb.directory(repoPath().toFile());
-                    pb.redirectErrorStream(true);
-                    Process process = pb.start();
-                    fakePortsProcess = process;
-                    updatePortButtons();
+        Thread t = new Thread(() -> {
+            try {
+                ProcessBuilder pb = new ProcessBuilder("bash", "-lc", commandText);
+                pb.directory(repoPath().toFile());
+                pb.redirectErrorStream(true);
+                Process process = pb.start();
+                fakePortsProcess = process;
+                updatePortButtons();
 
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        log("[socat] " + line);
-                    }
-                } catch (Exception ex) {
-                    log("[ERROR] Failed to start fake ports: " + ex.getMessage());
-                } finally {
-                    fakePortsProcess = null;
-                    updatePortButtons();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log("[socat] " + line);
                 }
+            } catch (Exception ex) {
+                log("[ERROR] Failed to start fake ports: " + ex.getMessage());
+            } finally {
+                fakePortsProcess = null;
+                updatePortButtons();
             }
         }, "fake-port-thread");
 
         t.setDaemon(true);
         t.start();
+
+        Timer delayedConnect = new Timer(900, e -> connectPreviewPort());
+        delayedConnect.setRepeats(false);
+        delayedConnect.start();
     }
 
     private void stopFakePorts() {
@@ -229,36 +328,119 @@ public class UniversalMonitorControlCenter extends JFrame {
         updatePortButtons();
     }
 
-    private void runCommand(List<String> command, File workingDirectory, String label) {
+    private void connectPreviewPort() {
+        if (previewPort != null && previewPort.isOpen()) {
+            log("[INFO] Preview port already connected.");
+            return;
+        }
+
+        String portPath = fakeOutField.getText().trim();
+        if (portPath.isEmpty()) {
+            log("[ERROR] Output port path is empty.");
+            return;
+        }
+
+        SerialPort port = SerialPort.getCommPort(portPath);
+        port.setComPortParameters(115200, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
+        port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 200, 0);
+
+        if (!port.openPort()) {
+            log("[ERROR] Failed to open preview port: " + portPath);
+            return;
+        }
+
+        previewPort = port;
+        previewReading = true;
+        updatePreviewButtons();
+        log("[INFO] Connected preview stream to " + portPath);
+
+        previewReaderThread = new Thread(() -> readPreviewLoop(port), "preview-reader-thread");
+        previewReaderThread.setDaemon(true);
+        previewReaderThread.start();
+    }
+
+    private void disconnectPreviewPort() {
+        previewReading = false;
+        SerialPort port = previewPort;
+        previewPort = null;
+
+        if (port != null && port.isOpen()) {
+            port.closePort();
+        }
+
+        updatePreviewButtons();
+        log("[INFO] Preview stream disconnected.");
+    }
+
+    private void readPreviewLoop(SerialPort port) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(port.getInputStream(), StandardCharsets.UTF_8))) {
+            while (previewReading && port.isOpen()) {
+                String line;
+                try {
+                    line = reader.readLine();
+                } catch (Exception ex) {
+                    String msg = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+                    if (msg.contains("timed out")) {
+                        continue;
+                    }
+                    log("[ERROR] Preview read error: " + ex.getMessage());
+                    break;
+                }
+
+                if (line == null) {
+                    continue;
+                }
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+
+                JavaSerialFakeDisplay.ParsedPacket packet = JavaSerialFakeDisplay.ParsedPacket.parse(trimmed);
+                SwingUtilities.invokeLater(() -> fakeDisplayPanel.updatePacket(packet));
+            }
+        } catch (Exception ex) {
+            log("[ERROR] Preview stream failure: " + ex.getMessage());
+        }
+
+        SwingUtilities.invokeLater(this::disconnectPreviewPort);
+    }
+
+    private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt) {
+        CommandSpec spec = buildShellCommand(shellCommand, needsSudo, allowPrompt);
+        if (spec == null) {
+            log("[WARN] " + label + " canceled (no sudo password). Running as root avoids this.");
+            return;
+        }
+
         log("[RUN] " + label + " in " + workingDirectory.getAbsolutePath());
         setActionButtons(false);
 
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ProcessBuilder pb = new ProcessBuilder(command);
-                    pb.directory(workingDirectory);
-                    pb.redirectErrorStream(true);
-                    Process process = pb.start();
-
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        log("[" + label + "] " + line);
-                    }
-
-                    int code = process.waitFor();
-                    if (code == 0) {
-                        log("[DONE] " + label + " completed successfully.");
-                    } else {
-                        log("[FAIL] " + label + " exited with code " + code + ".");
-                    }
-                } catch (Exception ex) {
-                    log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
-                } finally {
-                    setActionButtons(true);
+        Thread t = new Thread(() -> {
+            try {
+                ProcessBuilder pb = new ProcessBuilder(spec.command);
+                pb.directory(workingDirectory);
+                pb.redirectErrorStream(true);
+                if (spec.sudoPassword != null) {
+                    pb.environment().put("SUDO_PASS", spec.sudoPassword);
                 }
+                Process process = pb.start();
+
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log("[" + label + "] " + line);
+                }
+
+                int code = process.waitFor();
+                if (code == 0) {
+                    log("[DONE] " + label + " completed successfully.");
+                } else {
+                    log("[FAIL] " + label + " exited with code " + code + ".");
+                }
+            } catch (Exception ex) {
+                log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
+            } finally {
+                setActionButtons(true);
             }
         }, "cmd-" + label);
 
@@ -266,37 +448,99 @@ public class UniversalMonitorControlCenter extends JFrame {
         t.start();
     }
 
+    private CommandSpec buildShellCommand(String shellCommand, boolean needsSudo, boolean allowPrompt) {
+        List<String> command = new ArrayList<>();
+        command.add("bash");
+        command.add("-lc");
+
+        if (!needsSudo || runningAsRoot()) {
+            command.add(shellCommand);
+            return new CommandSpec(command, null);
+        }
+
+        String password = resolveSudoPassword(allowPrompt);
+        if (password == null || password.isEmpty()) {
+            return null;
+        }
+
+        String wrapped = "printf '%s\\n' \"$SUDO_PASS\" | sudo -S -p '' bash -lc " + escape(shellCommand);
+        command.add(wrapped);
+        return new CommandSpec(command, password);
+    }
+
+    private String resolveSudoPassword(boolean allowPrompt) {
+        String fromField = new String(sudoPasswordField.getPassword());
+        if (!fromField.trim().isEmpty()) {
+            return fromField;
+        }
+        if (!allowPrompt) {
+            return null;
+        }
+
+        JPasswordField passwordField = new JPasswordField();
+        int result = JOptionPane.showConfirmDialog(
+                this,
+                passwordField,
+                "Enter sudo password",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+
+        if (result == JOptionPane.OK_OPTION) {
+            String value = new String(passwordField.getPassword());
+            sudoPasswordField.setText(value);
+            return value;
+        }
+        return null;
+    }
+
+    private boolean runningAsRoot() {
+        return "root".equals(System.getProperty("user.name"));
+    }
+
     private void setActionButtons(boolean enabled) {
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                installButton.setEnabled(enabled);
-                uninstallButton.setEnabled(enabled);
-                updateButton.setEnabled(enabled);
-                flashButton.setEnabled(enabled);
-                launchDebugButton.setEnabled(enabled);
-            }
+        SwingUtilities.invokeLater(() -> {
+            installButton.setEnabled(enabled);
+            uninstallButton.setEnabled(enabled);
+            updateButton.setEnabled(enabled);
+            flashButton.setEnabled(enabled);
+            launchDebugButton.setEnabled(enabled);
+            serviceOnButton.setEnabled(enabled);
+            serviceOffButton.setEnabled(enabled);
+            serviceRestartButton.setEnabled(enabled);
+            serviceStatusButton.setEnabled(enabled);
         });
     }
 
     private void updatePortButtons() {
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                boolean running = fakePortsProcess != null && fakePortsProcess.isAlive();
-                startFakePortsButton.setEnabled(!running);
-                stopFakePortsButton.setEnabled(running);
-            }
+        SwingUtilities.invokeLater(() -> {
+            boolean running = fakePortsProcess != null && fakePortsProcess.isAlive();
+            startFakePortsButton.setEnabled(!running);
+            stopFakePortsButton.setEnabled(running);
+        });
+        updatePreviewButtons();
+    }
+
+    private void updatePreviewButtons() {
+        SwingUtilities.invokeLater(() -> {
+            boolean connected = previewPort != null && previewPort.isOpen();
+            connectPreviewButton.setEnabled(!connected);
+            disconnectPreviewButton.setEnabled(connected);
+        });
+    }
+
+    private void setServiceIndicator(String label, Color color) {
+        SwingUtilities.invokeLater(() -> {
+            serviceIndicator.setText(label);
+            serviceIndicator.setBackground(color);
+            serviceIndicator.setForeground(Color.WHITE);
         });
     }
 
     private void log(String message) {
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                outputArea.append(message + "\n");
-                outputArea.setCaretPosition(outputArea.getDocument().getLength());
-            }
+        SwingUtilities.invokeLater(() -> {
+            outputArea.append(message + "\n");
+            outputArea.setCaretPosition(outputArea.getDocument().getLength());
         });
     }
 
@@ -336,11 +580,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                new UniversalMonitorControlCenter().setVisible(true);
-            }
-        });
+        SwingUtilities.invokeLater(() -> new UniversalMonitorControlCenter().setVisible(true));
+    }
+
+    private static class CommandSpec {
+        final List<String> command;
+        final String sudoPassword;
+
+        CommandSpec(List<String> command, String sudoPassword) {
+            this.command = command;
+            this.sudoPassword = sudoPassword;
+        }
     }
 }
