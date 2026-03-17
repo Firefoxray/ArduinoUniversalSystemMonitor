@@ -5,6 +5,7 @@ set -e
 echo "==== Ray Co Arduino Monitor Installer ===="
 
 PROJECT_DIR="$HOME/ArduinoUniversalSystemMonitor"
+REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
 CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
@@ -27,25 +28,39 @@ install_system_packages() {
 
     case "$DISTRO" in
         fedora)
-            sudo dnf install -y python3 python3-pip
+            sudo dnf install -y python3 python3-pip git
             ;;
         debian)
             sudo apt update
-            sudo apt install -y python3 python3-pip
+            sudo apt install -y python3 python3-pip git
             ;;
         arch)
-            sudo pacman -Sy --noconfirm python python-pip
+            sudo pacman -Sy --noconfirm python python-pip git
             ;;
         *)
             echo "Unsupported distro."
-            echo "Please manually install: python3, pip"
+            echo "Please manually install: python3, python3-pip, git"
             exit 1
             ;;
     esac
 }
 
+install_or_update_repo() {
+    echo "[2/6] Installing repository into $PROJECT_DIR..."
+
+    if [ -d "$PROJECT_DIR/.git" ]; then
+        echo "Existing git repo found. Pulling latest..."
+        git -C "$PROJECT_DIR" pull origin main
+    else
+        rm -rf "$PROJECT_DIR"
+        git clone "$REPO_URL" "$PROJECT_DIR"
+    fi
+}
+
 install_python_packages() {
-    echo "[2/6] Installing Python packages..."
+    echo "[3/6] Installing Python packages..."
+
+    cd "$PROJECT_DIR"
 
     if [ -f requirements.txt ]; then
         if python3 -m pip install --user -r requirements.txt; then
@@ -65,7 +80,7 @@ install_python_packages() {
 }
 
 fix_serial_permissions() {
-    echo "[3/6] Fixing serial permissions..."
+    echo "[4/6] Fixing serial permissions..."
 
     SERIAL_GROUP="dialout"
 
@@ -79,33 +94,10 @@ fix_serial_permissions() {
     sudo usermod -aG "$SERIAL_GROUP" "$USER"
 }
 
-install_script() {
-    echo "[4/6] Installing monitor script..."
+ensure_config() {
+    echo "[5/6] Ensuring config file exists..."
 
-    mkdir -p "$PROJECT_DIR"
-
-    if [ ! -f "$SCRIPT_NAME" ]; then
-        echo "Error: $SCRIPT_NAME not found in current directory."
-        echo "Run this installer from the folder containing $SCRIPT_NAME."
-        exit 1
-    fi
-
-    cp "$SCRIPT_NAME" "$PROJECT_DIR/$SCRIPT_NAME"
-    chmod +x "$PROJECT_DIR/$SCRIPT_NAME"
-
-    if [ -f "update.sh" ]; then
-        cp "update.sh" "$PROJECT_DIR/update.sh"
-        chmod +x "$PROJECT_DIR/update.sh"
-    fi
-
-    if [ -f "uninstall_monitor.sh" ]; then
-        cp "uninstall_monitor.sh" "$PROJECT_DIR/uninstall_monitor.sh"
-        chmod +x "$PROJECT_DIR/uninstall_monitor.sh"
-    fi
-
-    if [ -f "$CONFIG_NAME" ]; then
-        cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
-    else
+    if [ ! -f "$PROJECT_DIR/$CONFIG_NAME" ]; then
         echo "Creating default $CONFIG_NAME..."
         cat > "$PROJECT_DIR/$CONFIG_NAME" <<'EOF'
 {
@@ -119,10 +111,14 @@ install_script() {
 }
 EOF
     fi
+
+    chmod +x "$PROJECT_DIR/$SCRIPT_NAME" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/update.sh" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/uninstall_monitor.sh" 2>/dev/null || true
 }
 
-create_service() {
-    echo "[5/6] Creating systemd service..."
+create_and_enable_service() {
+    echo "[6/6] Creating and enabling systemd service..."
 
     sudo tee "/etc/systemd/system/$SERVICE_NAME" > /dev/null <<EOF
 [Unit]
@@ -138,10 +134,7 @@ User=$USER
 [Install]
 WantedBy=multi-user.target
 EOF
-}
 
-enable_service() {
-    echo "[6/6] Enabling and starting service..."
     sudo systemctl daemon-reload
     sudo systemctl enable "$SERVICE_NAME"
     sudo systemctl restart "$SERVICE_NAME"
@@ -154,7 +147,7 @@ finish_message() {
     echo "Config file: $PROJECT_DIR/$CONFIG_NAME"
     echo
     echo "IMPORTANT:"
-    echo "- Reboot or log out/log back in so new serial permissions apply."
+    echo "- Log out and back in (or reboot) so new serial permissions apply."
     echo "- Make sure your Arduino is plugged in."
     echo
     echo "Service commands:"
@@ -162,14 +155,20 @@ finish_message() {
     echo "  sudo systemctl stop arduino-monitor"
     echo "  sudo systemctl restart arduino-monitor"
     echo "  sudo systemctl status arduino-monitor"
+    echo
+    echo "Update later with:"
+    echo "  cd $PROJECT_DIR && ./update.sh"
+    echo
+    echo "Uninstall later with:"
+    echo "  cd $PROJECT_DIR && ./uninstall_monitor.sh"
     echo "=========================="
 }
 
 detect_distro
 install_system_packages
+install_or_update_repo
 install_python_packages
 fix_serial_permissions
-install_script
-create_service
-enable_service
+ensure_config
+create_and_enable_service
 finish_message
