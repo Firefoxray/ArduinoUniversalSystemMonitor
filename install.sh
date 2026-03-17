@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -Eeuo pipefail
 
 echo "==== Ray Co Arduino Monitor Installer ===="
 
@@ -11,6 +11,10 @@ CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python3"
+
+have_command() {
+    command -v "$1" >/dev/null 2>&1
+}
 
 detect_distro() {
     if [ -f /etc/fedora-release ]; then
@@ -25,34 +29,39 @@ detect_distro() {
 }
 
 install_system_packages() {
-    echo "[1/7] Installing system packages for $DISTRO..."
+    echo "[1/8] Installing system packages for $DISTRO..."
 
     case "$DISTRO" in
         fedora)
-            sudo dnf install -y python3 python3-pip python3-virtualenv git
+            sudo dnf install -y python3 python3-pip python3-virtualenv git curl
             ;;
         debian)
             sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git
+            sudo apt install -y python3 python3-pip python3-venv git curl
             ;;
         arch)
-            sudo pacman -Sy --noconfirm python python-pip git
+            sudo pacman -Sy --noconfirm python python-pip git curl
             ;;
         *)
             echo "Unsupported distro."
-            echo "Please manually install: python3, python3-pip, python3-venv/virtualenv, git"
+            echo "Please manually install: python3, python3-pip, python3-venv/virtualenv, git, curl"
             exit 1
             ;;
     esac
 
-    if ! command -v git >/dev/null 2>&1; then
+    if ! have_command git; then
         echo "Error: git is still not available after package installation."
+        exit 1
+    fi
+
+    if ! have_command python3; then
+        echo "Error: python3 is still not available after package installation."
         exit 1
     fi
 }
 
 install_or_update_repo() {
-    echo "[2/7] Installing repository into $PROJECT_DIR..."
+    echo "[2/8] Installing repository into $PROJECT_DIR..."
 
     if [ -d "$PROJECT_DIR/.git" ]; then
         echo "Existing git repo found. Pulling latest..."
@@ -64,7 +73,7 @@ install_or_update_repo() {
 }
 
 setup_virtualenv() {
-    echo "[3/7] Creating Python virtual environment..."
+    echo "[3/8] Creating Python virtual environment..."
 
     cd "$PROJECT_DIR"
 
@@ -76,7 +85,7 @@ setup_virtualenv() {
 }
 
 install_python_packages() {
-    echo "[4/7] Installing Python packages into virtual environment..."
+    echo "[4/8] Installing Python packages into virtual environment..."
 
     cd "$PROJECT_DIR"
 
@@ -88,7 +97,7 @@ install_python_packages() {
 }
 
 fix_serial_permissions() {
-    echo "[5/7] Fixing serial permissions..."
+    echo "[5/8] Fixing serial permissions..."
 
     SERIAL_GROUP="dialout"
 
@@ -103,11 +112,11 @@ fix_serial_permissions() {
 }
 
 ensure_config() {
-    echo "[6/7] Ensuring config file exists..."
+    echo "[6/8] Ensuring config file exists..."
 
     if [ ! -f "$PROJECT_DIR/$CONFIG_NAME" ]; then
         echo "Creating default $CONFIG_NAME..."
-        cat > "$PROJECT_DIR/$CONFIG_NAME" <<'EOF'
+        cat > "$PROJECT_DIR/$CONFIG_NAME" <<'JSON'
 {
   "arduino_port": "AUTO",
   "baud": 115200,
@@ -117,23 +126,21 @@ ensure_config() {
   "secondary_mount": "/mnt/linux_storage",
   "send_interval": 2.0
 }
-EOF
+JSON
     fi
 
     chmod +x "$PROJECT_DIR/$SCRIPT_NAME" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/install.sh" 2>/dev/null || true
     chmod +x "$PROJECT_DIR/update.sh" 2>/dev/null || true
     chmod +x "$PROJECT_DIR/uninstall_monitor.sh" 2>/dev/null || true
     chmod +x "$PROJECT_DIR/install_arduinos.sh" 2>/dev/null || true
-<<<<<<< HEAD
     chmod +x "$PROJECT_DIR/arduino_install.sh" 2>/dev/null || true
-=======
->>>>>>> 71d9ea3 (Use virtualenv for install and update on Ubuntu/Mint)
 }
 
-create_and_enable_service() {
-    echo "[7/7] Creating and enabling systemd service..."
+create_service_file() {
+    echo "[7/8] Creating systemd service file..."
 
-    sudo tee "/etc/systemd/system/$SERVICE_NAME" > /dev/null <<EOF
+    sudo tee "/etc/systemd/system/$SERVICE_NAME" > /dev/null <<SERVICE
 [Unit]
 Description=Arduino System Monitor
 After=network.target
@@ -146,26 +153,35 @@ User=$USER
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SERVICE
 
     sudo systemctl daemon-reload
-    sudo systemctl enable "$SERVICE_NAME"
-    sudo systemctl restart "$SERVICE_NAME"
 }
 
-post_install_prompt() {
-    echo
-    read -r -p "Would you like to flash and install your Arduinos and dependencies now? [y/N] " FLASH_NOW
+prompt_arduino_install() {
+    local reply
 
-    if [[ "$FLASH_NOW" =~ ^[Yy]$ ]]; then
-        if [ -x "$PROJECT_DIR/install_arduinos.sh" ]; then
-            echo "Launching Arduino installer..."
-            cd "$PROJECT_DIR"
-            ./install_arduinos.sh
+    echo
+    read -r -p "Would you like to install and flash your Arduino(s) now? [y/N]: " reply
+
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+        if [ -x "$PROJECT_DIR/arduino_install.sh" ]; then
+            "$PROJECT_DIR/arduino_install.sh"
+        elif [ -x "$PROJECT_DIR/install_arduinos.sh" ]; then
+            "$PROJECT_DIR/install_arduinos.sh"
         else
-            echo "install_arduinos.sh was not found or is not executable."
+            echo "Arduino install script not found or not executable."
+            return 1
         fi
+    else
+        echo "Skipping Arduino install and flash step."
     fi
+}
+
+enable_and_start_service() {
+    echo "[8/8] Enabling and starting systemd service..."
+    sudo systemctl enable "$SERVICE_NAME"
+    sudo systemctl restart "$SERVICE_NAME"
 }
 
 finish_message() {
@@ -193,26 +209,6 @@ finish_message() {
     echo "=========================="
 }
 
-prompt_arduino_install() {
-    local reply
-
-    echo
-    read -r -p "would you like to install and flash your arduino's now [y/N]: " reply
-
-    if [[ "$reply" =~ ^[Yy]$ ]]; then
-        if [ -x "$PROJECT_DIR/arduino_install.sh" ]; then
-            "$PROJECT_DIR/arduino_install.sh"
-        elif [ -x "$PROJECT_DIR/install_arduinos.sh" ]; then
-            "$PROJECT_DIR/install_arduinos.sh"
-        else
-            echo "Arduino install script not found or not executable."
-            return 1
-        fi
-    else
-        echo "Skipping Arduino install and flash step."
-    fi
-}
-
 detect_distro
 install_system_packages
 install_or_update_repo
@@ -220,7 +216,7 @@ setup_virtualenv
 install_python_packages
 fix_serial_permissions
 ensure_config
-create_and_enable_service
-post_install_prompt
-finish_message
+create_service_file
 prompt_arduino_install
+enable_and_start_service
+finish_message
