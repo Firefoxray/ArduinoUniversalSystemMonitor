@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.6  
+**Version:** 7.7  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -81,6 +81,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.4  - Added install.sh improvements, config auto-generation, standardized install path (~/ArduinoUniversalSystemMonitor), and update.sh support
 7.5  - Re-added 2.8" TFT UNO R3 support, updated documentation, and clarified hardware requirements/options
 7.6  - Added Arduino CLI flashing workflow, automatic board/core/library setup, and install_arduinos.sh support
+7.7  - Added post-install Arduino flashing prompt, arduino_install.sh entrypoint, and updated install script documentation
 ```
 
 ---
@@ -104,36 +105,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 # Installation
 
-## Arduino Setup
-
-1. Install Arduino IDE  
-2. Open **Boards Manager** and install:
-   - Arduino UNO R4 Boards
-   - Arduino AVR Boards (for UNO R3)
-3. Install libraries:
-   - Arduino TFT Touchscreen  
-   - DIYables TFT Touch Shield  
-   - MCUFRIEND_kbv (required for the UNO R3 + 2.8" TFT sketch)
-
-**IMPORTANT:** Plug in the Arduino before continuing.
-
-4. Open the sketch that matches your hardware:
-   - `UniversalArduinoMonitor35` for UNO R4 + 3.5" display
-   - `UniversalArduinoMonitor28` for UNO R3 + 2.8" TFT UNO R3 display
-
-5. Select the correct board and port, then click **Upload**
-
----
-
-## Python Setup
-
-```bash
-python3 -m pip install psutil pyserial
-```
-
----
-
-## Linux Setup (Automatic)
+## Linux Setup (Automatic - Recommended)
 
 ```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
@@ -148,7 +120,26 @@ chmod +x install.sh
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git && cd ArduinoUniversalSystemMonitor && chmod +x install.sh && ./install.sh
 ```
 
-A default monitor_config.json is automatically created during installation.
+During `./install.sh`, the script installs system packages, Python dependencies, config/service files, and then prompts:
+
+`would you like to install and flash your arduino's now [y/N]:`
+
+- Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
+- The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`), and flashes supported connected boards.
+
+A default `monitor_config.json` is automatically created during installation.
+
+---
+
+## Arduino Flashing Script (Standalone)
+
+If you skip the prompt or want to reflash later:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor
+chmod +x arduino_install.sh
+./arduino_install.sh
+```
 
 ---
 
@@ -196,7 +187,6 @@ sudo usermod -aG dialout $USER
 Log out and back in.
 
 ---
-
 # Running the Program
 
 ## Linux

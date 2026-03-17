@@ -115,6 +115,8 @@ EOF
     chmod +x "$PROJECT_DIR/$SCRIPT_NAME" 2>/dev/null || true
     chmod +x "$PROJECT_DIR/update.sh" 2>/dev/null || true
     chmod +x "$PROJECT_DIR/uninstall_monitor.sh" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/install_arduinos.sh" 2>/dev/null || true
+    chmod +x "$PROJECT_DIR/arduino_install.sh" 2>/dev/null || true
 }
 
 create_and_enable_service() {
@@ -164,6 +166,26 @@ finish_message() {
     echo "=========================="
 }
 
+prompt_arduino_install() {
+    local reply
+
+    echo
+    read -r -p "would you like to install and flash your arduino's now [y/N]: " reply
+
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+        if [ -x "$PROJECT_DIR/arduino_install.sh" ]; then
+            "$PROJECT_DIR/arduino_install.sh"
+        elif [ -x "$PROJECT_DIR/install_arduinos.sh" ]; then
+            "$PROJECT_DIR/install_arduinos.sh"
+        else
+            echo "Arduino install script not found or not executable."
+            return 1
+        fi
+    else
+        echo "Skipping Arduino install and flash step."
+    fi
+}
+
 detect_distro
 install_system_packages
 install_or_update_repo
@@ -172,3 +194,4 @@ fix_serial_permissions
 ensure_config
 create_and_enable_service
 finish_message
+prompt_arduino_install
