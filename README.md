@@ -15,6 +15,23 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 **Version:** 7.0  
 **Last Modified:** March 17, 2026, 1:52 AM  
 
+## Preview
+
+### Main View
+<p align="center">
+  <img src="screenshots/home1.JPEG" width="500"/>
+</p>
+
+### Other Pages
+<p align="center">
+  <img src="screenshots/cpu1.JPEG" width="160"/>
+  <img src="screenshots/gpu1.JPEG" width="160"/>
+  <img src="screenshots/network1.JPEG" width="160"/>
+  <img src="screenshots/storage1.JPEG" width="160"/>
+  <img src="screenshots/processes1.JPEG" width="160"/>
+  <img src="screenshots/graph1.JPEG" width="160"/>
+</p>
+
 ---
 
 ## Requirements
