@@ -20,45 +20,37 @@ DIYables_TFT_RM68140_Shield tft;
 
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
-
-const int BAR_X = 130;
-const int BAR_W = 250;
-const int BAR_H = 18;
-
 const int GRAPH_POINTS = 62;
+const int TOTAL_PAGES = 7;
+const int CPU_THREADS = 16;
+const int PROCESS_ROWS = 6;
+const int STORAGE_LINES = 7;
+const int FIELD_COUNT = 63;
+
 int cpuHistory[GRAPH_POINTS];
 int ramHistory[GRAPH_POINTS];
 int gpuHistory[GRAPH_POINTS];
 int vramHistory[GRAPH_POINTS];
 
 String line = "";
-
 int currentPage = 0;
-const int TOTAL_PAGES = 7;
 bool touchHeld = false;
 unsigned long lastTouchTime = 0;
 const unsigned long touchDebounceMs = 350;
-
-// New: throttle screen redraws to stop Win7 flicker
 unsigned long lastScreenUpdate = 0;
 const unsigned long screenUpdateIntervalMs = 70;
 bool screenDirty = false;
 
 int cpuTotal = 0;
-int cpu0 = 0;
-int cpu1 = 0;
-int cpu2 = 0;
-int cpu3 = 0;
-
+int cpuThreads[CPU_THREADS];
+int ramPct = 0;
+int fedoraDiskPct = 0;
+int shareDiskPct = 0;
+int gpuPct = 0;
 int gpuMemUsed = 0;
 int gpuMemTotal = 0;
 int gpuMemPct = 0;
 int gpuClock = 0;
-
-int ramPct = 0;
-int diskPct = 0;
-int disk1Pct = 0;
-int gpuPct = 0;
 
 String cpuTemp = "--";
 String osName = "--";
@@ -72,33 +64,12 @@ String upTotalStr = "--";
 String cpuFreqStr = "--";
 String gpuTemp = "--";
 String gpuName = "--";
+String opticalStr = "--";
 
-String proc1 = "--";
-String proc2 = "--";
-String proc3 = "--";
-String proc4 = "--";
-String proc5 = "--";
-String proc6 = "--";
-
-String proc1Cpu = "--";
-String proc2Cpu = "--";
-String proc3Cpu = "--";
-String proc4Cpu = "--";
-String proc5Cpu = "--";
-String proc6Cpu = "--";
-
-String proc1Ram = "--";
-String proc2Ram = "--";
-String proc3Ram = "--";
-String proc4Ram = "--";
-String proc5Ram = "--";
-String proc6Ram = "--";
-
-String disk0Str = "Disk0:N/A";
-String disk1Str = "Disk1:N/A";
-String disk2Str = "Disk2:N/A";
-String disk3Str = "Disk3:N/A";
-String dvdStateStr = "N/A";
+String procName[PROCESS_ROWS];
+String procCpu[PROCESS_ROWS];
+String procRam[PROCESS_ROWS];
+String storageLine[STORAGE_LINES];
 
 void clearArea(int x, int y, int w, int h) {
   tft.fillRect(x, y, w, h, BLACK);
@@ -119,156 +90,32 @@ uint16_t getColor(int percent) {
   return RED;
 }
 
-void drawBar(int x, int y, int w, int h, int percent, uint16_t color) {
-  if (percent < 0) percent = 0;
-  if (percent > 100) percent = 100;
-
-  tft.drawRect(x, y, w, h, WHITE);
-  int fill = (percent * (w - 2)) / 100;
-  tft.fillRect(x + 1, y + 1, w - 2, h - 2, BLACK);
-  if (fill > 0) tft.fillRect(x + 1, y + 1, fill, h - 2, color);
-}
-
-void drawLabelText(int y, const char* label, String value, uint16_t color) {
-  clearArea(0, y, SCREEN_W, 28);
-  tft.setTextSize(2);
-  tft.setTextColor(WHITE);
-  tft.setCursor(15, y);
-  tft.print(label);
-  tft.setTextColor(color);
-  tft.setCursor(140, y);
-  tft.print(value);
-}
-
-void drawSmallText(int y, const char* label, String value, uint16_t color) {
-  clearArea(0, y, SCREEN_W, 14);
-  tft.setTextSize(1);
-  tft.setTextColor(WHITE);
-  tft.setCursor(15, y);
-  tft.print(label);
-  tft.setTextColor(color);
-  tft.setCursor(90, y);
-  tft.print(value);
-}
-
-void drawDiskLine(int y, String value, uint16_t color) {
-  clearArea(0, y, SCREEN_W, 16);
-  tft.setTextSize(1);
-  tft.setTextColor(color);
-  tft.setCursor(15, y);
-  tft.print(value);
-}
-
-void drawLabelTextCustom(int y, const char* label, String value, uint16_t color, int valueX) {
-  clearArea(0, y, SCREEN_W, 28);
-  tft.setTextSize(2);
-  tft.setTextColor(WHITE);
-  tft.setCursor(15, y);
-  tft.print(label);
-  tft.setTextColor(color);
-  tft.setCursor(valueX, y);
-  tft.print(value);
-}
-
 String fitText(String s, int maxLen) {
   s.trim();
   if (s.length() <= maxLen) return s;
   return s.substring(0, maxLen);
 }
 
-String prettyOS(String s) {
-  s.trim();
-  s.replace("Enterprise", "Ent.");
-  s.replace("Professional", "Pro");
-  s.replace("Education", "Edu");
-  return s;
-}
-
 String prettyGPU(String s) {
   s.trim();
   s.replace("(TM)", "");
   s.replace("(R)", "");
-
-  // Keep vendor, remove extra branding fluff
-  s.replace("NVIDIA GeForce ", "NVIDIA ");
-  s.replace("AMD Radeon ", "AMD ");
-  s.replace("Intel(R) ", "Intel ");
-  s.replace("Intel ", "Intel ");
-
-  // Common model cleanup so names fit better
-  s.replace("GTX 750 Ti", "GTX 750Ti");
-  s.replace("GTX 1050 Ti", "GTX 1050Ti");
-  s.replace("GTX 1650 Ti", "GTX 1650Ti");
-  s.replace("RTX 2060 Super", "RTX 2060S");
-  s.replace("RTX 2070 Super", "RTX 2070S");
-  s.replace("RTX 2080 Super", "RTX 2080S");
-  s.replace("RX 5700 XT", "RX 5700XT");
-  s.replace("RX 6600 XT", "RX 6600XT");
-
+  s.replace("Advanced Micro Devices, Inc.", "");
+  s.replace("AMD/ATI", "AMD");
+  s.replace("Radeon RX 6600 XT", "RX 6600XT");
+  s.replace("Radeon RX 6600", "RX 6600");
   while (s.indexOf("  ") != -1) s.replace("  ", " ");
   s.trim();
   return s;
 }
 
-void drawInfoLine(int y, const char* label, String value, uint16_t color, int valueX) {
-  clearArea(0, y, SCREEN_W, 26);
-  tft.setTextSize(2);
-  tft.setTextColor(WHITE);
-  tft.setCursor(15, y);
-  tft.print(label);
-
-  tft.setTextColor(color);
-  tft.setCursor(valueX, y);
-  tft.print(value);
-}
-
-void drawProcessRow(int y, const char* label, String name, String cpu, String ram, uint16_t color) {
-  clearArea(0, y, SCREEN_W, 18);
-  tft.setTextSize(1);
-  tft.setTextColor(WHITE);
-  tft.setCursor(8, y + 4);
-  tft.print(label);
-  tft.setTextColor(color);
-  tft.setCursor(28, y + 4);
-  tft.print(name);
-  tft.setTextColor(YELLOW);
-  tft.setCursor(250, y + 4);
-  tft.print(cpu);
-  tft.setTextColor(CYAN);
-  tft.setCursor(360, y + 4);
-  tft.print(ram);
-}
-
-void drawLabelBar(int y, const char* label, int pct, uint16_t color) {
-  clearArea(0, y, SCREEN_W, 32);
-  tft.setTextSize(2);
-  tft.setTextColor(WHITE);
-  tft.setCursor(15, y);
-  tft.print(label);
-  drawBar(BAR_X, y + 2, BAR_W, BAR_H, pct, color);
-  tft.setCursor(BAR_X + BAR_W + 12, y);
-  tft.setTextColor(WHITE);
-  tft.print(pct);
-  tft.print("%");
-}
-
-void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal) {
-  cpuVal = constrain(cpuVal, 0, 100);
-  ramVal = constrain(ramVal, 0, 100);
-  gpuVal = constrain(gpuVal, 0, 100);
-  vramVal = constrain(vramVal, 0, 100);
-
-  for (int i = 0; i < GRAPH_POINTS - 1; i++) {
-    cpuHistory[i]  = cpuHistory[i + 1];
-    ramHistory[i]  = ramHistory[i + 1];
-    gpuHistory[i]  = gpuHistory[i + 1];
-    vramHistory[i] = vramHistory[i + 1];
-  }
-
-  cpuHistory[GRAPH_POINTS - 1]  = cpuVal;
-  ramHistory[GRAPH_POINTS - 1]  = ramVal;
-  gpuHistory[GRAPH_POINTS - 1]  = gpuVal;
-  vramHistory[GRAPH_POINTS - 1] = vramVal;
+void drawBar(int x, int y, int w, int h, int percent, uint16_t color) {
+  if (percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
+  tft.drawRect(x, y, w, h, WHITE);
+  int fill = (percent * (w - 2)) / 100;
+  tft.fillRect(x + 1, y + 1, w - 2, h - 2, BLACK);
+  if (fill > 0) tft.fillRect(x + 1, y + 1, fill, h - 2, color);
 }
 
 void drawHeader(const char* title, int page) {
@@ -279,126 +126,222 @@ void drawHeader(const char* title, int page) {
   tft.print(title);
   tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
 
-  if (page == 1 || page == 2 || page == 3 || page == 7) {
-    clearArea(0, SCREEN_H - 16, SCREEN_W, 16);
-    tft.setTextSize(1);
-    tft.setTextColor(WHITE);
-    tft.setCursor(12, SCREEN_H - 12);
-    tft.print("Tap to switch ");
-    tft.print(page);
-    tft.print("/");
-    tft.print(TOTAL_PAGES);
-  } else {
-    clearArea(0, SCREEN_H - 28, SCREEN_W, 28);
-    tft.setTextSize(2);
-    tft.setTextColor(WHITE);
-    tft.setCursor(12, SCREEN_H - 24);
-    tft.print("Tap anywhere to switch page ");
-    tft.print(page);
-    tft.print("/");
-    tft.print(TOTAL_PAGES);
-  }
+  clearArea(0, SCREEN_H - 18, SCREEN_W, 18);
+  tft.setTextSize(1);
+  tft.setTextColor(WHITE);
+  tft.setCursor(12, SCREEN_H - 12);
+  tft.print("Tap to switch ");
+  tft.print(page);
+  tft.print("/");
+  tft.print(TOTAL_PAGES);
 }
 
-void drawHomeLayout()      { drawHeader("Ray Co. Universal System Monitor", 1); }
-void drawCpuLayout()       { drawHeader("CPU Details", 2); }
-void drawProcLayout()      { drawHeader("Processes Details", 3); }
-void drawNetLayout()       { drawHeader("Network Details", 4); }
-void drawGpuLayout()       { drawHeader("GPU Details", 5); }
-void drawStorageLayout()   { drawHeader("Storage / Optical Drive Details", 6); }
-void drawGraphLayout()     { drawHeader("Usage Graph", 7); }
+void drawLabelBar(int y, const char* label, int pct, uint16_t color) {
+  clearArea(0, y, SCREEN_W, 30);
+  tft.setTextSize(2);
+  tft.setTextColor(WHITE);
+  tft.setCursor(15, y);
+  tft.print(label);
+  drawBar(145, y + 3, 220, 16, pct, color);
+  tft.setCursor(380, y);
+  tft.print(pct);
+  tft.print("%");
+}
+
+void drawInfoLine(int y, const char* label, String value, uint16_t color, int valueX) {
+  clearArea(0, y, SCREEN_W, 24);
+  tft.setTextSize(2);
+  tft.setTextColor(WHITE);
+  tft.setCursor(15, y);
+  tft.print(label);
+  tft.setTextColor(color);
+  tft.setCursor(valueX, y);
+  tft.print(value);
+}
+
+void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal) {
+  cpuVal = constrain(cpuVal, 0, 100);
+  ramVal = constrain(ramVal, 0, 100);
+  gpuVal = constrain(gpuVal, 0, 100);
+  vramVal = constrain(vramVal, 0, 100);
+  for (int i = 0; i < GRAPH_POINTS - 1; i++) {
+    cpuHistory[i] = cpuHistory[i + 1];
+    ramHistory[i] = ramHistory[i + 1];
+    gpuHistory[i] = gpuHistory[i + 1];
+    vramHistory[i] = vramHistory[i + 1];
+  }
+  cpuHistory[GRAPH_POINTS - 1] = cpuVal;
+  ramHistory[GRAPH_POINTS - 1] = ramVal;
+  gpuHistory[GRAPH_POINTS - 1] = gpuVal;
+  vramHistory[GRAPH_POINTS - 1] = vramVal;
+}
+
+void drawHomeLayout()    { drawHeader("Ray Co. Fedora System Monitor", 1); }
+void drawCpuLayout()     { drawHeader("CPU Threads", 2); }
+void drawProcLayout()    { drawHeader("Processes", 3); }
+void drawNetLayout()     { drawHeader("Network", 4); }
+void drawGpuLayout()     { drawHeader("GPU", 5); }
+void drawStorageLayout() { drawHeader("Storage Inventory", 6); }
+void drawGraphLayout()   { drawHeader("Usage Graph", 7); }
 
 void updateHome() {
-  drawLabelBar(48,  "CPU", cpuTotal, getColor(cpuTotal));
-  drawLabelBar(84,  "RAM", ramPct, YELLOW);
-  drawLabelBar(120, "D0",  diskPct, MAGENTA);
-  drawLabelBar(156, "D1",  disk1Pct, ORANGE);
+  drawLabelBar(46,  "CPU", cpuTotal, getColor(cpuTotal));
+  drawLabelBar(80,  "RAM", ramPct, CYAN);
+  drawLabelBar(114, "Fedora", fedoraDiskPct, MAGENTA);
+  drawLabelBar(148, "Share", shareDiskPct, ORANGE);
+  drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
+  drawInfoLine(210, "Temp", fitText(cpuTemp, 12), CYAN, 95);
+  drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
+  drawInfoLine(262, "Host", fitText(hostName, 24), CYAN, 95);
+}
 
-  drawInfoLine(186, "Freq", fitText(cpuFreqStr, 18), ORANGE, 90);
-  drawInfoLine(212, "Up",   fitText(uptimeStr, 18), WHITE, 90);
-  drawInfoLine(238, "OS",   fitText(prettyOS(osName), 24), ORANGE, 82);
-  drawInfoLine(264, "Host", fitText(hostName, 28), CYAN, 72);
+void drawThreadCell(int x, int y, int idx, int pct) {
+  uint16_t color = getColor(pct);
+  clearArea(x, y, 112, 36);
+  tft.setTextSize(1);
+  tft.setTextColor(WHITE);
+  tft.setCursor(x, y);
+  tft.print("C");
+  tft.print(idx);
+  tft.setCursor(x + 78, y);
+  tft.setTextColor(color);
+  tft.print(pct);
+  tft.print("%");
+  drawBar(x, y + 12, 102, 10, pct, color);
 }
 
 void updateCpu() {
-  drawLabelBar(45,  "TOT", cpuTotal, getColor(cpuTotal));
-  drawLabelBar(75,  "C0", cpu0, getColor(cpu0));
-  drawLabelBar(105, "C1", cpu1, getColor(cpu1));
-  drawLabelBar(135, "C2", cpu2, getColor(cpu2));
-  drawLabelBar(165, "C3", cpu3, getColor(cpu3));
-  drawLabelText(198, "Freq", cpuFreqStr, ORANGE);
-  drawLabelText(224, "Temp", cpuTemp, CYAN);
-  drawSmallText(252, "P1", proc1, WHITE);
-  drawSmallText(264, "P2", proc2, WHITE);
-  drawSmallText(276, "Up", uptimeStr, WHITE);
+  drawLabelBar(44, "Total", cpuTotal, getColor(cpuTotal));
+
+  int startY = 82;
+  int startX = 12;
+  int colW = 114;
+  int rowH = 44;
+  for (int i = 0; i < CPU_THREADS; i++) {
+    int row = i / 4;
+    int col = i % 4;
+    drawThreadCell(startX + (col * colW), startY + (row * rowH), i, cpuThreads[i]);
+  }
+
+  clearArea(0, 260, SCREEN_W, 34);
+  tft.setTextSize(2);
+  tft.setTextColor(ORANGE);
+  tft.setCursor(12, 266);
+  tft.print("Freq ");
+  tft.setTextColor(WHITE);
+  tft.print(fitText(cpuFreqStr, 10));
+  tft.setTextColor(CYAN);
+  tft.setCursor(260, 266);
+  tft.print("Temp ");
+  tft.setTextColor(WHITE);
+  tft.print(cpuTemp);
+}
+
+void drawProcessRow(int y, int idx, String name, String cpu, String ram, uint16_t color) {
+  clearArea(0, y, SCREEN_W, 24);
+  tft.setTextSize(1);
+  tft.setTextColor(WHITE);
+  tft.setCursor(10, y + 7);
+  tft.print(idx + 1);
+  tft.print(".");
+  tft.setTextColor(color);
+  tft.setCursor(28, y + 7);
+  tft.print(fitText(name, 20));
+  tft.setTextColor(YELLOW);
+  tft.setCursor(280, y + 7);
+  tft.print(cpu);
+  tft.setTextColor(CYAN);
+  tft.setCursor(380, y + 7);
+  tft.print(ram);
 }
 
 void updateProc() {
-  drawProcessRow(48,  "1", proc1, proc1Cpu, proc1Ram, GREEN);
-  drawProcessRow(66,  "2", proc2, proc2Cpu, proc2Ram, YELLOW);
-  drawProcessRow(84,  "3", proc3, proc3Cpu, proc3Ram, CYAN);
-  drawProcessRow(102, "4", proc4, proc4Cpu, proc4Ram, MAGENTA);
-  drawProcessRow(120, "5", proc5, proc5Cpu, proc5Ram, ORANGE);
-  drawProcessRow(138, "6", proc6, proc6Cpu, proc6Ram, WHITE);
+  clearArea(0, 42, SCREEN_W, 240);
+  tft.setTextSize(1);
+  tft.setTextColor(WHITE);
+  tft.setCursor(280, 44);
+  tft.print("CPU");
+  tft.setCursor(380, 44);
+  tft.print("RAM");
 
-  drawSmallText(164, "Top 6 CPU processes", "", WHITE);
-  drawSmallText(182, "CPU Total", String(cpuTotal) + "%", GREEN);
-  drawSmallText(194, "RAM Total", String(ramPct) + "%", CYAN);
-  drawSmallText(206, "GPU Total", String(gpuPct) + "%", YELLOW);
-  drawSmallText(218, "CPU Freq", cpuFreqStr, ORANGE);
+  uint16_t colors[PROCESS_ROWS] = {GREEN, YELLOW, CYAN, MAGENTA, ORANGE, WHITE};
+  for (int i = 0; i < PROCESS_ROWS; i++) {
+    drawProcessRow(58 + (i * 30), i, procName[i], procCpu[i], procRam[i], colors[i]);
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(GREEN);
+  tft.setCursor(12, 246);
+  tft.print("CPU ");
+  tft.setTextColor(WHITE);
+  tft.print(cpuTotal);
+  tft.print("%");
+  tft.setTextColor(CYAN);
+  tft.setCursor(180, 246);
+  tft.print("RAM ");
+  tft.setTextColor(WHITE);
+  tft.print(ramPct);
+  tft.print("%");
+  tft.setTextColor(YELLOW);
+  tft.setCursor(340, 246);
+  tft.print("GPU ");
+  tft.setTextColor(WHITE);
+  tft.print(gpuPct);
+  tft.print("%");
 }
 
 void updateNet() {
-  drawLabelTextCustom(48,  "Host", fitText(hostName, 28), CYAN, 72);
-  drawLabelTextCustom(78,  "OS", fitText(prettyOS(osName), 24), ORANGE, 68);
-  drawLabelTextCustom(108, "IP", ipAddr, WHITE, 78);
-  drawLabelTextCustom(138, "Down", downStr, GREEN, 95);
-  drawLabelTextCustom(168, "Up", upStr, YELLOW, 95);
-  drawLabelTextCustom(198, "DnTot", downTotalStr, CYAN, 95);
-  drawLabelTextCustom(228, "UpTot", upTotalStr, ORANGE, 95);
-  drawLabelTextCustom(258, "Up", uptimeStr, WHITE, 95);
+  drawInfoLine(48,  "Host", fitText(hostName, 24), CYAN, 95);
+  drawInfoLine(78,  "OS", fitText(osName, 20), ORANGE, 95);
+  drawInfoLine(108, "IP", fitText(ipAddr, 18), WHITE, 95);
+  drawInfoLine(138, "Down", fitText(downStr, 18), GREEN, 105);
+  drawInfoLine(168, "Up", fitText(upStr, 18), YELLOW, 105);
+  drawInfoLine(198, "DnTot", fitText(downTotalStr, 18), CYAN, 105);
+  drawInfoLine(228, "UpTot", fitText(upTotalStr, 18), ORANGE, 105);
+  drawInfoLine(258, "Up", fitText(uptimeStr, 18), WHITE, 105);
 }
 
 void updateGpu() {
   String gpuPretty = prettyGPU(gpuName);
+  drawLabelBar(48, "GPU", gpuPct, getColor(gpuPct));
 
-  drawLabelBar(50, "GPU", gpuPct, getColor(gpuPct));
-
-  clearArea(0, 88, SCREEN_W, 28);
-  tft.setTextColor(WHITE);
+  clearArea(0, 88, SCREEN_W, 30);
   tft.setTextSize(2);
+  tft.setTextColor(WHITE);
   tft.setCursor(15, 88);
   tft.print("Name");
-
-  // Draw GPU name with adaptive sizing
   if (gpuPretty.length() <= 20) {
-    tft.setTextSize(2);
-    tft.setTextColor(WHITE);
-    tft.setCursor(120, 88);
+    tft.setCursor(110, 88);
     tft.print(gpuPretty);
   } else {
     tft.setTextSize(1);
-    tft.setTextColor(WHITE);
-    tft.setCursor(120, 94);
-    tft.print(fitText(gpuPretty, 34));
+    tft.setCursor(110, 95);
+    tft.print(fitText(gpuPretty, 36));
   }
 
-  drawLabelText(122, "Temp", gpuTemp, CYAN);
-  drawLabelText(156, "VRAM", String(gpuMemUsed) + "/" + String(gpuMemTotal) + "M", YELLOW);
-  drawLabelText(190, "VRAM%", String(gpuMemPct) + "%", GREEN);
-  drawLabelText(224, "Clk", String(gpuClock) + "MHz", ORANGE);
+  drawInfoLine(122, "Temp", fitText(gpuTemp, 12), CYAN, 110);
+  drawInfoLine(156, "VRAM", String(gpuMemUsed) + "/" + String(gpuMemTotal) + "M", YELLOW, 110);
+  drawInfoLine(190, "VRAM%", String(gpuMemPct) + "%", GREEN, 128);
+  drawInfoLine(224, "Clk", String(gpuClock) + "MHz", ORANGE, 105);
 }
 
 void updateStorage() {
-  drawDiskLine(55,  disk0Str, WHITE);
-  drawDiskLine(75,  disk1Str, WHITE);
-  drawDiskLine(95,  disk2Str, WHITE);
-  drawDiskLine(115, disk3Str, WHITE);
+  clearArea(0, 42, SCREEN_W, 240);
+  for (int i = 0; i < STORAGE_LINES; i++) {
+    clearArea(0, 48 + (i * 26), SCREEN_W, 22);
+    tft.setTextSize(1);
+    tft.setTextColor(WHITE);
+    tft.setCursor(12, 56 + (i * 26));
+    tft.print(storageLine[i]);
+  }
 
-  drawLabelTextCustom(150, "OS", fitText(prettyOS(osName), 24), ORANGE, 68);
-  drawLabelText(185, "Optical", dvdStateStr, CYAN);
-  drawLabelText(220, "DSK0", String(diskPct) + "%", MAGENTA);
-  drawLabelText(255, "DSK1", String(disk1Pct) + "%", YELLOW);
+  tft.setTextSize(2);
+  tft.setTextColor(CYAN);
+  tft.setCursor(12, 236);
+  tft.print("Opt");
+  tft.setTextColor(WHITE);
+  tft.setCursor(80, 236);
+  tft.print(fitText(opticalStr, 18));
 }
 
 void updateGraph() {
@@ -449,7 +392,6 @@ void updateGraph() {
 
   clearArea(0, 198, SCREEN_W, 88);
   tft.setTextSize(2);
-
   tft.setTextColor(GREEN);
   tft.setCursor(20, 206);
   tft.print("CPU");
@@ -477,13 +419,6 @@ void updateGraph() {
   tft.setTextColor(WHITE);
   tft.setCursor(350, 232);
   tft.print(String(gpuMemPct) + "%");
-
-  clearArea(0, SCREEN_H - 16, SCREEN_W, 16);
-  tft.setTextSize(1);
-  tft.setTextColor(WHITE);
-  tft.setCursor(12, SCREEN_H - 12);
-  tft.print("Tap to switch 7/");
-  tft.print(TOTAL_PAGES);
 }
 
 void drawCurrentLayout() {
@@ -535,70 +470,38 @@ bool splitFields(String s, String out[], int expectedCount) {
 }
 
 void parseIncomingLine(String s) {
-  const int FIELD_COUNT = 48;
   String f[FIELD_COUNT];
   if (!splitFields(s, f, FIELD_COUNT)) return;
 
-  cpuTotal     = parsePercent(f[0]);
-  cpu0         = parsePercent(f[1]);
-  cpu1         = parsePercent(f[2]);
-  cpu2         = parsePercent(f[3]);
-  cpu3         = parsePercent(f[4]);
-  ramPct       = parsePercent(f[5]);
-  diskPct      = parsePercent(f[6]);
-  disk1Pct     = parsePercent(f[7]);
+  int idx = 0;
+  cpuTotal = parsePercent(f[idx++]);
+  for (int i = 0; i < CPU_THREADS; i++) cpuThreads[i] = parsePercent(f[idx++]);
+  ramPct = parsePercent(f[idx++]);
+  fedoraDiskPct = parsePercent(f[idx++]);
+  shareDiskPct = parsePercent(f[idx++]);
+  cpuTemp = f[idx++];
+  osName = f[idx++];
+  hostName = f[idx++];
+  ipAddr = f[idx++];
+  uptimeStr = f[idx++];
+  downStr = f[idx++];
+  upStr = f[idx++];
+  downTotalStr = f[idx++];
+  upTotalStr = f[idx++];
+  cpuFreqStr = f[idx++];
+  gpuPct = parsePercent(f[idx++]);
+  gpuTemp = f[idx++];
+  gpuMemUsed = f[idx++].toInt();
+  gpuMemTotal = f[idx++].toInt();
+  gpuMemPct = parsePercent(f[idx++]);
+  gpuClock = f[idx++].toInt();
+  gpuName = f[idx++];
 
-  cpuTemp      = f[8];
-  osName       = f[9];
-  hostName     = f[10];
-  ipAddr       = f[11];
-  uptimeStr    = f[12];
-  downStr      = f[13];
-  upStr        = f[14];
-  downTotalStr = f[15];
-  upTotalStr   = f[16];
-  cpuFreqStr   = f[17];
-
-  gpuPct       = parsePercent(f[18]);
-  gpuTemp      = f[19];
-  gpuMemUsed   = f[20].toInt();
-  gpuMemTotal  = f[21].toInt();
-  gpuMemPct    = parsePercent(f[22]);
-  gpuClock     = f[23].toInt();
-  gpuName      = f[24];
-
-  proc1        = f[25];
-  proc2        = f[26];
-  proc3        = f[27];
-  proc4        = f[28];
-  proc5        = f[29];
-  proc6        = f[30];
-
-  proc1Cpu     = f[31];
-  proc1Ram     = f[32];
-  proc2Cpu     = f[33];
-  proc2Ram     = f[34];
-  proc3Cpu     = f[35];
-  proc3Ram     = f[36];
-  proc4Cpu     = f[37];
-  proc4Ram     = f[38];
-  proc5Cpu     = f[39];
-  proc5Ram     = f[40];
-  proc6Cpu     = f[41];
-  proc6Ram     = f[42];
-
-  disk0Str     = f[43];
-  disk1Str     = f[44];
-  disk2Str     = f[45];
-  disk3Str     = f[46];
-  dvdStateStr  = f[47];
-
-  gpuPct = constrain(gpuPct, 0, 100);
-  gpuMemPct = constrain(gpuMemPct, 0, 100);
-  cpuTotal = constrain(cpuTotal, 0, 100);
-  ramPct = constrain(ramPct, 0, 100);
-  diskPct = constrain(diskPct, 0, 100);
-  disk1Pct = constrain(disk1Pct, 0, 100);
+  for (int i = 0; i < PROCESS_ROWS; i++) procName[i] = f[idx++];
+  for (int i = 0; i < PROCESS_ROWS; i++) procCpu[i] = f[idx++];
+  for (int i = 0; i < PROCESS_ROWS; i++) procRam[i] = f[idx++];
+  for (int i = 0; i < STORAGE_LINES; i++) storageLine[i] = f[idx++];
+  opticalStr = f[idx++];
 
   pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
   screenDirty = true;
@@ -615,6 +518,14 @@ void setup() {
     ramHistory[i] = 0;
     gpuHistory[i] = 0;
     vramHistory[i] = 0;
+  }
+  for (int i = 0; i < PROCESS_ROWS; i++) {
+    procName[i] = "--";
+    procCpu[i] = "--";
+    procRam[i] = "--";
+  }
+  for (int i = 0; i < STORAGE_LINES; i++) {
+    storageLine[i] = "Disk: --";
   }
 
   drawCurrentLayout();

@@ -38,9 +38,11 @@ WINDOWS_RELEASE = platform.release().strip() if IS_WINDOWS else ""
 IS_WINDOWS_7 = IS_WINDOWS and WINDOWS_RELEASE == "7"
 IS_WINDOWS_10_OR_11 = IS_WINDOWS and WINDOWS_RELEASE in ("10", "11")
 
-# Timing tuned for one script across Win7/10/11 and Linux.
-CPU_SAMPLE_INTERVAL = 0.4
-SEND_INTERVAL = 1.0
+# Per-platform timing tuned for one script across Win7/10/11 and Linux.
+# Win7 gets a gentler cadence so it does not flicker or hammer serial.
+# Win10/11 gets a much snappier cadence.
+CPU_SAMPLE_INTERVAL = 0.5
+SEND_INTERVAL = 1.7
 IDLE_LOOP_SLEEP = 0.02
 
 LHM_URL_CANDIDATES = [
