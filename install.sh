@@ -11,9 +11,28 @@ CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python3"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 have_command() {
     command -v "$1" >/dev/null 2>&1
+}
+
+run_preinstall_uninstall() {
+    local uninstall_script=""
+
+    echo "[pre] Running uninstall step for a clean install..."
+
+    if [ -x "$SCRIPT_DIR/uninstall_monitor.sh" ]; then
+        uninstall_script="$SCRIPT_DIR/uninstall_monitor.sh"
+    elif [ -x "$PROJECT_DIR/uninstall_monitor.sh" ]; then
+        uninstall_script="$PROJECT_DIR/uninstall_monitor.sh"
+    fi
+
+    if [ -n "$uninstall_script" ]; then
+        "$uninstall_script"
+    else
+        echo "No uninstall script found. Continuing with install."
+    fi
 }
 
 detect_distro() {
@@ -209,6 +228,7 @@ finish_message() {
     echo "=========================="
 }
 
+run_preinstall_uninstall
 detect_distro
 install_system_packages
 install_or_update_repo
