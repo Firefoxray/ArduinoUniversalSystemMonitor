@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.7  
+**Version:** 7.8  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -82,6 +82,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.5  - Re-added 2.8" TFT UNO R3 support, updated documentation, and clarified hardware requirements/options
 7.6  - Added Arduino CLI flashing workflow, automatic board/core/library setup, and install_arduinos.sh support
 7.7  - Added post-install Arduino flashing prompt, arduino_install.sh entrypoint, and updated install script documentation
+7.8  - Fixed Installer for Ubuntu/Mint machines due to Python restrictions
 ```
 
 ---
@@ -89,7 +90,6 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 ## TODO
 
 - Bundle Python, pip, and dependencies
-- Arduino programming without IDE
 
 ---
 
@@ -128,6 +128,8 @@ sudo dnf install -y git
 sudo pacman -Sy --noconfirm git
 ```
 
+### Linux Automatic Install Snippet
+
 ```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
 cd ArduinoUniversalSystemMonitor
@@ -135,7 +137,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### Linux One-Liner Install Snippet
+or
 
 ```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git && cd ArduinoUniversalSystemMonitor && chmod +x install.sh && ./install.sh
