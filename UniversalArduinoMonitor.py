@@ -85,6 +85,27 @@ PREFERRED_PORT = os.environ.get("ARDUINO_MONITOR_PORT")
 if not PREFERRED_PORT and CONFIG_ARDUINO_PORT and CONFIG_ARDUINO_PORT.upper() != "AUTO":
     PREFERRED_PORT = CONFIG_ARDUINO_PORT
 
+
+def parse_port_list(value: object) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_ports = [str(item).strip() for item in value]
+    else:
+        raw_ports = [chunk.strip() for chunk in str(value).split(",")]
+    ports: List[str] = []
+    for port in raw_ports:
+        if port and port.upper() != "AUTO" and port not in ports:
+            ports.append(port)
+    return ports
+
+
+CONFIG_ARDUINO_PORTS = parse_port_list(CONFIG.get("arduino_ports"))
+ENV_ARDUINO_PORTS = parse_port_list(os.environ.get("ARDUINO_MONITOR_PORTS"))
+EXPLICIT_ARDUINO_PORTS = ENV_ARDUINO_PORTS or CONFIG_ARDUINO_PORTS
+if PREFERRED_PORT and PREFERRED_PORT not in EXPLICIT_ARDUINO_PORTS:
+    EXPLICIT_ARDUINO_PORTS = [PREFERRED_PORT, *EXPLICIT_ARDUINO_PORTS]
+
 CPU_SAMPLE_INTERVAL = 0.20
 SEND_INTERVAL = max(0.2, to_float(CONFIG.get("send_interval"), 1.0))
 IDLE_LOOP_SLEEP = 0.03
@@ -282,8 +303,14 @@ def get_temp() -> str:
 
 def list_candidate_ports() -> List[str]:
     ports = []
-    if PREFERRED_PORT:
-        ports.append(PREFERRED_PORT)
+
+    for explicit_port in EXPLICIT_ARDUINO_PORTS:
+        if explicit_port not in ports:
+            ports.append(explicit_port)
+
+    if ports:
+        return ports
+
     for port in list_ports.comports():
         device = port.device
         if device not in ports and ("ttyACM" in device or "ttyUSB" in device):
@@ -291,24 +318,43 @@ def list_candidate_ports() -> List[str]:
     return ports
 
 
-def connect_arduino() -> serial.Serial:
-    while True:
-        for port in list_candidate_ports():
-            try:
-                print(f"Arduino found on {port}")
-                ser = serial.Serial(port, BAUD, timeout=1, write_timeout=2)
-                time.sleep(SERIAL_SETTLE_DELAY)
-                try:
-                    ser.reset_input_buffer()
-                    ser.reset_output_buffer()
-                except Exception:
-                    pass
-                print(f"Connected to Arduino on {port}")
-                return ser
-            except (SerialException, OSError) as exc:
-                print(f"Failed to open {port}: {exc}")
+def connect_arduino_port(port: str) -> Optional[serial.Serial]:
+    try:
+        print(f"Arduino found on {port}")
+        ser = serial.Serial(port, BAUD, timeout=1, write_timeout=2)
+        time.sleep(SERIAL_SETTLE_DELAY)
+        try:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+        except Exception:
+            pass
+        print(f"Connected to Arduino on {port}")
+        return ser
+    except (SerialException, OSError) as exc:
+        print(f"Failed to open {port}: {exc}")
+        return None
+
+
+def connect_arduinos(existing: Optional[Dict[str, serial.Serial]] = None) -> Dict[str, serial.Serial]:
+    connected: Dict[str, serial.Serial] = dict(existing or {})
+    for port in list_candidate_ports():
+        if port in connected and connected[port].is_open:
+            continue
+        ser = connect_arduino_port(port)
+        if ser is not None:
+            connected[port] = ser
+    return connected
+
+
+def connect_arduinos_blocking() -> Dict[str, serial.Serial]:
+    connected: Dict[str, serial.Serial] = {}
+    while not connected:
+        connected = connect_arduinos(connected)
+        if connected:
+            break
         print("Waiting for Arduino to reconnect...")
         time.sleep(RETRY_DELAY)
+    return connected
 
 
 def connect_optional_serial(path: str, baud: int, label: str) -> Optional[serial.Serial]:
@@ -922,9 +968,10 @@ def main() -> None:
     last_net = net_stats.get(iface) or psutil.net_io_counters()
     last_time = time.time()
 
-    ser = connect_arduino()
+    arduino_serials = connect_arduinos_blocking()
     debug_ser: Optional[serial.Serial] = connect_optional_serial(DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror") if DEBUG_MIRROR_ENABLED else None
     last_send = 0.0
+    last_discovery_attempt = 0.0
 
     while True:
         try:
@@ -935,22 +982,38 @@ def main() -> None:
 
             snapshot, last_net, last_time = build_snapshot(last_net, last_time)
             payload = build_arduino_payload(snapshot)
-            ser.write(payload.encode("utf-8"))
+
+            disconnected_ports: List[str] = []
+            for port, ser in list(arduino_serials.items()):
+                try:
+                    ser.write(payload.encode("utf-8"))
+                except (SerialException, OSError) as exc:
+                    print(f"Arduino disconnected or serial write failed on {port}: {exc}")
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
+                    disconnected_ports.append(port)
+
+            for port in disconnected_ports:
+                arduino_serials.pop(port, None)
+
+            if not arduino_serials:
+                print("No Arduino connections active. Reconnecting...")
+                time.sleep(RETRY_DELAY)
+                arduino_serials = connect_arduinos_blocking()
+                last_discovery_attempt = time.time()
+                continue
+
+            if (time.time() - last_discovery_attempt) >= RETRY_DELAY:
+                arduino_serials = connect_arduinos(arduino_serials)
+                last_discovery_attempt = time.time()
 
             if DEBUG_MIRROR_ENABLED:
                 debug_payload = build_debug_payload(snapshot)
                 debug_ser = write_optional_serial(debug_ser, debug_payload, DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror")
 
             last_send = time.time()
-
-        except (SerialException, OSError) as exc:
-            print(f"Arduino disconnected or serial write failed: {exc}")
-            try:
-                ser.close()
-            except Exception:
-                pass
-            time.sleep(RETRY_DELAY)
-            ser = connect_arduino()
 
         except KeyboardInterrupt:
             print("Exiting.")
@@ -961,7 +1024,11 @@ def main() -> None:
             time.sleep(1.0)
 
     try:
-        ser.close()
+        for ser in arduino_serials.values():
+            try:
+                ser.close()
+            except Exception:
+                pass
     except Exception:
         pass
     try:
