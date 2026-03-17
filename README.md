@@ -218,3 +218,13 @@ ls -l /dev/ttyACM0
 ```bash
 sudo systemctl status arduino-monitor
 ```
+
+## Debug Tools
+
+This repository also includes a Java-based Fake Arduino Display tool for testing the serial output without requiring a physical Arduino.
+
+Location:
+`debug_tools/FakeArduinoDisplay`
+
+Use it with a virtual serial pair such as:
+`/tmp/fakearduino_in` and `/tmp/fakearduino_out`
