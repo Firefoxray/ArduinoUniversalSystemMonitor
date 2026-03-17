@@ -90,11 +90,21 @@ install_script() {
     fi
 
     if [ -f "$CONFIG_NAME" ]; then
-        cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
-    else
-        echo "Warning: $CONFIG_NAME not found in current directory."
-        echo "The monitor will use built-in defaults until a config file is added."
-    fi
+    cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
+else
+    echo "Creating default $CONFIG_NAME..."
+    cat > "$PROJECT_DIR/$CONFIG_NAME" <<'EOF'
+{
+  "arduino_port": "AUTO",
+  "baud": 115200,
+  "debug_enabled": false,
+  "debug_port": "/tmp/fakearduino_in",
+  "root_mount": "/",
+  "secondary_mount": "/mnt/linux_storage",
+  "send_interval": 2.0
+}
+EOF
+fi
 
     chmod +x "$PROJECT_DIR/$SCRIPT_NAME"
 }
