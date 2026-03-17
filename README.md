@@ -70,6 +70,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.0  - Added Fedora KDE 43 support
 7.1  - Reorganized folder structure, separated Windows components
 7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
+7.3  - Added basic Java GUI debugger/emulator and a new Python debugger file in root
 ```
 
 ---
