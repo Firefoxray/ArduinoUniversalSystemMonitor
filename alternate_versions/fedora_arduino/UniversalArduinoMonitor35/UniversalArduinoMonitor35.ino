@@ -44,8 +44,8 @@ bool screenDirty = false;
 int cpuTotal = 0;
 int cpuThreads[CPU_THREADS];
 int ramPct = 0;
-int disk0Pct = 0;
-int disk1Pct = 0;
+int fedoraDiskPct = 0;
+int shareDiskPct = 0;
 int gpuPct = 0;
 int gpuMemUsed = 0;
 int gpuMemTotal = 0;
@@ -176,7 +176,7 @@ void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal) {
   vramHistory[GRAPH_POINTS - 1] = vramVal;
 }
 
-void drawHomeLayout()    { drawHeader("Ray Co. System Monitor", 1); }
+void drawHomeLayout()    { drawHeader("Ray Co. Fedora System Monitor", 1); }
 void drawCpuLayout()     { drawHeader("CPU Threads", 2); }
 void drawProcLayout()    { drawHeader("Processes", 3); }
 void drawNetLayout()     { drawHeader("Network", 4); }
@@ -187,12 +187,12 @@ void drawGraphLayout()   { drawHeader("Usage Graph", 7); }
 void updateHome() {
   drawLabelBar(46,  "CPU", cpuTotal, getColor(cpuTotal));
   drawLabelBar(80,  "RAM", ramPct, CYAN);
-  drawLabelBar(114, "Disk0", disk0Pct, MAGENTA);
-  drawLabelBar(148, "Disk1", disk1Pct, ORANGE);
+  drawLabelBar(114, "Fedora", fedoraDiskPct, MAGENTA);
+  drawLabelBar(148, "Share", shareDiskPct, ORANGE);
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
   drawInfoLine(210, "Temp", fitText(cpuTemp, 12), CYAN, 95);
   drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
-  drawInfoLine(262, "OS", fitText(osName, 24), CYAN, 95);
+  drawInfoLine(262, "Host", fitText(hostName, 24), CYAN, 95);
 }
 
 void drawThreadCell(int x, int y, int idx, int pct) {
@@ -477,8 +477,8 @@ void parseIncomingLine(String s) {
   cpuTotal = parsePercent(f[idx++]);
   for (int i = 0; i < CPU_THREADS; i++) cpuThreads[i] = parsePercent(f[idx++]);
   ramPct = parsePercent(f[idx++]);
-  disk0Pct = parsePercent(f[idx++]);
-  disk1Pct = parsePercent(f[idx++]);
+  fedoraDiskPct = parsePercent(f[idx++]);
+  shareDiskPct = parsePercent(f[idx++]);
   cpuTemp = f[idx++];
   osName = f[idx++];
   hostName = f[idx++];

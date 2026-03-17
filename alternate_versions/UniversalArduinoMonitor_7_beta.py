@@ -486,35 +486,11 @@ def parse_pretty_gpu_name(vendor_hint: str) -> str:
             name = line.split(":", 2)[-1].strip()
         except Exception:
             name = line
-
-        bracket_parts = re.findall(r"\[([^\]]+)\]", name)
-        useful_bracket = None
-        for part in bracket_parts:
-            part_lower = part.lower()
-            if any(tok in part_lower for tok in ("radeon", "geforce", "rtx", "gtx", "arc", "iris", "uhd", "vega")):
-                useful_bracket = part.strip()
-                break
-
         name = re.sub(r"\(rev [^)]+\)", "", name)
+        name = re.sub(r"\[[^\]]+\]", "", name)
         name = name.replace("Advanced Micro Devices, Inc. ", "")
         name = name.replace("AMD/ATI ", "")
-        name = name.replace("NVIDIA Corporation ", "")
-        name = name.replace("Intel Corporation ", "")
         name = name.replace("Corporation", "")
-        name = name.replace("[AMD/ATI]", "")
-        name = name.replace("[AMD]", "")
-        name = re.sub(r"\s+", " ", name).strip(" -")
-
-        if useful_bracket:
-            if vendor_hint == "amd":
-                return clean_field(f"AMD {useful_bracket}", 32)
-            if vendor_hint == "nvidia":
-                return clean_field(f"NVIDIA {useful_bracket}", 32)
-            if vendor_hint == "intel":
-                return clean_field(f"Intel {useful_bracket}", 32)
-            return clean_field(useful_bracket, 32)
-
-        name = re.sub(r"\[[^\]]+\]", "", name)
         name = re.sub(r"\s+", " ", name).strip(" -")
         if vendor_hint == "amd" and not name.startswith("AMD"):
             return clean_field(f"AMD {name}", 32)
