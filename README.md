@@ -1,18 +1,9 @@
-## Quick Start (Linux)
-
-```bash
-git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
-cd ArduinoUniversalSystemMonitor
-chmod +x install.sh
-./install.sh
-```
-
 # Ray Co. Arduino Desktop System Monitor
 
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.1  
+**Version:** 7.2  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -38,19 +29,19 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 ## Important Notes
 
-- The main `UniversalArduinoMonitor.py` is optimized and tested for **Fedora (KDE 43)**.
-- It may also work on other Linux distributions, but behavior can vary.
-- Alternative versions for Windows and other Linux systems are available in:
-  
-```text
-alternate_versions/
-```
+- This project is **developed and tested on Fedora (KDE 43)**.
+- It is now designed to work across **most Linux distributions**.
+- GPU detection supports:
+  - NVIDIA (`nvidia-smi`)
+  - AMD (DRM/sysfs)
+  - Intel (DRM/sysfs / intel tools)
+- Behavior may vary depending on drivers and system configuration.
 
 ---
 
 ## Requirements
 
-- Python 3.8+ (3.8 required for Windows 7 compatibility)
+- Python 3.8+
 - Arduino IDE 1.8.19+
 - Arduino UNO R4 (USB-C) or UNO R3 (USB-B)
 - Arduino 3.5" TFT Display
@@ -78,6 +69,7 @@ alternate_versions/
 6.0  - Stable release, Linux packages separated
 7.0  - Added Fedora KDE 43 support
 7.1  - Reorganized folder structure, separated Windows components
+7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
 ```
 
 ---
@@ -86,7 +78,6 @@ alternate_versions/
 
 - Bundle Python, pip, and dependencies
 - Arduino programming without IDE
-- Improve multi-core CPU support (8–12 cores)
 
 ---
 
@@ -122,47 +113,8 @@ alternate_versions/
 
 ## Python Setup
 
-Install Python 3.8+
-
-Install required libraries:
-
 ```bash
 python3 -m pip install psutil pyserial
-```
-
----
-
-## Windows Setup
-
-1. Install LibreHardwareMonitor and open it  
-2. Enable:
-   - Start Minimized  
-   - Minimize to Tray  
-   - Run on Startup  
-3. Enable **Remote Web Server**
-
-4. Create the folder:
-
-```text
-C:\ArduinoMonitor
-```
-
-5. Place:
-
-```text
-UniversalArduinoMonitor.py
-```
-
-6. Press `WIN + R`, type:
-
-```text
-shell:startup
-```
-
-7. Place:
-
-```text
-DELAYED_RUN_UniversalArduinoMonitor.bat
 ```
 
 ---
@@ -170,40 +122,21 @@ DELAYED_RUN_UniversalArduinoMonitor.bat
 ## Linux Setup (Automatic)
 
 ```bash
+git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
+cd ArduinoUniversalSystemMonitor
 chmod +x install.sh
 ./install.sh
 ```
-
-This will:
-- Install dependencies  
-- Configure serial permissions  
-- Set up auto-start service  
 
 ---
 
 ## Linux Setup (Manual)
 
-### Step 1 — Create Script
-
-```bash
-nano ~/UniversalArduinoMonitor.py
-```
-
-Save with:
-
-```
-CTRL + O → ENTER → CTRL + X
-```
-
----
-
-### Step 2 — Create Systemd Service
+### Create Service
 
 ```bash
 sudo nano /etc/systemd/system/arduino-monitor.service
 ```
-
-Paste:
 
 ```ini
 [Unit]
@@ -221,7 +154,7 @@ WantedBy=multi-user.target
 
 ---
 
-### Step 3 — Enable Service
+### Enable
 
 ```bash
 sudo systemctl daemon-reload
@@ -231,7 +164,7 @@ sudo systemctl start arduino-monitor
 
 ---
 
-### Step 4 — Serial Permissions Fix (IMPORTANT)
+### Serial Permissions (IMPORTANT)
 
 ```bash
 sudo usermod -aG dialout $USER
@@ -242,16 +175,6 @@ Log out and back in.
 ---
 
 # Running the Program
-
-**Make sure the Arduino is plugged in**
-
-## Windows
-Run:
-```
-UniversalArduinoMonitor.py
-```
-
----
 
 ## Linux
 
@@ -266,16 +189,6 @@ sudo systemctl status arduino-monitor
 
 # Troubleshooting
 
-### Verify Python and Dependencies
-
-```bash
-python3 --version
-python3 -m pip install psutil pyserial
-python3 -c "import psutil, serial; print('OK')"
-```
-
----
-
 ### Check Arduino Port
 
 ```bash
@@ -284,7 +197,7 @@ ls /dev/ttyACM* /dev/ttyUSB*
 
 ---
 
-### Detect Arduino on Plug-In
+### Detect Plug-In
 
 ```bash
 dmesg -w
@@ -298,11 +211,9 @@ dmesg -w
 ls -l /dev/ttyACM0
 ```
 
-Ensure your user is in `dialout` or `uucp`.
-
 ---
 
-### Check Service Status
+### Check Service
 
 ```bash
 sudo systemctl status arduino-monitor
