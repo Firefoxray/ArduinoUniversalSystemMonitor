@@ -1,4 +1,4 @@
-# Ray Co. Arduino Desktop System Monitor
+# Ray Co. Linux / Windows Arduino Desktop System Monitor
 
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
