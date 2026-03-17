@@ -136,6 +136,12 @@ chmod +x install.sh
 ./install.sh
 ```
 
+### Linux One-Liner Install Snippet
+
+```bash
+git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git && cd ArduinoUniversalSystemMonitor && chmod +x install.sh && ./install.sh
+```
+
 ---
 
 ## Linux Setup (Manual)
@@ -237,11 +243,11 @@ Location:
 Use it with a virtual serial pair such as:
 `/tmp/fakearduino_in` and `/tmp/fakearduino_out`
 
-Debug mirror is now enabled from `monitor_config.json`:
+Debug mirror is configured from `monitor_config.json` and is disabled by default:
 
 ```json
 {
-  "debug_enabled": true,
+  "debug_enabled": false,
   "debug_port": "/tmp/fakearduino_in"
 }
 ```

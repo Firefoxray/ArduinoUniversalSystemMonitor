@@ -6,6 +6,8 @@ echo "==== Ray Co Arduino Monitor Installer ===="
 
 PROJECT_DIR="$HOME/ArduinoMonitor"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
+DEBUG_MIRROR_SCRIPT_NAME="UniversalArduinoMonitor_debugmirror.py"
+CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
 PYTHON_BIN="/usr/bin/python3"
 
@@ -81,6 +83,19 @@ install_script() {
     fi
 
     cp "$SCRIPT_NAME" "$PROJECT_DIR/$SCRIPT_NAME"
+
+    if [ -f "$DEBUG_MIRROR_SCRIPT_NAME" ]; then
+        cp "$DEBUG_MIRROR_SCRIPT_NAME" "$PROJECT_DIR/$DEBUG_MIRROR_SCRIPT_NAME"
+        chmod +x "$PROJECT_DIR/$DEBUG_MIRROR_SCRIPT_NAME"
+    fi
+
+    if [ -f "$CONFIG_NAME" ]; then
+        cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
+    else
+        echo "Warning: $CONFIG_NAME not found in current directory."
+        echo "The monitor will use built-in defaults until a config file is added."
+    fi
+
     chmod +x "$PROJECT_DIR/$SCRIPT_NAME"
 }
 
@@ -94,6 +109,7 @@ After=network.target
 
 [Service]
 ExecStart=$PYTHON_BIN $PROJECT_DIR/$SCRIPT_NAME
+WorkingDirectory=$PROJECT_DIR
 Restart=always
 User=$USER
 
@@ -105,14 +121,15 @@ EOF
 enable_service() {
     echo "[6/6] Enabling and starting service..."
     sudo systemctl daemon-reload
-    sudo systemctl enable arduino-monitor
-    sudo systemctl restart arduino-monitor
+    sudo systemctl enable "$SERVICE_NAME"
+    sudo systemctl restart "$SERVICE_NAME"
 }
 
 finish_message() {
     echo
     echo "==== INSTALL COMPLETE ===="
     echo "Project installed to: $PROJECT_DIR"
+    echo "Config file: $PROJECT_DIR/$CONFIG_NAME"
     echo
     echo "IMPORTANT:"
     echo "- Reboot or log out/log back in so new serial permissions apply."
