@@ -4,7 +4,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 **Author:** Ray Barrett  
 **Version:** 7.0  
-**Last Modified:** March 17, 2026 ; 1:52 AM  
+**Last Modified:** March 17, 2026, 1:52 AM  
 
 ---
 
@@ -22,7 +22,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 ## Changelog
 
-```
+```text
 4.0  - Initial
 4.1  - Fixed ReadMe
 4.2  - Enlarged Text for OS and Hostname, Fixed on Linux
@@ -36,7 +36,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 5.4  - Laptop support (no charging % yet)
 5.5  - Dropped Windows XP support
 6.0  - Stable release, Linux packages separated
-7.0  - Added Fedora KDE 43 Support seperately
+7.0  - Added Fedora KDE 43 support separately
 ```
 
 ---
@@ -51,40 +51,38 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 ## Confirmed Working Systems
 
-- Windows 11 Pro  
-- Windows 10 LTSC  
-- Windows 7 Ultimate  
+- Windows 11 Pro
+- Windows 10 LTSC
+- Windows 7 Ultimate
 - Linux Mint 22.3
-- Fedora KDE 43  
+- Fedora KDE 43
 
 ---
 
 # Installation
 
----
-
 ## Arduino Setup
 
-1. Install Arduino IDE  
+1. Install Arduino IDE.
 2. Open **Boards Manager** and install:
-   - Arduino UNO R4 Boards  
+   - Arduino UNO R4 Boards
 3. Install libraries:
-   - Arduino TFT Touchscreen  
-   - DIYables TFT Touch Shield  
+   - Arduino TFT Touchscreen
+   - DIYables TFT Touch Shield
 
-**IMPORTANT:** Plug in Arduino before continuing
+**IMPORTANT:** Plug in the Arduino before continuing.
 
 4. Open:
-   - `UniversalArduinoMonitor35` (3.5" display)  
-   - `UniversalArduinoMonitor28` (2.8" display)  
+   - `UniversalArduinoMonitor35` for the 3.5" display
+   - `UniversalArduinoMonitor28` for the 2.8" display
 
-5. Select correct port and click **Upload**
+5. Select the correct board and port, then click **Upload**.
 
 ---
 
 ## Python Setup
 
-Install Python 3.8+
+Install Python 3.8+.
 
 Install required libraries:
 
@@ -102,36 +100,39 @@ python3 -m pip install psutil pyserial
 
 ## Windows Setup
 
-1. Install LibreHardwareMonitor and open it  
+1. Install LibreHardwareMonitor and open it.
 2. Enable:
-   - Start Minimized  
-   - Minimize to Tray  
-   - Run on Startup  
+   - Start Minimized
+   - Minimize to Tray
+   - Run on Startup
+3. Enable **Remote Web Server**.
+4. Create the folder:
 
-3. Enable **Remote Web Server**
-
-4. Create folder:
-```
+```text
 C:\ArduinoMonitor
 ```
 
-5. Place:
-```
+5. Place this file inside:
+
+```text
 UniversalArduinoMonitor.py
 ```
 
 6. Press `WIN + R`, type:
-```
+
+```text
 shell:startup
 ```
 
-7. Place:
-```
+7. Place this file there:
+
+```text
 DELAYED_RUN_UniversalArduinoMonitor.bat
 ```
 
 ---
-## Fedora Linux Setup (Automatic)
+
+## Linux Setup (Automatic)
 
 Run:
 
@@ -142,9 +143,10 @@ chmod +x install.sh
 
 This will:
 - Install dependencies
-- Configure permissions
-- Set up auto-start service
+- Configure serial permissions
+- Set up the auto-start service
 
+---
 
 ## Linux Setup (Manual)
 
@@ -154,9 +156,9 @@ This will:
 nano ~/UniversalArduinoMonitor.py
 ```
 
-Paste the script, then save:
+Paste the script, then save with:
 
-```
+```text
 CTRL + O → ENTER → CTRL + X
 ```
 
@@ -195,7 +197,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable arduino-monitor
 sudo systemctl start arduino-monitor
 ```
-### Serial Permissions Fix (IMPORTANT)
+
+---
+
+### Step 4 — Serial Permissions Fix (IMPORTANT)
 
 If the Arduino is not detected or you get permission errors, run:
 
@@ -203,44 +208,50 @@ If the Arduino is not detected or you get permission errors, run:
 sudo usermod -aG dialout $USER
 ```
 
-Then log out and log back in (or reboot).
+Then log out and log back in, or reboot.
 
 This allows your user to access serial devices like `/dev/ttyACM0`.
+
 ---
 
 # Running the Program
 
-**IMPORTANT:** Make sure Arduino is plugged in
+**IMPORTANT:** Make sure the Arduino is plugged in.
 
 ## Windows
 
 Run:
-```
+
+```text
 UniversalArduinoMonitor.py
 ```
 
-or use the batch file.
+or use the provided batch file.
 
 ---
 
 ## Linux
 
 Start:
+
 ```bash
 sudo systemctl start arduino-monitor
 ```
 
 Stop:
+
 ```bash
 sudo systemctl stop arduino-monitor
 ```
 
 Restart:
+
 ```bash
 sudo systemctl restart arduino-monitor
 ```
 
 Check status:
+
 ```bash
 sudo systemctl status arduino-monitor
 ```
@@ -250,19 +261,102 @@ sudo systemctl status arduino-monitor
 # Done
 
 The system should now:
-- Start automatically  
-- Send stats to Arduino  
-- Display live system data  
+- Start automatically
+- Send stats to the Arduino
+- Display live system data
 
 ---
 
 # Troubleshooting
 
-- Use backup versions first  
-- Check Arduino port  
-- Ensure Python dependencies are installed  
-- Verify service is running:
+- Use alternate versions first
+
+### Verify Python and Dependencies
+
+Make sure Python is installed:
+
+```bash
+python3 --version
+```
+
+If not installed, install it:
+
+**Fedora:**
+```bash
+sudo dnf install python3 python3-pip
+```
+
+**Debian/Ubuntu:**
+```bash
+sudo apt update
+sudo apt install python3 python3-pip
+```
+
+**Arch:**
+```bash
+sudo pacman -Sy python python-pip
+```
+
+---
+
+Install required Python libraries:
+
+```bash
+python3 -m pip install psutil pyserial
+```
+
+---
+
+Verify they are installed correctly:
+
+```bash
+python3 -c "import psutil, serial; print('OK')"
+```
+
+If this prints `OK`, everything is working.
+- 
+- Verify the service is running:
 
 ```bash
 sudo systemctl status arduino-monitor
 ```
+
+### Check Arduino Port (Linux)
+
+To see which port your Arduino is using, run:
+
+```bash
+ls /dev/ttyACM* /dev/ttyUSB*
+```
+
+Typical outputs:
+- `/dev/ttyACM0` → Most Arduino boards (UNO R4, etc.)
+- `/dev/ttyUSB0` → Some older boards or clones
+
+---
+
+### Detect Arduino When Plugging In
+
+You can also watch the device appear in real time:
+
+```bash
+dmesg -w
+```
+
+Then plug in the Arduino and look for lines like:
+
+```
+ttyACM0: USB ACM device
+```
+
+---
+
+### Verify Permissions
+
+Check if you have access:
+
+```bash
+ls -l /dev/ttyACM0
+```
+
+If it shows `dialout` or `uucp`, make sure your user is in that group.
