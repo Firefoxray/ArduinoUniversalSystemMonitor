@@ -1,3 +1,12 @@
+## Quick Start (Linux)
+
+```bash
+git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
+cd ArduinoUniversalSystemMonitor
+chmod +x install.sh
+./install.sh
+```
+
 # Ray Co. Arduino Desktop System Monitor
 
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
