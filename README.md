@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.8  
+**Version:** 8.0-test  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -83,6 +83,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.6  - Added Arduino CLI flashing workflow, automatic board/core/library setup, and install_arduinos.sh support
 7.7  - Added post-install Arduino flashing prompt, arduino_install.sh entrypoint, and updated install script documentation
 7.8  - Fixed Installer for Ubuntu/Mint machines due to Python restrictions
+8.0  - Added Java Control Center (install/uninstall/update/flash/fake-port tooling) and integrated debug display launcher
 ```
 
 ---

@@ -1,108 +1,73 @@
-# Fake Arduino Display (Java Debug Tool)
+# Fake Arduino Display + Control Center (Java)
 
-A desktop Java application that emulates the Arduino TFT display used by
-the Universal Arduino System Monitor.
+A desktop Java application suite for the Universal Arduino System Monitor.
 
-This tool allows you to test and visualize serial output from the Python
-monitor **without requiring a physical Arduino**.
+It now includes:
 
-------------------------------------------------------------------------
-
-## Features
-
--   Live serial parsing of monitor data
--   Multi-page display (Home, CPU, Processes, Network, GPU, Storage,
-    Graph)
--   Click-to-switch pages (matches Arduino touchscreen behavior)
--   Raw serial log viewer
--   Parsed field breakdown
--   Designed to mirror the real Arduino UI layout
+- **UniversalMonitorControlCenter** (new): a launcher/control panel for install, uninstall, update, flashing, fake-port management, and opening the debug display.
+- **JavaSerialFakeDisplay** (existing): the full serial debugger + Arduino-style fake TFT window.
 
 ------------------------------------------------------------------------
 
-## How It Works
+## What the Control Center Can Do
 
-This program connects to a serial port and reads formatted packets like:
-
-    CPU:24|RAM:51|DISK0:72|DISK1:44|...
-
-It then renders a visual representation of the Arduino display.
+- Run Linux scripts from the repo:
+  - `install.sh`
+  - `uninstall_monitor.sh`
+  - `update.sh`
+  - `arduino_install.sh`
+- Manage virtual serial ports with `socat`
+  - Start fake ports using configurable input/output paths
+  - Stop fake ports from the UI
+- Open the existing debug display app with one click
+- Show a built-in Arduino-style preview panel
+- Stream command output logs in-app
 
 ------------------------------------------------------------------------
 
-## Usage (Recommended with Virtual Serial)
+## IntelliJ Workflow
 
-### 1. Create virtual serial ports
+1. Open `debug_tools/FakeArduinoDisplay` in IntelliJ.
+2. Let Gradle import dependencies.
+3. Run:
+   - `UniversalMonitorControlCenter` (recommended launcher)
+   - or `JavaSerialFakeDisplay` directly if you only need serial debugging.
 
-``` bash
-socat -d -d \
-pty,raw,echo=0,link=/tmp/fakearduino_in \
-pty,raw,echo=0,link=/tmp/fakearduino_out
+The project intentionally stays as plain Java source so it is easy to edit and extend in IntelliJ.
+
+------------------------------------------------------------------------
+
+## Virtual Port Notes
+
+The fake-port helper uses `socat`. On Linux:
+
+```bash
+sudo apt install -y socat
+# or sudo dnf install -y socat
 ```
 
-------------------------------------------------------------------------
+Default fake ports used by the UI:
 
-### 2. Configure Python monitor
-
-Enable debug mode in `monitor_config.json`:
-
-``` json
-{
-  "debug_enabled": true,
-  "debug_port": "/tmp/fakearduino_in"
-}
-```
+- Input: `/tmp/fakearduino_in`
+- Output: `/tmp/fakearduino_out`
 
 ------------------------------------------------------------------------
 
-### 3. Run the Java display
+## Existing Debug Display
 
--   Open project in IntelliJ
--   Run `JavaSerialFakeDisplay`
+`JavaSerialFakeDisplay` still supports:
 
-------------------------------------------------------------------------
-
-### 4. Select port
-
-In the app, choose:
-
-    /tmp/fakearduino_out
+- Live serial parsing (`KEY:VALUE|KEY:VALUE` packets)
+- Multi-page Arduino-style display preview
+- Raw serial logs and parsed field view
+- Click preview area to switch pages
 
 ------------------------------------------------------------------------
 
-## Controls
+## Entry Point
 
--   Click display area → switch pages
--   Refresh Ports → reload available serial ports
--   Raw Log → shows incoming serial data
--   Parsed Fields → shows extracted values
+Gradle `application` now defaults to:
 
-------------------------------------------------------------------------
+- `UniversalMonitorControlCenter`
 
-## Project Structure
-
-    src/main/java/
-        JavaSerialFakeDisplay.java
-
-------------------------------------------------------------------------
-
-## Notes
-
--   Designed for Linux (uses `/tmp/` virtual ports)
--   Works alongside real Arduino (mirror mode)
--   Intended as a debugging and development tool
-
-------------------------------------------------------------------------
-
-## Future Improvements
-
--   Replay recorded sessions
--   Theme customization
--   Packet validation and error highlighting
--   Cross-platform serial support improvements
-
-------------------------------------------------------------------------
-
-## License
-
-Part of the Universal Arduino System Monitor project.
+So `./gradlew run` launches the Control Center.
