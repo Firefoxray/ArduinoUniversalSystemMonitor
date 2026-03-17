@@ -131,8 +131,22 @@ DELAYED_RUN_UniversalArduinoMonitor.bat
 ```
 
 ---
+## Fedora Linux Setup (Automatic)
 
-## Linux Setup
+Run:
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+This will:
+- Install dependencies
+- Configure permissions
+- Set up auto-start service
+
+
+## Linux Setup (Manual)
 
 ### Step 1 — Create Script
 
