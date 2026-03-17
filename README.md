@@ -78,7 +78,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.1  - Reorganized folder structure, separated Windows components
 7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
 7.3  - Added basic Java GUI debugger/emulator and config-driven debug output support for the Java fake display
-7.4  - Added install.sh improvements, config auto-generation, standardized install path (~ /ArduinoUniversalSystemMonitor), and update.sh support
+7.4  - Added install.sh improvements, config auto-generation, standardized install path (~/ArduinoUniversalSystemMonitor), and update.sh support
 ```
 
 ---
@@ -202,7 +202,7 @@ sudo systemctl stop arduino-monitor
 sudo systemctl restart arduino-monitor
 sudo systemctl status arduino-monitor
 ```
-Updating (Linux)
+## Updating (Linux)
 
 ```
 cd ~/ArduinoUniversalSystemMonitor
@@ -216,6 +216,32 @@ This will:
 - Update Python dependencies
 
 - Restart the system service
+
+---
+
+## Uninstall (Linux)
+
+To completely remove the monitor, service, and installed files:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor
+chmod +x uninstall_monitor.sh
+./uninstall_monitor.sh
+```
+
+This will:
+
+Stop and disable the systemd service
+
+Remove the service file
+
+Remove installed monitor files and directories
+
+Clean up previous install locations
+
+After uninstalling, you can reinstall cleanly using:
+
+`./install.sh`
 
 ---
 
