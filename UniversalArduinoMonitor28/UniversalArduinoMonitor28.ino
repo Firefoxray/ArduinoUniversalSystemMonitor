@@ -34,18 +34,12 @@ const int SCREEN_W = 320;
 const int SCREEN_H = 240;
 const uint8_t TOTAL_PAGES = 5;
 const uint8_t GRAPH_POINTS = 16;
-const uint8_t CPU_THREADS_IN = 16;
-const uint8_t PROCESS_ROWS_IN = 6;
-const uint8_t STORAGE_LINES_IN = 7;
 const uint8_t FIELD_COUNT = 63;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
-
-char serialLine[768];
-uint16_t serialPos = 0;
 
 uint8_t currentPage = 0;
 bool touchHeld = false;
@@ -63,27 +57,33 @@ uint8_t ramPct = 0, diskPct = 0, disk1Pct = 0, gpuPct = 0;
 uint16_t gpuMemUsed = 0, gpuMemTotal = 0, gpuClock = 0;
 uint8_t gpuMemPct = 0;
 
-char cpuTemp[10] = "--";
-char osName[18] = "--";
-char hostName[32] = "--";
-char ipAddr[18] = "--";
-char uptimeStr[14] = "--";
-char downStr[18] = "--";
-char upStr[18] = "--";
-char downTotalStr[18] = "--";
-char upTotalStr[18] = "--";
-char cpuFreqStr[14] = "--";
-char gpuTemp[10] = "--";
-char gpuName[24] = "--";
+char cpuTemp[8] = "--";
+char osName[12] = "--";
+char hostName[16] = "--";
+char ipAddr[16] = "--";
+char uptimeStr[12] = "--";
+char downStr[14] = "--";
+char upStr[14] = "--";
+char downTotalStr[14] = "--";
+char upTotalStr[14] = "--";
+char cpuFreqStr[12] = "--";
+char gpuTemp[8] = "--";
+char gpuName[20] = "--";
 
-char proc1[14] = "--", proc2[14] = "--", proc3[14] = "--", proc4[14] = "--";
-char proc1Cpu[8] = "--", proc2Cpu[8] = "--", proc3Cpu[8] = "--", proc4Cpu[8] = "--";
-char proc1Ram[8] = "--", proc2Ram[8] = "--", proc3Ram[8] = "--", proc4Ram[8] = "--";
+char proc1[12] = "--", proc2[12] = "--", proc3[12] = "--", proc4[12] = "--";
+char proc1Cpu[7] = "--", proc2Cpu[7] = "--", proc3Cpu[7] = "--", proc4Cpu[7] = "--";
+char proc1Ram[7] = "--", proc2Ram[7] = "--", proc3Ram[7] = "--", proc4Ram[7] = "--";
 
-char storage1[28] = "Disk: --";
-char storage2[28] = "Disk: --";
-char storage3[28] = "Disk: --";
-char opticalStr[18] = "--";
+char storage1[22] = "Disk: --";
+char storage2[22] = "Disk: --";
+char storage3[22] = "Disk: --";
+char opticalStr[14] = "--";
+
+// Streaming parser state (replaces giant line buffer)
+char fieldBuf[40];
+uint8_t fieldPos = 0;
+uint8_t fieldIndex = 0;
+bool lineOverflow = false;
 
 static void safeCopy(char* dst, size_t dstSize, const char* src) {
   if (!dst || dstSize == 0) return;
@@ -129,9 +129,9 @@ static void shortGPU(char* dst, size_t dstSize, const char* src) {
   safeCopy(dst, dstSize, src);
   trimInPlace(dst);
   if (strstr(dst, "NVIDIA GeForce ")) {
-    char temp[24]; safeCopy(temp, sizeof(temp), dst + 15); snprintf(dst, dstSize, "NVIDIA %s", temp);
+    char temp[20]; safeCopy(temp, sizeof(temp), dst + 15); snprintf(dst, dstSize, "NV %s", temp);
   } else if (strstr(dst, "AMD Radeon ")) {
-    char temp[24]; safeCopy(temp, sizeof(temp), dst + 11); snprintf(dst, dstSize, "AMD %s", temp);
+    char temp[20]; safeCopy(temp, sizeof(temp), dst + 11); snprintf(dst, dstSize, "AMD %s", temp);
   }
 }
 
@@ -158,7 +158,7 @@ static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.setTextSize(1);
   tft.setCursor(6, 7); tft.print(title);
   tft.drawFastHLine(0, 22, SCREEN_W, WHITE);
-  tft.setTextSize(1); tft.setTextColor(WHITE);
+  tft.setTextColor(WHITE);
   tft.setCursor(6, 229); tft.print(F("Tap "));
   tft.print(pageNum); tft.print('/'); tft.print(TOTAL_PAGES);
 }
@@ -171,7 +171,7 @@ static void drawKV(int y, const __FlashStringHelper* label, const char* value, u
 }
 
 static void drawPctRow(int y, const __FlashStringHelper* label, uint8_t pct, uint16_t color) {
-  char buf[8];
+  char buf[6];
   snprintf(buf, sizeof(buf), "%u%%", pct);
   tft.fillRect(64, y, SCREEN_W - 64, 14, BLACK);
   tft.setTextSize(1);
@@ -184,11 +184,10 @@ static void drawPctRow(int y, const __FlashStringHelper* label, uint8_t pct, uin
 }
 
 static void drawBigPctRow(int y, const __FlashStringHelper* label, uint8_t pct, uint16_t color) {
-  char buf[8];
+  char buf[6];
   snprintf(buf, sizeof(buf), "%u%%", pct);
 
   tft.fillRect(0, y, SCREEN_W, 24, BLACK);
-
   tft.setTextSize(1);
   tft.setTextColor(WHITE);
   tft.setCursor(6, y + 7);
@@ -230,7 +229,7 @@ static void drawCurrentLayout() {
 }
 
 static void updateHome() {
-  char osShort[10]; shortOS(osShort, sizeof(osShort), osName);
+  char osShort[8]; shortOS(osShort, sizeof(osShort), osName);
   drawBigPctRow(28,  F("CPU"),   cpuTotal, GREEN);
   drawBigPctRow(54,  F("RAM"),   ramPct,   YELLOW);
   drawBigPctRow(80,  F("Disk1"), diskPct,  CYAN);
@@ -252,7 +251,7 @@ static void updateCpuProc() {
   drawProcRow(118, "2", proc2, proc2Cpu, proc2Ram, YELLOW);
   drawProcRow(132, "3", proc3, proc3Cpu, proc3Ram, CYAN);
   drawProcRow(146, "4", proc4, proc4Cpu, proc4Ram, MAGENTA);
-  char d0[8], d1[8];
+  char d0[6], d1[6];
   snprintf(d0, sizeof(d0), "%u%%", diskPct);
   snprintf(d1, sizeof(d1), "%u%%", disk1Pct);
   drawKV(170, F("Disk0"), d0, ORANGE);
@@ -260,8 +259,8 @@ static void updateCpuProc() {
 }
 
 static void updateGpuNet() {
-  char gpuShort[24]; shortGPU(gpuShort, sizeof(gpuShort), gpuName);
-  char vramBuf[18], clockBuf[12];
+  char gpuShort[20]; shortGPU(gpuShort, sizeof(gpuShort), gpuName);
+  char vramBuf[14], clockBuf[10];
   snprintf(vramBuf, sizeof(vramBuf), "%u/%uM", gpuMemUsed, gpuMemTotal);
   snprintf(clockBuf, sizeof(clockBuf), "%uMHz", gpuClock);
   drawPctRow(30, F("GPU"), gpuPct, CYAN);
@@ -365,68 +364,102 @@ static void handleTouch() {
   if (!pressed) touchHeld = false;
 }
 
-static void parseIncomingLine(char* s) {
-  char* fields[FIELD_COUNT];
-  uint8_t count = 0;
-  char* tok = strtok(s, "|");
-  while (tok && count < FIELD_COUNT) {
-    fields[count++] = tok;
-    tok = strtok(NULL, "|");
-  }
-  if (count != FIELD_COUNT) return;
-
-  cpuTotal = parsePercentField(fields[0]);
-  cpu0     = parsePercentField(fields[1]);
-  cpu1     = parsePercentField(fields[2]);
-  cpu2     = parsePercentField(fields[3]);
-  cpu3     = parsePercentField(fields[4]);
-  ramPct   = parsePercentField(fields[17]);
-  diskPct  = parsePercentField(fields[18]);
-  disk1Pct = parsePercentField(fields[19]);
-
-  safeCopy(cpuTemp, sizeof(cpuTemp), fields[20]);
-  safeCopy(osName, sizeof(osName), fields[21]);
-  safeCopy(hostName, sizeof(hostName), fields[22]);
-  safeCopy(ipAddr, sizeof(ipAddr), fields[23]);
-  safeCopy(uptimeStr, sizeof(uptimeStr), fields[24]);
-  safeCopy(downStr, sizeof(downStr), fields[25]);
-  safeCopy(upStr, sizeof(upStr), fields[26]);
-  safeCopy(downTotalStr, sizeof(downTotalStr), fields[27]);
-  safeCopy(upTotalStr, sizeof(upTotalStr), fields[28]);
-  safeCopy(cpuFreqStr, sizeof(cpuFreqStr), fields[29]);
-
-  gpuPct      = parsePercentField(fields[30]);
-  safeCopy(gpuTemp, sizeof(gpuTemp), fields[31]);
-  gpuMemUsed  = (uint16_t)atoi(fields[32]);
-  gpuMemTotal = (uint16_t)atoi(fields[33]);
-  gpuMemPct   = parsePercentField(fields[34]);
-  gpuClock    = (uint16_t)atoi(fields[35]);
-  safeCopy(gpuName, sizeof(gpuName), fields[36]);
-
-  safeCopy(proc1, sizeof(proc1), fields[37]);
-  safeCopy(proc2, sizeof(proc2), fields[38]);
-  safeCopy(proc3, sizeof(proc3), fields[39]);
-  safeCopy(proc4, sizeof(proc4), fields[40]);
-
-  safeCopy(proc1Cpu, sizeof(proc1Cpu), fields[43]);
-  safeCopy(proc2Cpu, sizeof(proc2Cpu), fields[44]);
-  safeCopy(proc3Cpu, sizeof(proc3Cpu), fields[45]);
-  safeCopy(proc4Cpu, sizeof(proc4Cpu), fields[46]);
-
-  safeCopy(proc1Ram, sizeof(proc1Ram), fields[49]);
-  safeCopy(proc2Ram, sizeof(proc2Ram), fields[50]);
-  safeCopy(proc3Ram, sizeof(proc3Ram), fields[51]);
-  safeCopy(proc4Ram, sizeof(proc4Ram), fields[52]);
-
-  safeCopy(storage1, sizeof(storage1), fields[55]);
-  safeCopy(storage2, sizeof(storage2), fields[56]);
-  safeCopy(storage3, sizeof(storage3), fields[57]);
-  safeCopy(opticalStr, sizeof(opticalStr), fields[62]);
-
-  pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
-  dataDirty = true;
+static void resetLineParser() {
+  fieldPos = 0;
+  fieldIndex = 0;
+  lineOverflow = false;
+  fieldBuf[0] = '\0';
 }
 
+static void applyField(uint8_t idx, const char* value) {
+  switch (idx) {
+    case 0:  cpuTotal = parsePercentField(value); break;
+    case 1:  cpu0 = parsePercentField(value); break;
+    case 2:  cpu1 = parsePercentField(value); break;
+    case 3:  cpu2 = parsePercentField(value); break;
+    case 4:  cpu3 = parsePercentField(value); break;
+    case 17: ramPct = parsePercentField(value); break;
+    case 18: diskPct = parsePercentField(value); break;
+    case 19: disk1Pct = parsePercentField(value); break;
+
+    case 20: safeCopy(cpuTemp, sizeof(cpuTemp), value); break;
+    case 21: safeCopy(osName, sizeof(osName), value); break;
+    case 22: safeCopy(hostName, sizeof(hostName), value); break;
+    case 23: safeCopy(ipAddr, sizeof(ipAddr), value); break;
+    case 24: safeCopy(uptimeStr, sizeof(uptimeStr), value); break;
+    case 25: safeCopy(downStr, sizeof(downStr), value); break;
+    case 26: safeCopy(upStr, sizeof(upStr), value); break;
+    case 27: safeCopy(downTotalStr, sizeof(downTotalStr), value); break;
+    case 28: safeCopy(upTotalStr, sizeof(upTotalStr), value); break;
+    case 29: safeCopy(cpuFreqStr, sizeof(cpuFreqStr), value); break;
+
+    case 30: gpuPct = parsePercentField(value); break;
+    case 31: safeCopy(gpuTemp, sizeof(gpuTemp), value); break;
+    case 32: gpuMemUsed = (uint16_t)atoi(value); break;
+    case 33: gpuMemTotal = (uint16_t)atoi(value); break;
+    case 34: gpuMemPct = parsePercentField(value); break;
+    case 35: gpuClock = (uint16_t)atoi(value); break;
+    case 36: safeCopy(gpuName, sizeof(gpuName), value); break;
+
+    case 37: safeCopy(proc1, sizeof(proc1), value); break;
+    case 38: safeCopy(proc2, sizeof(proc2), value); break;
+    case 39: safeCopy(proc3, sizeof(proc3), value); break;
+    case 40: safeCopy(proc4, sizeof(proc4), value); break;
+
+    case 43: safeCopy(proc1Cpu, sizeof(proc1Cpu), value); break;
+    case 44: safeCopy(proc2Cpu, sizeof(proc2Cpu), value); break;
+    case 45: safeCopy(proc3Cpu, sizeof(proc3Cpu), value); break;
+    case 46: safeCopy(proc4Cpu, sizeof(proc4Cpu), value); break;
+
+    case 49: safeCopy(proc1Ram, sizeof(proc1Ram), value); break;
+    case 50: safeCopy(proc2Ram, sizeof(proc2Ram), value); break;
+    case 51: safeCopy(proc3Ram, sizeof(proc3Ram), value); break;
+    case 52: safeCopy(proc4Ram, sizeof(proc4Ram), value); break;
+
+    case 55: safeCopy(storage1, sizeof(storage1), value); break;
+    case 56: safeCopy(storage2, sizeof(storage2), value); break;
+    case 57: safeCopy(storage3, sizeof(storage3), value); break;
+    case 62: safeCopy(opticalStr, sizeof(opticalStr), value); break;
+    default: break;
+  }
+}
+
+static void finalizeField() {
+  if (lineOverflow) return;
+  fieldBuf[fieldPos] = '\0';
+  if (fieldIndex < FIELD_COUNT) {
+    applyField(fieldIndex, fieldBuf);
+    fieldIndex++;
+  } else {
+    lineOverflow = true;
+  }
+  fieldPos = 0;
+}
+
+static void feedIncomingChar(char c) {
+  if (c == '\r') return;
+
+  if (c == '\n') {
+    finalizeField();
+    if (!lineOverflow && fieldIndex == FIELD_COUNT) {
+      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
+      dataDirty = true;
+    }
+    resetLineParser();
+    return;
+  }
+
+  if (c == '|') {
+    finalizeField();
+    return;
+  }
+
+  if (fieldPos < sizeof(fieldBuf) - 1) {
+    fieldBuf[fieldPos++] = c;
+  } else {
+    lineOverflow = true;
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -445,28 +478,14 @@ void setup() {
     vramHistory[i] = 0;
   }
 
+  resetLineParser();
   drawCurrentLayout();
   updateCurrentPage();
 }
 
 void loop() {
   while (Serial.available()) {
-    char c = (char)Serial.read();
-
-    if (c == '\n') {
-      serialLine[serialPos] = '\0';
-      if (serialPos > 0) parseIncomingLine(serialLine);
-      serialPos = 0;
-      serialLine[0] = '\0';
-    } else if (c != '\r') {
-      if (serialPos < sizeof(serialLine) - 1) {
-        serialLine[serialPos++] = c;
-      } else {
-        // overflow guard: drop this busted line cleanly
-        serialPos = 0;
-        serialLine[0] = '\0';
-      }
-    }
+    feedIncomingChar((char)Serial.read());
   }
 
   if (dataDirty) {
