@@ -91,6 +91,17 @@ install_script() {
     fi
 
     cp "$SCRIPT_NAME" "$PROJECT_DIR/$SCRIPT_NAME"
+    chmod +x "$PROJECT_DIR/$SCRIPT_NAME"
+
+    if [ -f "update.sh" ]; then
+        cp "update.sh" "$PROJECT_DIR/update.sh"
+        chmod +x "$PROJECT_DIR/update.sh"
+    fi
+
+    if [ -f "uninstall_monitor.sh" ]; then
+        cp "uninstall_monitor.sh" "$PROJECT_DIR/uninstall_monitor.sh"
+        chmod +x "$PROJECT_DIR/uninstall_monitor.sh"
+    fi
 
     if [ -f "$CONFIG_NAME" ]; then
         cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
@@ -108,8 +119,6 @@ install_script() {
 }
 EOF
     fi
-
-    chmod +x "$PROJECT_DIR/$SCRIPT_NAME"
 }
 
 create_service() {
