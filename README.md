@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.3  
+**Version:** 7.4  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -77,7 +77,8 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.0  - Added Fedora KDE 43 support
 7.1  - Reorganized folder structure, separated Windows components
 7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
-7.3  - Added basic Java GUI debugger/emulator and debug mirror support in the main Python monitor (config-driven)
+7.3  - Added basic Java GUI debugger/emulator and config-driven debug output support for the Java fake display
+7.4  - Added install.sh improvements, config auto-generation, standardized install path (~ /ArduinoUniversalSystemMonitor), and update.sh support
 ```
 
 ---
@@ -142,6 +143,8 @@ chmod +x install.sh
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git && cd ArduinoUniversalSystemMonitor && chmod +x install.sh && ./install.sh
 ```
 
+A default monitor_config.json is automatically created during installation.
+
 ---
 
 ## Linux Setup (Manual)
@@ -158,7 +161,8 @@ Description=Arduino System Monitor
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/UniversalArduinoMonitor.py
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py
+WorkingDirectory=/home/YOUR_USERNAME/ArduinoUniversalSystemMonitor
 Restart=always
 User=YOUR_USERNAME
 
@@ -198,6 +202,20 @@ sudo systemctl stop arduino-monitor
 sudo systemctl restart arduino-monitor
 sudo systemctl status arduino-monitor
 ```
+Updating (Linux)
+
+```
+cd ~/ArduinoUniversalSystemMonitor
+./update.sh
+```
+
+This will:
+
+- Pull the latest version from GitHub
+
+- Update Python dependencies
+
+- Restart the system service
 
 ---
 

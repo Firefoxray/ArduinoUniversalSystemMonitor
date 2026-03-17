@@ -4,9 +4,8 @@ set -e
 
 echo "==== Ray Co Arduino Monitor Installer ===="
 
-PROJECT_DIR="$HOME/ArduinoMonitor"
+PROJECT_DIR="$HOME/ArduinoUniversalSystemMonitor"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
-DEBUG_MIRROR_SCRIPT_NAME="UniversalArduinoMonitor_debugmirror.py"
 CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
 PYTHON_BIN="/usr/bin/python3"
@@ -48,11 +47,20 @@ install_system_packages() {
 install_python_packages() {
     echo "[2/6] Installing Python packages..."
 
-    if python3 -m pip install --user psutil pyserial; then
-        echo "Python packages installed successfully."
+    if [ -f requirements.txt ]; then
+        if python3 -m pip install --user -r requirements.txt; then
+            echo "Python packages installed successfully."
+        else
+            echo "pip user install failed, trying system-wide install..."
+            sudo python3 -m pip install -r requirements.txt
+        fi
     else
-        echo "pip user install failed, trying system-wide install..."
-        sudo python3 -m pip install psutil pyserial
+        if python3 -m pip install --user psutil pyserial; then
+            echo "Python packages installed successfully."
+        else
+            echo "pip user install failed, trying system-wide install..."
+            sudo python3 -m pip install psutil pyserial
+        fi
     fi
 }
 
@@ -84,16 +92,11 @@ install_script() {
 
     cp "$SCRIPT_NAME" "$PROJECT_DIR/$SCRIPT_NAME"
 
-    if [ -f "$DEBUG_MIRROR_SCRIPT_NAME" ]; then
-        cp "$DEBUG_MIRROR_SCRIPT_NAME" "$PROJECT_DIR/$DEBUG_MIRROR_SCRIPT_NAME"
-        chmod +x "$PROJECT_DIR/$DEBUG_MIRROR_SCRIPT_NAME"
-    fi
-
     if [ -f "$CONFIG_NAME" ]; then
-    cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
-else
-    echo "Creating default $CONFIG_NAME..."
-    cat > "$PROJECT_DIR/$CONFIG_NAME" <<'EOF'
+        cp "$CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
+    else
+        echo "Creating default $CONFIG_NAME..."
+        cat > "$PROJECT_DIR/$CONFIG_NAME" <<'EOF'
 {
   "arduino_port": "AUTO",
   "baud": 115200,
@@ -104,7 +107,7 @@ else
   "send_interval": 2.0
 }
 EOF
-fi
+    fi
 
     chmod +x "$PROJECT_DIR/$SCRIPT_NAME"
 }
