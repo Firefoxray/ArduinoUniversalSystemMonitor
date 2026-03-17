@@ -12,8 +12,8 @@ chmod +x install.sh
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 7.0  
-**Last Modified:** March 17, 2026, 1:52 AM  
+**Version:** 7.1  
+**Last Modified:** March 17, 2026 
 
 ## Preview
 
