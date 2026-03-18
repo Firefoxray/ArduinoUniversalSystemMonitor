@@ -262,6 +262,56 @@ public class UniversalMonitorControlCenter extends JFrame {
         delayed.start();
     }
 
+    private boolean ensureSocatInstalled() {
+        if (commandExists("socat")) {
+            return true;
+        }
+
+        log("[WARN] socat is required before fake ports can be started.");
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "socat is required before you can start fake ports. Install it now?",
+                "Install socat",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+
+        if (choice != JOptionPane.YES_OPTION) {
+            log("[WARN] Fake ports were not started because socat is not installed.");
+            return false;
+        }
+
+        runCommand(buildSocatInstallCommand(), repoPath().toFile(), "Install socat", true, true, () -> {
+            if (commandExists("socat")) {
+                SwingUtilities.invokeLater(this::startFakePorts);
+            } else {
+                log("[ERROR] socat installation completed but the command is still unavailable.");
+            }
+        });
+        return false;
+    }
+
+    private boolean commandExists(String commandName) {
+        try {
+            Process process = new ProcessBuilder("bash", "-lc", "command -v " + escape(commandName) + " >/dev/null 2>&1")
+                    .directory(repoPath().toFile())
+                    .start();
+            return process.waitFor() == 0;
+        } catch (Exception ex) {
+            log("[WARN] Failed to verify dependency '" + commandName + "': " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private String buildSocatInstallCommand() {
+        return "if command -v socat >/dev/null 2>&1; then "
+                + "echo 'socat is already installed.'; "
+                + "elif [ -f /etc/fedora-release ]; then dnf install -y socat; "
+                + "elif [ -f /etc/debian_version ]; then apt update && apt install -y socat; "
+                + "elif [ -f /etc/arch-release ]; then pacman -Sy --noconfirm socat; "
+                + "else echo 'Unsupported distro: please install socat manually.'; exit 1; fi";
+    }
+
     private void refreshServiceStatus(boolean allowPrompt) {
         Thread t = new Thread(() -> {
             CommandSpec spec = buildShellCommand("systemctl is-active " + SERVICE_NAME, true, allowPrompt);
@@ -313,6 +363,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void startFakePorts() {
+        if (!ensureSocatInstalled()) {
+            return;
+        }
+
         if (fakePortsProcess != null && fakePortsProcess.isAlive()) {
             log("[INFO] Fake ports already running.");
             return;
