@@ -5,17 +5,18 @@ set -Eeuo pipefail
 echo "==== Ray Co Arduino Monitor Installer ===="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/project_paths.sh"
 INSTALL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 INSTALL_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
 if [ -z "$INSTALL_HOME" ]; then
     INSTALL_HOME="$HOME"
 fi
 
-if [ -d "$SCRIPT_DIR/.git" ]; then
-    PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
-else
-    PROJECT_DIR="${PROJECT_DIR:-$INSTALL_HOME/ArduinoUniversalSystemMonitor}"
+DEFAULT_PROJECT_DIR="$(resolve_project_dir "$SCRIPT_DIR" "${BASH_SOURCE[0]}")"
+if [ "$DEFAULT_PROJECT_DIR" = "$SCRIPT_DIR" ] && [ ! -d "$SCRIPT_DIR/.git" ]; then
+    DEFAULT_PROJECT_DIR="$INSTALL_HOME/ArduinoUniversalSystemMonitor"
 fi
+PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$DEFAULT_PROJECT_DIR}" "${BASH_SOURCE[0]}")"
 REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
 CONFIG_NAME="monitor_config.json"
@@ -57,18 +58,18 @@ install_system_packages() {
 
     case "$DISTRO" in
         fedora)
-            sudo dnf install -y python3 python3-pip git curl
+            sudo dnf install -y python3 python3-pip git curl socat
             ;;
         debian)
             sudo apt update
-            sudo apt install -y python3 python3-pip git curl
+            sudo apt install -y python3 python3-pip git curl socat
             ;;
         arch)
-            sudo pacman -Sy --noconfirm python python-pip git curl
+            sudo pacman -Sy --noconfirm python python-pip git curl socat
             ;;
         *)
             echo "Unsupported distro."
-            echo "Please manually install: python3, python3-pip, git, curl"
+            echo "Please manually install: python3, python3-pip, git, curl, socat"
             exit 1
             ;;
     esac

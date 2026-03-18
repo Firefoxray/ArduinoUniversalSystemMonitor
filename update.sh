@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
+source "$SCRIPT_DIR/lib/project_paths.sh"
+PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$SCRIPT_DIR}" "${BASH_SOURCE[0]}")"
 SERVICE_NAME="${SERVICE_NAME:-arduino-monitor.service}"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python3"
@@ -63,6 +64,40 @@ refresh_python_paths() {
     VENV_DIR="$PROJECT_DIR/.venv"
     PYTHON_BIN="$VENV_DIR/bin/python3"
     PIP_BIN="$VENV_DIR/bin/pip"
+}
+
+venv_needs_rebuild() {
+    if [[ ! -d "$VENV_DIR" ]]; then
+        return 0
+    fi
+
+    if [[ ! -x "$PYTHON_BIN" ]]; then
+        echo "Detected missing venv interpreter at $PYTHON_BIN"
+        return 0
+    fi
+
+    if [[ -f "$PIP_BIN" ]]; then
+        local pip_shebang
+        pip_shebang="$(head -n 1 "$PIP_BIN" 2>/dev/null || true)"
+        if [[ "$pip_shebang" == '#!'* ]]; then
+            local pip_python="${pip_shebang#\#!}"
+            if [[ "$pip_python" != "$PYTHON_BIN" ]]; then
+                echo "Detected relocated virtual environment (pip points to $pip_python)."
+                return 0
+            fi
+        fi
+    fi
+
+    return 1
+}
+
+rebuild_venv_if_needed() {
+    if venv_needs_rebuild; then
+        echo "Rebuilding Python virtual environment inside $VENV_DIR ..."
+        rm -rf "$VENV_DIR"
+        run_as_repo_user "python3 -m venv $(printf '%q' "$VENV_DIR")"
+        refresh_python_paths
+    fi
 }
 
 detect_repo_owner() {
@@ -175,9 +210,7 @@ run_as_repo_user "git pull origin main"
 fix_repo_ownership
 
 echo "[2/7] Ensuring Python virtual environment exists..."
-if [[ ! -d "$VENV_DIR" ]]; then
-    run_as_repo_user "python3 -m venv $(printf '%q' "$VENV_DIR")"
-fi
+rebuild_venv_if_needed
 
 echo "[3/7] Updating Python packaging tools..."
 run_as_repo_user "$(printf '%q' "$PYTHON_BIN") -m pip install --upgrade pip"
