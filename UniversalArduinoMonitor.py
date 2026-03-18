@@ -968,7 +968,12 @@ def main() -> None:
     last_net = net_stats.get(iface) or psutil.net_io_counters()
     last_time = time.time()
 
-    arduino_serials = connect_arduinos_blocking()
+    if DEBUG_MIRROR_ENABLED:
+        arduino_serials = connect_arduinos({})
+        if not arduino_serials:
+            print("No Arduino detected yet; continuing in debug mirror mode.")
+    else:
+        arduino_serials = connect_arduinos_blocking()
     debug_ser: Optional[serial.Serial] = connect_optional_serial(DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror") if DEBUG_MIRROR_ENABLED else None
     last_send = 0.0
     last_discovery_attempt = 0.0
@@ -999,11 +1004,16 @@ def main() -> None:
                 arduino_serials.pop(port, None)
 
             if not arduino_serials:
-                print("No Arduino connections active. Reconnecting...")
-                time.sleep(RETRY_DELAY)
-                arduino_serials = connect_arduinos_blocking()
-                last_discovery_attempt = time.time()
-                continue
+                if not DEBUG_MIRROR_ENABLED:
+                    print("No Arduino connections active. Reconnecting...")
+                    time.sleep(RETRY_DELAY)
+                    arduino_serials = connect_arduinos_blocking()
+                    last_discovery_attempt = time.time()
+                    continue
+                if (time.time() - last_discovery_attempt) >= RETRY_DELAY:
+                    print("No Arduino connections active. Debug mirror still running...")
+                    arduino_serials = connect_arduinos(arduino_serials)
+                    last_discovery_attempt = time.time()
 
             if (time.time() - last_discovery_attempt) >= RETRY_DELAY:
                 arduino_serials = connect_arduinos(arduino_serials)

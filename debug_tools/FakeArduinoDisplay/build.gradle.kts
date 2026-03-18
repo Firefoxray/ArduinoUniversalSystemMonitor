@@ -15,5 +15,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("JavaSerialFakeDisplay")
+    mainClass.set("UniversalMonitorControlCenter")
 }
