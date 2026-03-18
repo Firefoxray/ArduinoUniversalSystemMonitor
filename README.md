@@ -65,6 +65,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 ## Requirements
 
 - Python 3.8+
+- Java JDK 21+
 - Arduino IDE 1.8.19+
 - **Option A:** Arduino UNO R4 (USB-C) + Arduino 3.5" TFT Display
 - **Option B:** Arduino UNO R3 (USB-B) + 2.8" TFT UNO R3 Display
