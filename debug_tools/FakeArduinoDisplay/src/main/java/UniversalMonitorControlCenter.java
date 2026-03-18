@@ -5,18 +5,22 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Properties;
 import java.util.ArrayList;
 import java.util.List;
 
 public class UniversalMonitorControlCenter extends JFrame {
 
     private static final String SERVICE_NAME = "arduino-monitor.service";
+    private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
+    private static final String APP_VERSION = loadAppVersion();
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -47,6 +51,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
+    private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -59,7 +64,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
 
     public UniversalMonitorControlCenter() {
-        super("Universal Arduino System Monitor - Control Center");
+        super(APP_NAME + " v" + APP_VERSION);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(1500, 940);
         setLocationRelativeTo(null);
@@ -113,6 +118,9 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         panel.add(new JLabel("sudo password:"));
         panel.add(sudoPasswordField);
+        versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
+        panel.add(Box.createHorizontalStrut(12));
+        panel.add(versionLabel);
 
         return panel;
     }
@@ -189,7 +197,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void wireActions() {
         installButton.addActionListener(e -> runRepoScript("install.sh", true));
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
-        updateButton.addActionListener(e -> runRepoScript("update.sh", true));
+        updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
@@ -226,6 +234,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private void runUpdateWorkflow() {
+        Path repo = repoPath();
+        Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
+        String command = "cd " + escape(repo.toString()) + " && chmod +x update.sh UniversalMonitorControlCenter.sh && ./update.sh";
+        runCommand(command, repo.toFile(), "Update and restart Control Center", true, true, () -> relaunchApplication(launcher));
+    }
+
     private void runRepoScript(String scriptName, boolean needsSudo) {
         Path script = repoPath().resolve(scriptName);
         if (!Files.exists(script)) {
@@ -233,7 +248,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        String command = "cd " + escape(repoPath().toString()) + " && chmod +x " + scriptName + " && ./" + scriptName;
+        String command = "cd " + escape(repoPath().toString()) + " && chmod +x " + escape(scriptName) + " && ./" + scriptName;
         runCommand(command, repoPath().toFile(), scriptName, needsSudo, true);
     }
 
@@ -546,6 +561,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt) {
+        runCommand(shellCommand, workingDirectory, label, needsSudo, allowPrompt, null);
+    }
+
+    private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt, Runnable onSuccess) {
         CommandSpec spec = buildShellCommand(shellCommand, needsSudo, allowPrompt);
         if (spec == null) {
             log("[WARN] " + label + " canceled (no sudo password). Running as root avoids this.");
@@ -556,6 +575,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setActionButtons(false);
 
         Thread t = new Thread(() -> {
+            boolean success = false;
             try {
                 ProcessBuilder pb = new ProcessBuilder(spec.command);
                 pb.directory(workingDirectory);
@@ -573,19 +593,50 @@ public class UniversalMonitorControlCenter extends JFrame {
 
                 int code = process.waitFor();
                 if (code == 0) {
+                    success = true;
                     log("[DONE] " + label + " completed successfully.");
+                    if (onSuccess != null) {
+                        onSuccess.run();
+                    }
                 } else {
                     log("[FAIL] " + label + " exited with code " + code + ".");
                 }
             } catch (Exception ex) {
                 log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
             } finally {
-                setActionButtons(true);
+                if (!(success && onSuccess != null)) {
+                    setActionButtons(true);
+                }
             }
         }, "cmd-" + label);
 
         t.setDaemon(true);
         t.start();
+    }
+
+    private void relaunchApplication(Path launcherPath) {
+        try {
+            if (!Files.exists(launcherPath)) {
+                log("[ERROR] Restart launcher not found: " + launcherPath);
+                SwingUtilities.invokeLater(() -> setActionButtons(true));
+                return;
+            }
+
+            log("[INFO] Restarting Control Center using " + launcherPath);
+            ProcessBuilder restartBuilder = new ProcessBuilder("bash", "-lc",
+                    "cd " + escape(launcherPath.getParent().toString()) + " && chmod +x " + escape(launcherPath.getFileName().toString()) + " && nohup ./" + launcherPath.getFileName() + " >/tmp/universal-monitor-control-center.log 2>&1 &");
+            restartBuilder.directory(launcherPath.getParent().toFile());
+            restartBuilder.redirectErrorStream(true);
+            restartBuilder.start();
+
+            SwingUtilities.invokeLater(() -> {
+                dispose();
+                System.exit(0);
+            });
+        } catch (IOException ex) {
+            log("[ERROR] Failed to restart Control Center: " + ex.getMessage());
+            SwingUtilities.invokeLater(() -> setActionButtons(true));
+        }
     }
 
     private CommandSpec buildShellCommand(String shellCommand, boolean needsSudo, boolean allowPrompt) {
@@ -632,6 +683,19 @@ public class UniversalMonitorControlCenter extends JFrame {
             return value;
         }
         return null;
+    }
+
+    private static String loadAppVersion() {
+        Properties properties = new Properties();
+        try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
+            if (input != null) {
+                properties.load(input);
+                return properties.getProperty("app.version", "dev").trim();
+            }
+        } catch (IOException ignored) {
+            // Fall back to a safe default below.
+        }
+        return "dev";
     }
 
     private boolean runningAsRoot() {
@@ -736,6 +800,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new UniversalMonitorControlCenter().setVisible(true));
     }
+
 
     private static class CommandSpec {
         final List<String> command;

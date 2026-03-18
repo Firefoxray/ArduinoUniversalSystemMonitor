@@ -231,6 +231,7 @@ finish_message() {
     echo "Installed for user: $INSTALL_USER"
     echo "Project installed to: $PROJECT_DIR"
     echo "Config file: $PROJECT_DIR/$CONFIG_NAME"
+    echo "Systemd service uses user/path: $INSTALL_USER -> $PROJECT_DIR"
     echo
     echo "IMPORTANT:"
     echo "- Log out and back in (or reboot) so new serial permissions apply."
