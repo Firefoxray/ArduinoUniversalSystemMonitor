@@ -36,43 +36,6 @@ pick_jdk_home() {
     return 1
 }
 
-infer_display() {
-    local socket
-
-    if [[ -n "${DISPLAY:-}" ]]; then
-        return 0
-    fi
-
-    for socket in /tmp/.X11-unix/X*; do
-        if [[ -S "$socket" ]]; then
-            export DISPLAY=":${socket##*/X}"
-            break
-        fi
-    done
-
-    if [[ -z "${XAUTHORITY:-}" ]] && [[ -f "$HOME/.Xauthority" ]]; then
-        export XAUTHORITY="$HOME/.Xauthority"
-    fi
-
-    [[ -n "${DISPLAY:-}" ]]
-}
-
-ensure_graphical_session() {
-    if infer_display; then
-        return 0
-    fi
-
-    cat <<'MSG'
-Error: no graphical display was detected for UniversalMonitorControlCenter.
-
-Try one of these:
-  - launch it from your KDE/GNOME application menu
-  - run it from a terminal inside your desktop session
-  - if using SSH, reconnect with X11 forwarding (`ssh -X`) or export DISPLAY manually
-MSG
-    exit 1
-}
-
 ensure_java() {
     if ! command -v java >/dev/null 2>&1; then
         echo "Error: java not found. Install OpenJDK first."
@@ -109,8 +72,7 @@ build_jar_if_needed() {
 }
 
 ensure_java
-ensure_graphical_session
 build_jar_if_needed
 
 echo "Launching $JAR_PATH"
-exec java -Djava.awt.headless=false -jar "$JAR_PATH"
+exec java -jar "$JAR_PATH"

@@ -62,8 +62,6 @@ chmod +x UniversalMonitorControlCenter.sh
 ./UniversalMonitorControlCenter.sh
 ```
 
-If `DISPLAY` is missing, the launcher now tries to infer it from the local desktop session before starting Swing. If no GUI session can be found, it exits with a clear error instead of a Java stack trace.
-
 This root-level launcher:
 
 1. Detects a working JDK.
