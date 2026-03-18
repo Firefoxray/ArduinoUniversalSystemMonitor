@@ -51,6 +51,28 @@ If the password field is empty, the app prompts when needed.
 
 ------------------------------------------------------------------------
 
+## Run Without IntelliJ (Terminal)
+
+From `debug_tools/FakeArduinoDisplay`:
+
+```bash
+./run_control_center.sh
+```
+
+This launcher auto-selects a JDK that includes `javac` (helps avoid the Gradle/JRE-only error).
+
+If no JDK is found, install one:
+
+```bash
+# Fedora
+sudo dnf install -y java-21-openjdk-devel
+
+# Debian/Ubuntu
+sudo apt install -y openjdk-21-jdk
+```
+
+------------------------------------------------------------------------
+
 ## IntelliJ Workflow
 
 1. Open `debug_tools/FakeArduinoDisplay` in IntelliJ.

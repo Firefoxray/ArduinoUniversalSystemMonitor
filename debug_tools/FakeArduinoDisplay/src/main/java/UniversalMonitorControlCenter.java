@@ -417,7 +417,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void ensureDebugMirrorConfig(String fakeIn) {
         if (updateDebugConfig(true, fakeIn, true)) {
             setDebugIndicator("ON", new Color(24, 170, 24));
-            log("[INFO] Restart service to apply debug mirror settings if monitor is running as a service.");
+            log("[INFO] Restarting service so debug mirror changes apply immediately.");
+            runServiceCommand("restart");
         }
     }
 
