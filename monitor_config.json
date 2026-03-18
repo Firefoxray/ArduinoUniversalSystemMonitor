@@ -1,7 +1,7 @@
 {
   "arduino_port": "AUTO",
   "baud": 115200,
-  "debug_enabled": false,
+  "debug_enabled": true,
   "debug_port": "/tmp/fakearduino_in",
   "root_mount": "/",
   "secondary_mount": "/mnt/linux_storage",
