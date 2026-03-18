@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.0-test  
+**Version:** 8.1  
 **Last Modified:** March 17, 2026  
 
 ---
@@ -83,7 +83,9 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.6  - Added Arduino CLI flashing workflow, automatic board/core/library setup, and install_arduinos.sh support
 7.7  - Added post-install Arduino flashing prompt, arduino_install.sh entrypoint, and updated install script documentation
 7.8  - Fixed Installer for Ubuntu/Mint machines due to Python restrictions
+7.9  - Reverted the Linux service back to the system Python install path and documented the Ubuntu/Mint working-directory workaround
 8.0  - Added Java Control Center with install/update/flash tooling, service controls, sudo prompt support, and live fake-port preview integration
+8.1  - Documented exact non-IntelliJ Java Control Center launch steps and Gradle fallback workflow
 ```
 
 ---
@@ -150,10 +152,34 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 
 - Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
 - The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`), and flashes supported connected boards.
-- The Linux installer/update scripts use a project virtual environment (`.venv`) so Ubuntu/Mint pip "externally managed environment" issues are avoided.
+- The Linux installer now runs the service with `/usr/bin/python3` again and installs Python dependencies with `pip` instead of pointing systemd at a project `.venv`.
+- On Ubuntu / Linux Mint, the installer automatically uses `pip --break-system-packages` when available so the required Python packages can still be installed on PEP 668 managed systems.
 - Install flow order is: dependency setup -> Arduino flash prompt -> systemd service start.
 
 A default `monitor_config.json` is automatically created during installation.
+
+### Ubuntu / Linux Mint service workaround
+
+If your service still refuses to start on Ubuntu or Linux Mint after installation, re-open the systemd unit and make sure it uses the system Python plus the repo as the working directory:
+
+```bash
+sudo nano /etc/systemd/system/arduino-monitor.service
+```
+
+```ini
+[Service]
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py
+WorkingDirectory=/home/YOUR_USERNAME/ArduinoUniversalSystemMonitor
+```
+
+Then reload systemd and restart the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart arduino-monitor.service
+```
+
+This bypasses the Ubuntu/Mint `.venv` startup issue by running the monitor from the normal project folder instead of the virtual environment.
 
 ---
 
@@ -304,6 +330,26 @@ This repository also includes a Java-based Fake Arduino Display tool for testing
 
 Location:
 `debug_tools/FakeArduinoDisplay`
+
+To launch the Java Control Center without IntelliJ:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
+chmod +x run_control_center.sh gradlew
+./run_control_center.sh
+```
+
+If `./gradlew run` crashes on your system, use the fallback launcher instead:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
+chmod +x gradlew
+./gradlew installDist
+./build/install/FakeArduinoDisplay/bin/FakeArduinoDisplay
+```
+
+For the full Java instructions, including JDK setup and launching only the fake display window, see:
+`debug_tools/FakeArduinoDisplay/README.md`
 
 Use it with a virtual serial pair such as:
 `/tmp/fakearduino_in` and `/tmp/fakearduino_out`
