@@ -4,34 +4,34 @@ set -Eeuo pipefail
 
 echo "==== Ray Co Arduino Monitor Installer ===="
 
-PROJECT_DIR="$HOME/ArduinoUniversalSystemMonitor"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -d "$SCRIPT_DIR/.git" ]; then
+    PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
+else
+    PROJECT_DIR="${PROJECT_DIR:-$HOME/ArduinoUniversalSystemMonitor}"
+fi
 REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
 CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python3"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 have_command() {
     command -v "$1" >/dev/null 2>&1
 }
 
 run_preinstall_uninstall() {
-    local uninstall_script=""
-
-    echo "[pre] Running uninstall step for a clean install..."
-
-    if [ -x "$SCRIPT_DIR/uninstall_monitor.sh" ]; then
-        uninstall_script="$SCRIPT_DIR/uninstall_monitor.sh"
-    elif [ -x "$PROJECT_DIR/uninstall_monitor.sh" ]; then
-        uninstall_script="$PROJECT_DIR/uninstall_monitor.sh"
+    echo "[pre] Stopping and removing old service for a clean install..."
+    if systemctl list-unit-files | grep -q "^$SERVICE_NAME"; then
+        sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+        sudo systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     fi
 
-    if [ -n "$uninstall_script" ]; then
-        "$uninstall_script"
-    else
-        echo "No uninstall script found. Continuing with install."
+    if [ -f "/etc/systemd/system/$SERVICE_NAME" ]; then
+        sudo rm -f "/etc/systemd/system/$SERVICE_NAME"
+        sudo systemctl daemon-reload
     fi
 }
 
@@ -85,6 +85,8 @@ install_or_update_repo() {
     if [ -d "$PROJECT_DIR/.git" ]; then
         echo "Existing git repo found. Pulling latest..."
         git -C "$PROJECT_DIR" pull origin main
+    elif [ "$PROJECT_DIR" = "$SCRIPT_DIR" ]; then
+        echo "Using current project directory (not re-cloning)."
     else
         rm -rf "$PROJECT_DIR"
         git clone "$REPO_URL" "$PROJECT_DIR"
