@@ -5,11 +5,16 @@ set -Eeuo pipefail
 echo "==== Ray Co Arduino Monitor Installer ===="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
+INSTALL_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+if [ -z "$INSTALL_HOME" ]; then
+    INSTALL_HOME="$HOME"
+fi
 
 if [ -d "$SCRIPT_DIR/.git" ]; then
     PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
 else
-    PROJECT_DIR="${PROJECT_DIR:-$HOME/ArduinoUniversalSystemMonitor}"
+    PROJECT_DIR="${PROJECT_DIR:-$INSTALL_HOME/ArduinoUniversalSystemMonitor}"
 fi
 REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
@@ -101,6 +106,14 @@ configure_pip_flags() {
     fi
 }
 
+run_pip_user_install() {
+    if [ "$(id -un)" = "$INSTALL_USER" ]; then
+        python3 -m pip install --user "${PIP_FLAGS[@]}" "$@"
+    else
+        sudo -H -u "$INSTALL_USER" python3 -m pip install --user "${PIP_FLAGS[@]}" "$@"
+    fi
+}
+
 install_python_packages() {
     echo "[3/8] Installing Python packages..."
 
@@ -108,14 +121,14 @@ install_python_packages() {
     configure_pip_flags
 
     if [ -f requirements.txt ]; then
-        if python3 -m pip install --user "${PIP_FLAGS[@]}" -r requirements.txt; then
+        if run_pip_user_install -r requirements.txt; then
             echo "Python packages installed to the user site-packages directory."
         else
             echo "User pip install failed, trying system-wide install..."
             sudo python3 -m pip install "${PIP_FLAGS[@]}" -r requirements.txt
         fi
     else
-        if python3 -m pip install --user "${PIP_FLAGS[@]}" psutil pyserial; then
+        if run_pip_user_install psutil pyserial; then
             echo "Python packages installed to the user site-packages directory."
         else
             echo "User pip install failed, trying system-wide install..."
@@ -136,7 +149,7 @@ fix_serial_permissions() {
     fi
 
     echo "Using serial group: $SERIAL_GROUP"
-    sudo usermod -aG "$SERIAL_GROUP" "$USER"
+    sudo usermod -aG "$SERIAL_GROUP" "$INSTALL_USER"
 }
 
 ensure_config() {
@@ -177,7 +190,7 @@ After=network.target
 ExecStart=$PYTHON_BIN $PROJECT_DIR/$SCRIPT_NAME
 WorkingDirectory=$PROJECT_DIR
 Restart=always
-User=$USER
+User=$INSTALL_USER
 
 [Install]
 WantedBy=multi-user.target
@@ -215,6 +228,7 @@ enable_and_start_service() {
 finish_message() {
     echo
     echo "==== INSTALL COMPLETE ===="
+    echo "Installed for user: $INSTALL_USER"
     echo "Project installed to: $PROJECT_DIR"
     echo "Config file: $PROJECT_DIR/$CONFIG_NAME"
     echo

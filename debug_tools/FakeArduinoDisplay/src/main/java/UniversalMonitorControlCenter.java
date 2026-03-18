@@ -35,7 +35,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update from GitHub");
     private final JButton flashButton = new JButton("Flash Arduino");
-    private final JButton launchDebugButton = new JButton("Open Debug Display");
 
     private final JButton serviceOnButton = new JButton("Service On");
     private final JButton serviceOffButton = new JButton("Service Off");
@@ -55,6 +54,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private volatile SerialPort previewPort;
     private volatile boolean previewReading;
     private Thread previewReaderThread;
+    private Boolean lastDebugEnabledState;
+    private boolean debugStatusMissingLogged;
+
 
     public UniversalMonitorControlCenter() {
         super("Universal Arduino System Monitor - Control Center");
@@ -87,12 +89,12 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
-            refreshDebugStatus();
+            refreshDebugStatus(false);
         });
         serviceTimer.setRepeats(true);
         serviceTimer.start();
         refreshServiceStatus(false);
-        refreshDebugStatus();
+        refreshDebugStatus(false);
     }
 
     private JPanel buildRepoPanel() {
@@ -124,7 +126,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         appActions.add(uninstallButton);
         appActions.add(updateButton);
         appActions.add(flashButton);
-        appActions.add(launchDebugButton);
 
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
@@ -170,7 +171,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder("Arduino Preview (live from output port)"));
         panel.add(fakeDisplayPanel, BorderLayout.CENTER);
 
-        JLabel helper = new JLabel("Preview listens to Output port path. For full parser/log view use 'Open Debug Display'.");
+        JLabel helper = new JLabel("Preview listens live to the Output port path used by the fake serial pair.");
         helper.setBorder(new EmptyBorder(8, 8, 8, 8));
         panel.add(helper, BorderLayout.SOUTH);
         return panel;
@@ -190,7 +191,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
         updateButton.addActionListener(e -> runRepoScript("update.sh", true));
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
-        launchDebugButton.addActionListener(e -> SwingUtilities.invokeLater(() -> new JavaSerialFakeDisplay().setVisible(true)));
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -199,7 +199,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         debugOnButton.addActionListener(e -> setDebugMode(true));
         debugOffButton.addActionListener(e -> setDebugMode(false));
-        debugRefreshButton.addActionListener(e -> refreshDebugStatus());
+        debugRefreshButton.addActionListener(e -> refreshDebugStatus(true));
 
         startFakePortsButton.addActionListener(e -> startFakePorts());
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
@@ -364,21 +364,32 @@ public class UniversalMonitorControlCenter extends JFrame {
         runServiceCommand("restart");
     }
 
-    private void refreshDebugStatus() {
+    private void refreshDebugStatus(boolean verbose) {
         Path configPath = repoPath().resolve("monitor_config.json");
         if (!Files.exists(configPath)) {
             setDebugIndicator("UNKNOWN", Color.GRAY);
-            log("[WARN] Cannot refresh debug status: monitor_config.json not found at " + configPath);
+            lastDebugEnabledState = null;
+            if (verbose || !debugStatusMissingLogged) {
+                log("[WARN] Cannot refresh debug status: monitor_config.json not found at " + configPath);
+                debugStatusMissingLogged = true;
+            }
             return;
         }
+
+        debugStatusMissingLogged = false;
 
         try {
             String text = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);
             boolean enabled = text.matches("(?s).*\"debug_enabled\"\s*:\s*true.*");
             setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
-            log("[INFO] Debug mode is " + (enabled ? "enabled" : "disabled") + " in monitor_config.json");
+
+            if (verbose || lastDebugEnabledState == null || lastDebugEnabledState != enabled) {
+                log("[INFO] Debug mode is " + (enabled ? "enabled" : "disabled") + " in monitor_config.json");
+            }
+            lastDebugEnabledState = enabled;
         } catch (Exception ex) {
             setDebugIndicator("UNKNOWN", Color.GRAY);
+            lastDebugEnabledState = null;
             log("[WARN] Failed to refresh debug status: " + ex.getMessage());
         }
     }
@@ -633,7 +644,6 @@ public class UniversalMonitorControlCenter extends JFrame {
             uninstallButton.setEnabled(enabled);
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
-            launchDebugButton.setEnabled(enabled);
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
             serviceRestartButton.setEnabled(enabled);
