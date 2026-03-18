@@ -26,6 +26,8 @@ It includes:
   - Start fake ports using configurable input/output paths
   - Stop fake ports from the UI
 - Live preview feed in the embedded Arduino panel from the configured output port
+  - Auto-sends a one-time probe packet after fake ports start (helps verify wiring)
+  - Auto-updates `monitor_config.json` to use debug mirror on the fake input path
 - Open the existing debug display app with one click
 - Stream command output logs in-app
 

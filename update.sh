@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-PROJECT_DIR="${PROJECT_DIR:-$HOME/ArduinoUniversalSystemMonitor}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
 SERVICE_NAME="${SERVICE_NAME:-arduino-monitor.service}"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python3"
@@ -61,9 +62,21 @@ echo "==== Ray Co Arduino Monitor Updater ===="
 install_missing_prereqs
 
 if [[ ! -d "$PROJECT_DIR/.git" ]]; then
-    echo "Error: $PROJECT_DIR is not a git repository."
-    echo "Clone the repo there first."
-    exit 1
+    echo "Warning: $PROJECT_DIR is not a git repository."
+    if [[ -d "$SCRIPT_DIR/.git" ]]; then
+        echo "Using script location repo instead: $SCRIPT_DIR"
+        PROJECT_DIR="$SCRIPT_DIR"
+        VENV_DIR="$PROJECT_DIR/.venv"
+        PYTHON_BIN="$VENV_DIR/bin/python3"
+        PIP_BIN="$VENV_DIR/bin/pip"
+    else
+        echo "Cloning fresh repository into $PROJECT_DIR ..."
+        rm -rf "$PROJECT_DIR"
+        git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git "$PROJECT_DIR"
+        VENV_DIR="$PROJECT_DIR/.venv"
+        PYTHON_BIN="$VENV_DIR/bin/python3"
+        PIP_BIN="$VENV_DIR/bin/pip"
+    fi
 fi
 
 cd "$PROJECT_DIR"

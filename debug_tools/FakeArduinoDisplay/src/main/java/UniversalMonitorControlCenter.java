@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -284,6 +285,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
+        ensureDebugMirrorConfig(fakeIn);
+
         String commandText = "socat -d -d pty,raw,echo=0,link=" + escape(fakeIn) + " pty,raw,echo=0,link=" + escape(fakeOut);
         log("[RUN] " + commandText);
 
@@ -315,6 +318,62 @@ public class UniversalMonitorControlCenter extends JFrame {
         Timer delayedConnect = new Timer(900, e -> connectPreviewPort());
         delayedConnect.setRepeats(false);
         delayedConnect.start();
+
+        Timer delayedProbe = new Timer(1700, e -> sendPreviewProbePacket(fakeIn));
+        delayedProbe.setRepeats(false);
+        delayedProbe.start();
+    }
+
+    private void ensureDebugMirrorConfig(String fakeIn) {
+        Path configPath = repoPath().resolve("monitor_config.json");
+        if (!Files.exists(configPath)) {
+            log("[WARN] monitor_config.json not found at " + configPath + "; preview depends on Python debug settings.");
+            return;
+        }
+
+        try {
+            String text = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);
+            String updated = text;
+
+            if (updated.contains("\"debug_enabled\"")) {
+                updated = updated.replaceAll("\\\"debug_enabled\\\"\\s*:\\s*(true|false)", "\"debug_enabled\": true");
+            }
+            if (updated.contains("\"debug_port\"")) {
+                updated = updated.replaceAll("\\\"debug_port\\\"\\s*:\\s*\\\"[^\\\"]*\\\"", "\"debug_port\": \"" + escapeJson(fakeIn) + "\"");
+            }
+
+            if (!updated.equals(text)) {
+                Files.write(configPath, updated.getBytes(StandardCharsets.UTF_8), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                log("[INFO] Updated monitor_config.json: debug_enabled=true, debug_port=" + fakeIn);
+                log("[INFO] Restart service to apply debug mirror settings if monitor is running as a service.");
+            }
+        } catch (Exception ex) {
+            log("[WARN] Could not update monitor_config.json for debug mirror: " + ex.getMessage());
+        }
+    }
+
+    private void sendPreviewProbePacket(String fakeInPath) {
+        try {
+            SerialPort probePort = SerialPort.getCommPort(fakeInPath);
+            probePort.setComPortParameters(115200, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
+            probePort.setComPortTimeouts(SerialPort.TIMEOUT_WRITE_BLOCKING, 0, 1000);
+
+            if (!probePort.openPort()) {
+                log("[WARN] Probe packet skipped: could not open fake input port " + fakeInPath);
+                return;
+            }
+
+            try {
+                String probe = "HEADER:Preview Test|CPU:12|RAM:34|DISK0:56|DISK1:12|GPU:8|HOST:debug|OS:linux|IP:127.0.0.1|UPTIME:1m\n";
+                probePort.writeBytes(probe.getBytes(StandardCharsets.UTF_8), probe.length());
+                log("[INFO] Sent preview probe packet to " + fakeInPath + " (confirms fake port wiring).\n"
+                        + "      Python should write to input; preview reads output.");
+            } finally {
+                probePort.closePort();
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed to send preview probe packet: " + ex.getMessage());
+        }
     }
 
     private void stopFakePorts() {
@@ -550,6 +609,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private String escape(String text) {
         return "'" + text.replace("'", "'\\''") + "'";
+    }
+
+    private String escapeJson(String text) {
+        return text.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private Path detectRepoRoot() {
