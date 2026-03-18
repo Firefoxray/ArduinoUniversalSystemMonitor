@@ -15,8 +15,8 @@ REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
 CONFIG_NAME="monitor_config.json"
 SERVICE_NAME="arduino-monitor.service"
-VENV_DIR="$PROJECT_DIR/.venv"
-PYTHON_BIN="$VENV_DIR/bin/python3"
+PYTHON_BIN="/usr/bin/python3"
+PIP_FLAGS=()
 
 have_command() {
     command -v "$1" >/dev/null 2>&1
@@ -52,18 +52,18 @@ install_system_packages() {
 
     case "$DISTRO" in
         fedora)
-            sudo dnf install -y python3 python3-pip python3-virtualenv git curl
+            sudo dnf install -y python3 python3-pip git curl
             ;;
         debian)
             sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git curl
+            sudo apt install -y python3 python3-pip git curl
             ;;
         arch)
             sudo pacman -Sy --noconfirm python python-pip git curl
             ;;
         *)
             echo "Unsupported distro."
-            echo "Please manually install: python3, python3-pip, python3-venv/virtualenv, git, curl"
+            echo "Please manually install: python3, python3-pip, git, curl"
             exit 1
             ;;
     esac
@@ -93,32 +93,39 @@ install_or_update_repo() {
     fi
 }
 
-setup_virtualenv() {
-    echo "[3/8] Creating Python virtual environment..."
+configure_pip_flags() {
+    PIP_FLAGS=()
 
-    cd "$PROJECT_DIR"
-
-    if [ ! -d "$VENV_DIR" ]; then
-        python3 -m venv "$VENV_DIR"
+    if python3 -m pip help install 2>/dev/null | grep -q -- "--break-system-packages"; then
+        PIP_FLAGS=(--break-system-packages)
     fi
-
-    "$VENV_DIR/bin/python3" -m pip install --upgrade pip
 }
 
 install_python_packages() {
-    echo "[4/8] Installing Python packages into virtual environment..."
+    echo "[3/8] Installing Python packages..."
 
     cd "$PROJECT_DIR"
+    configure_pip_flags
 
     if [ -f requirements.txt ]; then
-        "$VENV_DIR/bin/pip" install -r requirements.txt
+        if python3 -m pip install --user "${PIP_FLAGS[@]}" -r requirements.txt; then
+            echo "Python packages installed to the user site-packages directory."
+        else
+            echo "User pip install failed, trying system-wide install..."
+            sudo python3 -m pip install "${PIP_FLAGS[@]}" -r requirements.txt
+        fi
     else
-        "$VENV_DIR/bin/pip" install psutil pyserial
+        if python3 -m pip install --user "${PIP_FLAGS[@]}" psutil pyserial; then
+            echo "Python packages installed to the user site-packages directory."
+        else
+            echo "User pip install failed, trying system-wide install..."
+            sudo python3 -m pip install "${PIP_FLAGS[@]}" psutil pyserial
+        fi
     fi
 }
 
 fix_serial_permissions() {
-    echo "[5/8] Fixing serial permissions..."
+    echo "[4/8] Fixing serial permissions..."
 
     SERIAL_GROUP="dialout"
 
@@ -133,7 +140,7 @@ fix_serial_permissions() {
 }
 
 ensure_config() {
-    echo "[6/8] Ensuring config file exists..."
+    echo "[5/8] Ensuring config file exists..."
 
     if [ ! -f "$PROJECT_DIR/$CONFIG_NAME" ]; then
         echo "Creating default $CONFIG_NAME..."
@@ -159,7 +166,7 @@ JSON
 }
 
 create_service_file() {
-    echo "[7/8] Creating systemd service file..."
+    echo "[6/8] Creating systemd service file..."
 
     sudo tee "/etc/systemd/system/$SERVICE_NAME" > /dev/null <<SERVICE
 [Unit]
@@ -200,7 +207,7 @@ prompt_arduino_install() {
 }
 
 enable_and_start_service() {
-    echo "[8/8] Enabling and starting systemd service..."
+    echo "[7/8] Enabling and starting systemd service..."
     sudo systemctl enable "$SERVICE_NAME"
     sudo systemctl restart "$SERVICE_NAME"
 }
@@ -210,7 +217,6 @@ finish_message() {
     echo "==== INSTALL COMPLETE ===="
     echo "Project installed to: $PROJECT_DIR"
     echo "Config file: $PROJECT_DIR/$CONFIG_NAME"
-    echo "Virtual environment: $VENV_DIR"
     echo
     echo "IMPORTANT:"
     echo "- Log out and back in (or reboot) so new serial permissions apply."
@@ -234,7 +240,6 @@ run_preinstall_uninstall
 detect_distro
 install_system_packages
 install_or_update_repo
-setup_virtualenv
 install_python_packages
 fix_serial_permissions
 ensure_config

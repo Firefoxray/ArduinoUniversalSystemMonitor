@@ -53,23 +53,66 @@ If the password field is empty, the app prompts when needed.
 
 ## Run Without IntelliJ (Terminal)
 
-From `debug_tools/FakeArduinoDisplay`:
+Use these exact steps from the repository root if you want to launch the Control Center without IntelliJ:
 
 ```bash
+cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
+chmod +x run_control_center.sh gradlew
 ./run_control_center.sh
 ```
 
-This launcher auto-selects a JDK that includes `javac` (helps avoid the Gradle/JRE-only error).
+What this does:
 
-If no JDK is found, install one:
+1. Moves into the Java project folder.
+2. Makes sure the launcher and Gradle wrapper are executable.
+3. Auto-selects a JDK that includes `javac`.
+4. Runs `./gradlew run`, which launches `UniversalMonitorControlCenter`.
+
+If no JDK is found, install one first:
 
 ```bash
 # Fedora
 sudo dnf install -y java-21-openjdk-devel
 
-# Debian/Ubuntu
+# Debian/Ubuntu/Linux Mint
 sudo apt install -y openjdk-21-jdk
 ```
+
+### Direct Gradle command
+
+If you do not want to use the helper script, run the Gradle wrapper directly:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
+chmod +x gradlew
+./gradlew run
+```
+
+### Gradle fallback if `run` crashes
+
+If `./gradlew run` fails on your machine, build the app first and then use the generated launcher:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
+chmod +x gradlew
+./gradlew installDist
+./build/install/FakeArduinoDisplay/bin/FakeArduinoDisplay
+```
+
+### Launch only the fake display window
+
+If you only want the serial fake display instead of the full Control Center:
+
+```bash
+cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
+chmod +x gradlew
+./gradlew installDist
+java -cp "build/install/FakeArduinoDisplay/lib/*" JavaSerialFakeDisplay
+```
+
+### Important note
+
+This is a desktop Swing application, so it must be started inside a normal graphical Linux session. If you launch it from a headless shell with no X11/Wayland desktop available, Java will throw a `HeadlessException` and the window will not open.
 
 ------------------------------------------------------------------------
 
