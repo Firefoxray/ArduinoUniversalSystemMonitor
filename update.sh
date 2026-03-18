@@ -92,6 +92,57 @@ run_as_repo_user() {
     fi
 }
 
+pick_jdk_home() {
+    local candidate
+
+    if [[ -n "${JAVA_HOME:-}" ]] && [[ -x "$JAVA_HOME/bin/javac" ]]; then
+        printf '%s' "$JAVA_HOME"
+        return 0
+    fi
+
+    for candidate in \
+        /usr/lib/jvm/java-21-openjdk \
+        /usr/lib/jvm/java-21-openjdk-amd64 \
+        /usr/lib/jvm/java-17-openjdk \
+        /usr/lib/jvm/java-17-openjdk-amd64 \
+        /usr/lib/jvm/default-java
+    do
+        if [[ -x "$candidate/bin/javac" ]]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+
+    local javac_path
+    javac_path="$(command -v javac 2>/dev/null || true)"
+    if [[ -n "$javac_path" ]]; then
+        dirname "$(dirname "$(readlink -f "$javac_path")")"
+        return 0
+    fi
+
+    return 1
+}
+
+build_control_center() {
+    local build_command="cd debug_tools/FakeArduinoDisplay && ./gradlew fatJar installDist"
+    local jdk_home=""
+
+    if ! have_command java; then
+        echo "Skipping Java rebuild because 'java' is not installed."
+        return 0
+    fi
+
+    if jdk_home="$(pick_jdk_home)"; then
+        echo "Using JAVA_HOME=$jdk_home for Control Center rebuild."
+        run_as_repo_user "export JAVA_HOME=$(printf '%q' "$jdk_home"); export PATH=\$JAVA_HOME/bin:\$PATH; $build_command"
+    else
+        echo "Skipping Java rebuild because no JDK with javac was found."
+        echo "Install one with:"
+        echo "  Fedora: sudo dnf install -y java-21-openjdk-devel"
+        echo "  Debian/Ubuntu: sudo apt install -y openjdk-21-jdk"
+    fi
+}
+
 fix_repo_ownership() {
     if [[ "$(id -u)" -eq 0 && -n "$REPO_USER" && "$REPO_USER" != "root" ]]; then
         chown -R "$REPO_USER:$REPO_GROUP" "$PROJECT_DIR"
@@ -153,7 +204,7 @@ chmod +x install_control_center_desktop.sh 2>/dev/null || true
 echo "[6/7] Rebuilding Java Control Center artifacts..."
 if [[ -f debug_tools/FakeArduinoDisplay/gradlew ]]; then
     chmod +x debug_tools/FakeArduinoDisplay/gradlew
-    run_as_repo_user "cd debug_tools/FakeArduinoDisplay && ./gradlew fatJar installDist"
+    build_control_center
 else
     echo "Skipping Java rebuild because debug_tools/FakeArduinoDisplay/gradlew is missing."
 fi
