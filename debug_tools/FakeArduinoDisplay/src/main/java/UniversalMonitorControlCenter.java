@@ -798,6 +798,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     public static void main(String[] args) {
+        if (GraphicsEnvironment.isHeadless()) {
+            System.err.println("Error: Universal Monitor Control Center needs a graphical desktop session.");
+            System.err.println("Start it from KDE/GNOME, or set DISPLAY/XAUTHORITY correctly before launching.");
+            System.exit(1);
+        }
+
         SwingUtilities.invokeLater(() -> new UniversalMonitorControlCenter().setVisible(true));
     }
 
