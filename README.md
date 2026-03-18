@@ -3,8 +3,8 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.1  
-**Last Modified:** March 17, 2026  
+**Version:** 8.2  
+**Last Modified:** March 18, 2026  
 
 ---
 
@@ -39,10 +39,24 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 
 ## Project Structure
 
-- Python Monitor (main system)
-- Arduino Display (hardware UI)
-- Java Fake Display (debug tool)
-- Virtual serial (socat) for testing
+```text
+ArduinoUniversalSystemMonitor/
+├── UniversalArduinoMonitor.py              # Main desktop monitor sender
+├── monitor_config.json                     # Runtime config / optional debug mirror settings
+├── requirements.txt                        # Python dependencies
+├── install.sh                              # Main Linux installer
+├── arduino_install.sh                      # Small entrypoint wrapper for Arduino flashing
+├── install_arduinos.sh                     # Arduino CLI setup + board flashing workflow
+├── update.sh                               # Pull latest changes and refresh dependencies
+├── uninstall_monitor.sh                    # Remove service and installed files
+├── UniversalArduinoMonitor28/              # Arduino UNO R3 2.8" TFT sketch
+├── UniversalArduinoMonitor35/              # Arduino UNO R4 WiFi 3.5" TFT sketch
+├── debug_tools/FakeArduinoDisplay/         # Java fake display + Control Center
+├── legacy/Windows/                         # Older Windows-side monitor files
+└── screenshots/                            # README/device preview images
+```
+
+For now, keeping the install/update/uninstall scripts in the repository root is the most practical option because the README commands stay short and the scripts can reliably call each other with their current relative paths. If the helper script count keeps growing later, moving them into a `scripts/` folder would make sense, but it would be a cleanup/refactor rather than a functional improvement.
 
 ---
 
@@ -86,6 +100,7 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 7.9  - Reverted the Linux service back to the system Python install path and documented the Ubuntu/Mint working-directory workaround
 8.0  - Added Java Control Center with install/update/flash tooling, service controls, sudo prompt support, and live fake-port preview integration
 8.1  - Documented exact non-IntelliJ Java Control Center launch steps and Gradle fallback workflow
+8.2  - Refreshed README project layout and clarified the root-level install/update/uninstall helper scripts
 ```
 
 ---
@@ -189,9 +204,11 @@ If you skip the prompt or want to reflash later:
 
 ```bash
 cd ~/ArduinoUniversalSystemMonitor
-chmod +x arduino_install.sh
+chmod +x arduino_install.sh install_arduinos.sh
 ./arduino_install.sh
 ```
+
+`arduino_install.sh` is just a stable wrapper entrypoint. The actual flashing logic lives in `install_arduinos.sh`, which installs `arduino-cli` if needed, checks cores/libraries, stops the monitor service before flashing, and restarts it afterward.
 
 ---
 
@@ -251,17 +268,18 @@ sudo systemctl status arduino-monitor
 ```
 ## Updating (Linux)
 
-```
+```bash
 cd ~/ArduinoUniversalSystemMonitor
+chmod +x update.sh
 ./update.sh
 ```
 
 This will:
 
 - Pull the latest version from GitHub
-
+- Ensure the local `.venv` exists for update-time package management
 - Update Python dependencies
-
+- Re-apply executable bits to the helper scripts
 - Restart the system service
 
 ---
@@ -278,13 +296,10 @@ chmod +x uninstall_monitor.sh
 
 This will:
 
-Stop and disable the systemd service
-
-Remove the service file
-
-Remove installed monitor files and directories
-
-Clean up previous install locations
+- Stop and disable the systemd service
+- Remove the service file
+- Remove installed monitor files and directories
+- Clean up previous install locations
 
 After uninstalling, you can reinstall cleanly using:
 
