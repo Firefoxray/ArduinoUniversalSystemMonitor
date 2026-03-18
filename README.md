@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.2  
+**Version:** 8.4  
 **Last Modified:** March 18, 2026  
 
 ---
@@ -49,6 +49,8 @@ ArduinoUniversalSystemMonitor/
 ├── install_arduinos.sh                     # Arduino CLI setup + board flashing workflow
 ├── update.sh                               # Pull latest changes and refresh dependencies
 ├── uninstall_monitor.sh                    # Remove service and installed files
+├── UniversalMonitorControlCenter.sh        # Root-level Java GUI launcher/build helper
+├── install_control_center_desktop.sh       # Optional Linux app-menu launcher installer
 ├── UniversalArduinoMonitor28/              # Arduino UNO R3 2.8" TFT sketch
 ├── UniversalArduinoMonitor35/              # Arduino UNO R4 WiFi 3.5" TFT sketch
 ├── debug_tools/FakeArduinoDisplay/         # Java fake display + Control Center
@@ -101,6 +103,8 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.0  - Added Java Control Center with install/update/flash tooling, service controls, sudo prompt support, and live fake-port preview integration
 8.1  - Documented exact non-IntelliJ Java Control Center launch steps and Gradle fallback workflow
 8.2  - Refreshed README project layout and clarified the root-level install/update/uninstall helper scripts
+8.3  - Added a root-level Java Control Center launcher, runnable fat-jar build, and optional desktop-menu installer
+8.4  - Made Control Center updates rebuild/relaunch the Java app and added visible in-app version display
 ```
 
 ---
@@ -173,6 +177,8 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 
 A default `monitor_config.json` is automatically created during installation.
 
+`install.sh` also writes the systemd service file with your real detected username and install path automatically. The `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
+
 ### Ubuntu / Linux Mint service workaround
 
 If your service still refuses to start on Ubuntu or Linux Mint after installation, re-open the systemd unit and make sure it uses the system Python plus the repo as the working directory:
@@ -196,7 +202,41 @@ sudo systemctl restart arduino-monitor.service
 
 This bypasses the Ubuntu/Mint `.venv` startup issue by running the monitor from the normal project folder instead of the virtual environment.
 
+If you used `./install.sh`, you do **not** need to hand-edit `YOUR_USERNAME` in the service file unless you are manually repairing a broken unit.
+
 ---
+
+## Java Control Center Launcher (Root-Level)
+
+You can now launch the Java Control Center straight from the repository root without remembering the Gradle path:
+
+```bash
+chmod +x UniversalMonitorControlCenter.sh
+./UniversalMonitorControlCenter.sh
+```
+
+If `DISPLAY` is missing, the launcher now tries to infer it from the local desktop session before starting Swing. If no GUI session can be found, it exits with a clear error instead of a Java stack trace.
+
+What the root launcher does:
+
+- Finds a usable JDK (`java` + `javac`)
+- Builds `debug_tools/FakeArduinoDisplay/build/libs/UniversalMonitorControlCenter.jar` automatically when Java files/resources changed
+- Launches the GUI with `java -jar ...`
+
+So for normal testing, you can stay in the repo root and just run `./UniversalMonitorControlCenter.sh`.
+
+Inside the Control Center, **Update from GitHub** still pulls the newest repo files from GitHub first, then rebuilds the Java app and relaunches it.
+
+### Optional Linux app-menu launcher
+
+If you want a clickable launcher in KDE/GNOME/etc, run:
+
+```bash
+chmod +x install_control_center_desktop.sh
+./install_control_center_desktop.sh
+```
+
+That installs a `.desktop` entry into `~/.local/share/applications`, so the Control Center shows up in the desktop app menu as **Universal Monitor Control Center**.
 
 ## Arduino Flashing Script (Standalone)
 

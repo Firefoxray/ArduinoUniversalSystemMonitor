@@ -16,6 +16,7 @@ It includes:
   - `uninstall_monitor.sh`
   - `update.sh`
   - `arduino_install.sh`
+- When **Update from GitHub** is used, pull the newest repo files from GitHub as the repo owner, rebuild the Java jar/distribution, and relaunch the Control Center automatically
 - Manage Linux service state (`arduino-monitor.service`):
   - Service On
   - Service Off
@@ -35,6 +36,7 @@ It includes:
   - Auto-updates `monitor_config.json` to use debug mirror on the fake input path
 - Open the existing debug display app with one click
 - Stream command output logs in-app
+- Show the Java Control Center version directly in the window so it matches the packaged project version
 
 ------------------------------------------------------------------------
 
@@ -48,6 +50,34 @@ You can either:
 2. Enter your sudo password in the Control Center password field.
 
 If the password field is empty, the app prompts when needed.
+
+------------------------------------------------------------------------
+
+## Fastest Launch From Repo Root
+
+From the repository root, use the new helper:
+
+```bash
+chmod +x UniversalMonitorControlCenter.sh
+./UniversalMonitorControlCenter.sh
+```
+
+If `DISPLAY` is missing, the launcher now tries to infer it from the local desktop session before starting Swing. If no GUI session can be found, it exits with a clear error instead of a Java stack trace.
+
+This root-level launcher:
+
+1. Detects a working JDK.
+2. Builds `build/libs/UniversalMonitorControlCenter.jar` automatically when Java files/resources changed.
+3. Launches the GUI with `java -jar`.
+
+If you want a desktop app-menu entry on Linux, run this from the repo root too:
+
+```bash
+chmod +x install_control_center_desktop.sh
+./install_control_center_desktop.sh
+```
+
+That creates a per-user `.desktop` launcher in `~/.local/share/applications`.
 
 ------------------------------------------------------------------------
 
@@ -90,13 +120,15 @@ chmod +x gradlew
 
 ### Gradle fallback if `run` crashes
 
-If `./gradlew run` fails on your machine, build the app first and then use the generated launcher:
+If `./gradlew run` fails on your machine, build the app first and then use the generated launcher or the runnable jar:
 
 ```bash
 cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
 chmod +x gradlew
-./gradlew installDist
-./build/install/FakeArduinoDisplay/bin/FakeArduinoDisplay
+./gradlew installDist fatJar
+./build/install/UniversalMonitorControlCenter/bin/UniversalMonitorControlCenter
+# or
+java -jar build/libs/UniversalMonitorControlCenter.jar
 ```
 
 ### Launch only the fake display window
