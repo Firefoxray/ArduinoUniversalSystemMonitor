@@ -12,52 +12,15 @@ JAVA_PROJECT_DIR="$REPO_ROOT/debug_tools/FakeArduinoDisplay"
 JAR_PATH="$JAVA_PROJECT_DIR/build/libs/UniversalMonitorControlCenter.jar"
 CURRENT_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 CURRENT_UID="$(id -u)"
+JAVA_HELPER="$REPO_ROOT/lib/java_control_center.sh"
 
-pick_jdk_home() {
-    local candidate
-
-    if [[ -n "${JAVA_HOME:-}" ]] && [[ -x "$JAVA_HOME/bin/javac" ]]; then
-        printf '%s' "$JAVA_HOME"
-        return 0
-    fi
-
-    for candidate in \
-        /usr/lib/jvm/java-21-openjdk \
-        /usr/lib/jvm/java-21-openjdk-amd64 \
-        /usr/lib/jvm/java-17-openjdk \
-        /usr/lib/jvm/java-17-openjdk-amd64 \
-        /usr/lib/jvm/default-java
-    do
-        if [[ -x "$candidate/bin/javac" ]]; then
-            printf '%s' "$candidate"
-            return 0
-        fi
-    done
-
-    local javac_path
-    javac_path="$(command -v javac 2>/dev/null || true)"
-    if [[ -n "$javac_path" ]]; then
-        dirname "$(dirname "$(readlink -f "$javac_path")")"
-        return 0
-    fi
-
-    return 1
-}
+# shellcheck source=lib/java_control_center.sh
+source "$JAVA_HELPER"
 
 ensure_java() {
-    if ! command -v java >/dev/null 2>&1; then
-        echo "Error: java not found. Install OpenJDK first."
-        echo "Fedora: sudo dnf install -y java-21-openjdk-devel"
-        exit 1
-    fi
-
-    if JDK_HOME="$(pick_jdk_home)"; then
-        export JAVA_HOME="$JDK_HOME"
-    else
-        echo "Error: no JDK with javac found."
-        echo "Fedora: sudo dnf install -y java-21-openjdk-devel"
-        exit 1
-    fi
+    java_control_center_ensure_jdks
+    export JAVA_HOME="$JAVA_CONTROL_CENTER_BUILD_JDK"
+    export PATH="$JAVA_HOME/bin:$PATH"
 }
 
 prime_gui_env() {
@@ -116,6 +79,7 @@ build_jar_if_needed() {
 
     if [[ "$needs_build" -eq 1 ]]; then
         echo "Building Universal Monitor Control Center jar..."
+        "$JAVA_CONTROL_CENTER_BUILD_JDK/bin/java" -version >/dev/null
         ./gradlew --quiet fatJar
     fi
 }
@@ -125,5 +89,7 @@ prime_gui_env
 build_jar_if_needed
 
 echo "Launching $JAR_PATH"
+echo "Using build JDK: $JAVA_CONTROL_CENTER_BUILD_JDK"
+echo "Using runtime JDK: $JAVA_CONTROL_CENTER_RUNTIME_JDK"
 echo "Using DISPLAY=${DISPLAY:-<empty>} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<empty>} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<empty>} XAUTHORITY=${XAUTHORITY:-<empty>}"
-exec java -Djava.awt.headless=false -jar "$JAR_PATH"
+exec "$JAVA_CONTROL_CENTER_RUNTIME_JDK/bin/java" -Djava.awt.headless=false -jar "$JAR_PATH"

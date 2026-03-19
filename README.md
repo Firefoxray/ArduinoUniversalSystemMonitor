@@ -65,7 +65,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 ## Requirements
 
 - Python 3.8+
-- Java JDK 21+
+- Java OpenJDK 21 (build) + OpenJDK 25 (runtime for the Control Center launcher; auto-installed on supported Linux distros)
 - Arduino IDE 1.8.19+
 - **Option A:** Arduino UNO R4 (USB-C) + Arduino 3.5" TFT Display
 - **Option B:** Arduino UNO R3 (USB-B) + 2.8" TFT UNO R3 Display
@@ -221,9 +221,10 @@ If `DISPLAY` is missing, the launcher now tries to infer it from the local deskt
 
 What the root launcher does:
 
-- Finds a usable JDK (`java` + `javac`)
+- Checks for OpenJDK 21 (build) and OpenJDK 25 (runtime) the first time you launch it
+- Automatically installs both JDKs on supported Linux distros (`apt`, `dnf`, `pacman`, `zypper`) when they are missing
 - Builds `debug_tools/FakeArduinoDisplay/build/libs/UniversalMonitorControlCenter.jar` automatically when Java files/resources changed
-- Launches the GUI with `java -jar ...`
+- Launches the GUI with the detected OpenJDK 25 runtime instead of whichever `java` happens to be first in `PATH`
 
 So for normal testing, you can stay in the repo root and just run `./UniversalMonitorControlCenter.sh`.
 
