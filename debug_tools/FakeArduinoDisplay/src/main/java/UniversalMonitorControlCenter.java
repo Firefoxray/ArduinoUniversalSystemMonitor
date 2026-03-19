@@ -99,7 +99,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
-        topPanel.add(buildHeaderPanel(), BorderLayout.NORTH);
+        topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
         topPanel.add(buildActionPanel(), BorderLayout.CENTER);
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -128,13 +128,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshDebugStatus(false);
     }
 
-    private JPanel buildHeaderPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 0));
-        panel.add(buildRepoPanel(), BorderLayout.CENTER);
-        panel.add(buildThemePanel(), BorderLayout.EAST);
-        return panel;
-    }
-
     private JPanel buildRepoPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.setBorder(BorderFactory.createTitledBorder("Project Location / Privileges"));
@@ -151,16 +144,13 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         panel.add(new JLabel("sudo password:"));
         panel.add(sudoPasswordField);
-
-        return panel;
-    }
-
-    private JPanel buildThemePanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
-        lightModeToggle.setFocusable(false);
+        panel.add(Box.createHorizontalStrut(12));
         panel.add(versionLabel);
+        panel.add(Box.createHorizontalStrut(18));
+        lightModeToggle.setFocusable(false);
         panel.add(lightModeToggle);
+
         return panel;
     }
 
