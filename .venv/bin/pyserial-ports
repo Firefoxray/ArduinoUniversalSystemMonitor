@@ -1,4 +1,4 @@
-#!/home/firemintxp/ArduinoUniversalSystemMonitor/.venv/bin/python3
+#!/home/fire-fedora-laptop/ArduinoUniversalSystemMonitor/.venv/bin/python3
 import sys
 from serial.tools.list_ports import main
 if __name__ == '__main__':

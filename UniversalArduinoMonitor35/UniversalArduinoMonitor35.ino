@@ -193,6 +193,7 @@ void updateHome() {
   drawInfoLine(210, "Temp", fitText(cpuTemp, 12), CYAN, 95);
   drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
   drawInfoLine(262, "OS", fitText(osName, 24), CYAN, 95);
+  drawInfoLine(288, "Host", fitText(hostName, 24), GREEN, 95);
 }
 
 void drawThreadCell(int x, int y, int idx, int pct) {

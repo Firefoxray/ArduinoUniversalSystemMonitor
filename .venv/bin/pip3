@@ -1,4 +1,4 @@
-#!/home/firemintxp/ArduinoUniversalSystemMonitor/.venv/bin/python3
+#!/home/fire-fedora-laptop/ArduinoUniversalSystemMonitor/.venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
