@@ -3,8 +3,8 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.4  
-**Last Modified:** March 18, 2026  
+**Version:** 8.5  
+**Last Modified:** March 19, 2026  
 
 ---
 
@@ -108,10 +108,49 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.2  - Refreshed README project layout and clarified the root-level install/update/uninstall helper scripts
 8.3  - Added a root-level Java Control Center launcher, runnable fat-jar build, and optional desktop-menu installer
 8.4  - Made Control Center updates rebuild/relaunch the Java app and added visible in-app version display
-8.5  - Renamed Arduino sketch folders, added Mega 2560 3.5" support, custom sketch upload, RAM GB display on 3.5" home page, and removed the two-board flashing cap
+8.5  - Refined the Control Center layout/theme, added custom-sketch selection status, cleaned 3.5" RAM/OS labels, normalized Fedora OS naming, and improved Mega touchscreen page switching
 ```
 
 ---
+
+## Release Notes Since v7.4.1
+
+### v7.5
+- Re-added the 2.8" TFT UNO R3 build and clarified the supported hardware matrix.
+
+### v7.6
+- Added Arduino CLI-based flashing, automatic core/library setup, and the standalone flashing workflow.
+
+### v7.7
+- Added the post-install flash prompt plus the `arduino_install.sh` wrapper entrypoint.
+
+### v7.8
+- Fixed installer issues on Ubuntu and Linux Mint systems affected by stricter Python packaging rules.
+
+### v7.9
+- Switched the Linux service back to the system Python path and documented the Ubuntu/Mint working-directory workaround.
+
+### v8.0
+- Added the Java Control Center with install/update/flash tooling, service controls, sudo prompt support, and live fake-port preview integration.
+
+### v8.1
+- Documented exact launcher/build usage for the Java Control Center outside IntelliJ, including Gradle fallback steps.
+
+### v8.2
+- Refreshed the README project layout and clarified the root-level install/update/uninstall helper scripts.
+
+### v8.3
+- Added a root-level Control Center launcher, runnable fat-jar build, and optional Linux desktop entry installer.
+
+### v8.4
+- Made Control Center updates rebuild/relaunch the Java app and added visible in-app version display.
+
+### v8.5
+- Moved the light/dark mode toggle to the top-right corner of the Control Center and slightly deepened the dark theme.
+- Added a custom-sketch status indicator beside **Upload Custom Sketch** so the selected file/folder name stays visible.
+- Updated the 3.5" Arduino home page label from **RAM GB** to **RAM**.
+- Normalized Fedora OS reporting to **Fedora Linux** so the OS text stays clean on both the OS and Network pages.
+- Tightened the Mega 2560 3.5" touchscreen press detection so page switching works reliably again.
 
 ## TODO
 

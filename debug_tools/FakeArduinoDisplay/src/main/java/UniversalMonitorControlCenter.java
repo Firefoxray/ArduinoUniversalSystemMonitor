@@ -56,15 +56,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
+    private final JLabel customSketchIndicator = new JLabel("No sketch selected");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
-    private final Color darkBackground = new Color(27, 45, 74);
-    private final Color darkPanelBackground = new Color(39, 60, 95);
+    private final Color darkBackground = new Color(23, 39, 66);
+    private final Color darkPanelBackground = new Color(34, 54, 86);
     private final Color darkAccent = new Color(92, 143, 214);
     private final Color darkText = new Color(232, 240, 252);
-    private final Color darkFieldBackground = new Color(20, 33, 55);
-    private final Color darkButtonBackground = new Color(76, 117, 184);
+    private final Color darkFieldBackground = new Color(18, 29, 48);
+    private final Color darkButtonBackground = new Color(70, 109, 171);
     private final Color lightBackground = new Color(236, 242, 252);
     private final Color lightPanelBackground = new Color(248, 251, 255);
     private final Color lightAccent = new Color(125, 160, 219);
@@ -80,6 +81,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Thread previewReaderThread;
     private Boolean lastDebugEnabledState;
     private boolean debugStatusMissingLogged;
+    private Path selectedCustomSketchPath;
 
 
     public UniversalMonitorControlCenter() {
@@ -162,6 +164,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         appActions.add(updateButton);
         appActions.add(flashButton);
         appActions.add(customFlashButton);
+        customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
+        customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
+        appActions.add(customSketchIndicator);
 
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
@@ -664,6 +669,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
             lightModeToggle.setBackground(panelBackground);
+            updateCustomSketchIndicatorAppearance(accent, textColor);
             fakeDisplayPanel.setBorder(new LineBorder(accent, 1, true));
 
             repaint();
@@ -804,11 +810,15 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void uploadCustomSketch() {
-        Path sketchPath = chooseSketchPath();
-        if (sketchPath == null) {
-            log("[INFO] Custom sketch upload canceled.");
-            return;
+        Path sketchPath = selectedCustomSketchPath;
+        if (sketchPath == null || !Files.exists(sketchPath)) {
+            sketchPath = chooseSketchPath();
+            if (sketchPath == null) {
+                log("[INFO] Custom sketch upload canceled.");
+                return;
+            }
         }
+        setSelectedCustomSketchPath(sketchPath);
 
         List<DetectedBoard> boards = detectConnectedBoards();
         if (boards.isEmpty()) {
@@ -859,9 +869,32 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         Path path = selected.toPath().toAbsolutePath().normalize();
         if (Files.isRegularFile(path) && path.getFileName().toString().toLowerCase().endsWith(".ino")) {
-            return path.getParent();
+            path = path.getParent();
         }
+        setSelectedCustomSketchPath(path);
         return path;
+    }
+
+    private void setSelectedCustomSketchPath(Path sketchPath) {
+        selectedCustomSketchPath = sketchPath == null ? null : sketchPath.toAbsolutePath().normalize();
+        updateCustomSketchIndicatorText();
+    }
+
+    private void updateCustomSketchIndicatorText() {
+        String text = "No sketch selected";
+        String toolTip = "Choose a custom sketch to enable quick re-uploads.";
+        if (selectedCustomSketchPath != null) {
+            Path fileName = selectedCustomSketchPath.getFileName();
+            String label = fileName == null ? selectedCustomSketchPath.toString() : fileName.toString();
+            text = "Selected: " + label;
+            toolTip = selectedCustomSketchPath.toString();
+        }
+        customSketchIndicator.setText(text);
+        customSketchIndicator.setToolTipText(toolTip);
+    }
+
+    private void updateCustomSketchIndicatorAppearance(Color accent, Color textColor) {
+        customSketchIndicator.setForeground(selectedCustomSketchPath == null ? textColor : accent);
     }
 
     private List<DetectedBoard> detectConnectedBoards() {
@@ -1046,12 +1079,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                return properties.getProperty("app.version", "dev").trim();
+                String version = properties.getProperty("app.version", "8.5").trim();
+                if (!version.isEmpty() && !version.contains("${")) {
+                    return version;
+                }
             }
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "dev";
+        return "8.5";
     }
 
     private boolean runningAsRoot() {
