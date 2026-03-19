@@ -84,6 +84,20 @@ lib_installed_by_name() {
     arduino-cli lib list | grep -Fqi "$detect_name"
 }
 
+run_cli_with_user_env() {
+    local cli_path="$1"
+    shift
+
+    sudo env \
+        HOME="$HOME" \
+        USER="${USER:-$(id -un)}" \
+        LOGNAME="${LOGNAME:-${USER:-$(id -un)}}" \
+        XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+        XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" \
+        XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" \
+        "$cli_path" "$@"
+}
+
 ensure_libraries() {
     echo "Checking required Arduino libraries..."
 
@@ -160,7 +174,7 @@ upload_with_retry() {
 
         sleep 2
 
-        if upload_output="$(sudo "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+        if upload_output="$(run_cli_with_user_env "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
             printf '%s
 ' "$upload_output"
             echo "Upload succeeded after sudo retry for $board_name on $port."
