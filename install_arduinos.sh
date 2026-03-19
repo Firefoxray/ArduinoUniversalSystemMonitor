@@ -142,22 +142,8 @@ upload_with_retry() {
     local board_name="$4"
     local cli_path
     local upload_output
-    local -a sudo_upload_cmd
 
     cli_path="$(command -v arduino-cli)"
-    sudo_upload_cmd=(
-        sudo
-        env
-        "HOME=$HOME"
-        "USER=${SUDO_USER:-${USER:-$(id -un)}}"
-        "LOGNAME=${SUDO_USER:-${LOGNAME:-${USER:-$(id -un)}}}"
-        "PATH=$PATH"
-        "$cli_path"
-        upload
-        -p "$port"
-        --fqbn "$fqbn"
-        "$sketch"
-    )
 
     if upload_output="$($cli_path upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
         printf '%s
@@ -170,11 +156,11 @@ upload_with_retry() {
 
     if grep -Eqi '(permission denied|cannot perform port reset|no device found on tty|access is denied)' <<< "$upload_output"; then
         echo "Upload hit a serial-port access/reset problem on $port."
-        echo "Retrying upload with sudo while preserving your Arduino CLI home so installed cores stay visible..."
+        echo "Retrying upload with sudo so Fedora can perform the 1200-bps touch reset cleanly..."
 
         sleep 2
 
-        if upload_output="$("${sudo_upload_cmd[@]}" 2>&1)"; then
+        if upload_output="$(sudo "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
             printf '%s
 ' "$upload_output"
             echo "Upload succeeded after sudo retry for $board_name on $port."
