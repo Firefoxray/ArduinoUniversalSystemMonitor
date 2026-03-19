@@ -93,17 +93,21 @@ What this does:
 
 1. Moves into the Java project folder.
 2. Makes sure the launcher and Gradle wrapper are executable.
-3. Auto-selects a JDK that includes `javac`.
-4. Runs `./gradlew run`, which launches `UniversalMonitorControlCenter`.
+3. Auto-installs OpenJDK 21 for building and OpenJDK 25 for runtime on supported Linux package managers when they are missing.
+4. Auto-selects the build JDK and runtime JDK separately so the launcher does not accidentally mix Java versions.
+5. Runs `./gradlew run`, which launches `UniversalMonitorControlCenter`.
 
-If no JDK is found, install one first:
+If you want to install them yourself instead of using the automatic bootstrapper:
 
 ```bash
 # Fedora
-sudo dnf install -y java-21-openjdk-devel
+sudo dnf install -y java-21-openjdk-devel java-25-openjdk-devel
 
 # Debian/Ubuntu/Linux Mint
-sudo apt install -y openjdk-21-jdk
+sudo apt install -y openjdk-21-jdk openjdk-25-jdk
+
+# Arch
+sudo pacman -Sy --noconfirm jdk21-openjdk jdk-openjdk
 ```
 
 ### Direct Gradle command
