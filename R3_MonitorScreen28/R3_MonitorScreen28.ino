@@ -59,7 +59,7 @@ uint8_t gpuMemPct = 0;
 
 char cpuTemp[8] = "--";
 char osName[12] = "--";
-char hostName[16] = "--";
+char hostName[24] = "--";
 char ipAddr[16] = "--";
 char uptimeStr[12] = "--";
 char downStr[14] = "--";

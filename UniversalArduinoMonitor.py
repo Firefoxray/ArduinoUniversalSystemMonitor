@@ -255,7 +255,7 @@ def format_ram_usage_gb() -> str:
         vm = psutil.virtual_memory()
         used_gb = vm.used / (1024 ** 3)
         total_gb = vm.total / (1024 ** 3)
-        return f"{used_gb:.2f} GB/{total_gb:.1f} GB"
+        return f"{used_gb:.2f}GB/{total_gb:.1f}GB"
     except Exception:
         return "--"
 
