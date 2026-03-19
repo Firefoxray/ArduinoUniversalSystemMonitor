@@ -109,6 +109,18 @@ String prettyGPU(String s) {
   return s;
 }
 
+String prettyOS(String s) {
+  s.trim();
+
+  int idx = s.indexOf(" (");
+  if (idx != -1) {
+    s = s.substring(0, idx);
+  }
+
+  s.trim();
+  return s;
+}
+
 void drawBar(int x, int y, int w, int h, int percent, uint16_t color) {
   if (percent < 0) percent = 0;
   if (percent > 100) percent = 100;
@@ -124,16 +136,13 @@ void drawHeader(const char* title, int page) {
   tft.setTextColor(CYAN);
   tft.setCursor(12, 10);
   tft.print(title);
-  tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
 
-  clearArea(0, SCREEN_H - 18, SCREEN_W, 18);
-  tft.setTextSize(1);
+  String pageStr = String(page) + "/" + String(TOTAL_PAGES);
   tft.setTextColor(WHITE);
-  tft.setCursor(12, SCREEN_H - 12);
-  tft.print("Tap to switch ");
-  tft.print(page);
-  tft.print("/");
-  tft.print(TOTAL_PAGES);
+  tft.setCursor(430, 10);
+  tft.print(pageStr);
+
+  tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
 }
 
 void drawLabelBar(int y, const char* label, int pct, uint16_t color) {
@@ -192,7 +201,7 @@ void updateHome() {
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
   drawInfoLine(210, "Temp", fitText(cpuTemp, 12), CYAN, 95);
   drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
-  drawInfoLine(262, "OS", fitText(osName, 24), CYAN, 95);
+  drawInfoLine(262, "OS", fitText(prettyOS(osName), 32), CYAN, 95);
   drawInfoLine(288, "Host", fitText(hostName, 24), GREEN, 95);
 }
 
@@ -293,7 +302,7 @@ void updateProc() {
 
 void updateNet() {
   drawInfoLine(48,  "Host", fitText(hostName, 24), CYAN, 95);
-  drawInfoLine(78,  "OS", fitText(osName, 20), ORANGE, 95);
+  drawInfoLine(78,  "OS", fitText(prettyOS(osName), 32), ORANGE, 95);
   drawInfoLine(108, "IP", fitText(ipAddr, 18), WHITE, 95);
   drawInfoLine(138, "Down", fitText(downStr, 18), GREEN, 105);
   drawInfoLine(168, "Up", fitText(upStr, 18), YELLOW, 105);
@@ -511,7 +520,7 @@ void parseIncomingLine(String s) {
 void setup() {
   Serial.begin(115200);
   tft.begin();
-  tft.setRotation(3);
+  tft.setRotation(1); //1 for charger left, 3 for charger right
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
 
   for (int i = 0; i < GRAPH_POINTS; i++) {
