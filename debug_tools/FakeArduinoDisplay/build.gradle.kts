@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.firefoxray"
-version = "8.4"
+version = "8.5"
 
 repositories {
     mavenCentral()
