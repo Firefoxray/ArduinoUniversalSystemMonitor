@@ -135,6 +135,48 @@ detect_boards() {
     fi
 }
 
+upload_with_retry() {
+    local port="$1"
+    local fqbn="$2"
+    local sketch="$3"
+    local board_name="$4"
+    local cli_path
+    local upload_output
+
+    cli_path="$(command -v arduino-cli)"
+
+    if upload_output="$($cli_path upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+        printf '%s
+' "$upload_output"
+        return 0
+    fi
+
+    printf '%s
+' "$upload_output"
+
+    if grep -Eqi '(permission denied|cannot perform port reset|no device found on tty|access is denied)' <<< "$upload_output"; then
+        echo "Upload hit a serial-port access/reset problem on $port."
+        echo "Retrying upload with sudo so Fedora can perform the 1200-bps touch reset cleanly..."
+
+        sleep 2
+
+        if upload_output="$(sudo "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+            printf '%s
+' "$upload_output"
+            echo "Upload succeeded after sudo retry for $board_name on $port."
+            return 0
+        fi
+
+        printf '%s
+' "$upload_output"
+        echo "Upload still failed on $port after sudo retry."
+        return 1
+    fi
+
+    echo "Upload failed on $port."
+    return 1
+}
+
 flash_boards() {
     local flashed_count=0
 
@@ -160,7 +202,7 @@ flash_boards() {
         echo "      FQBN:   $fqbn"
 
         arduino-cli compile --fqbn "$fqbn" "$sketch"
-        arduino-cli upload -p "$port" --fqbn "$fqbn" "$sketch"
+        upload_with_retry "$port" "$fqbn" "$sketch" "$board_name"
 
         flashed_count=$((flashed_count + 1))
 
