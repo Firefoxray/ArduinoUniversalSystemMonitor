@@ -25,7 +25,7 @@ const int TOTAL_PAGES = 7;
 const int CPU_THREADS = 16;
 const int PROCESS_ROWS = 6;
 const int STORAGE_LINES = 7;
-const int FIELD_COUNT = 63;
+const int FIELD_COUNT = 64;
 
 int cpuHistory[GRAPH_POINTS];
 int ramHistory[GRAPH_POINTS];
@@ -65,6 +65,7 @@ String cpuFreqStr = "--";
 String gpuTemp = "--";
 String gpuName = "--";
 String opticalStr = "--";
+String ramUsageStr = "--";
 
 String procName[PROCESS_ROWS];
 String procCpu[PROCESS_ROWS];
@@ -199,7 +200,7 @@ void updateHome() {
   drawLabelBar(114, "Disk0", disk0Pct, MAGENTA);
   drawLabelBar(148, "Disk1", disk1Pct, ORANGE);
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
-  drawInfoLine(210, "Temp", fitText(cpuTemp, 12), CYAN, 95);
+  drawInfoLine(210, "RAM GB", fitText(ramUsageStr, 18), CYAN, 120);
   drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
   drawInfoLine(262, "OS", fitText(prettyOS(osName), 32), CYAN, 95);
   drawInfoLine(288, "Host", fitText(hostName, 24), GREEN, 95);
@@ -512,6 +513,7 @@ void parseIncomingLine(String s) {
   for (int i = 0; i < PROCESS_ROWS; i++) procRam[i] = f[idx++];
   for (int i = 0; i < STORAGE_LINES; i++) storageLine[i] = f[idx++];
   opticalStr = f[idx++];
+  ramUsageStr = f[idx++];
 
   pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
   screenDirty = true;

@@ -244,6 +244,16 @@ def format_total_bytes(num_bytes: float) -> str:
     return f"{num_bytes:.0f} B"
 
 
+def format_ram_usage_gb() -> str:
+    try:
+        vm = psutil.virtual_memory()
+        used_gb = vm.used / (1024 ** 3)
+        total_gb = vm.total / (1024 ** 3)
+        return f"{used_gb:.2f} GB/{total_gb:.1f} GB"
+    except Exception:
+        return "--"
+
+
 def get_cpu_freq() -> str:
     try:
         freq = psutil.cpu_freq()
@@ -857,6 +867,7 @@ def build_snapshot(last_net, last_time):
         "storage_lines": [clean_field(x, 30) for x in storage_lines],
         "optical": clean_field(get_optical_status(), 18),
         "iface": clean_field(iface, 18),
+        "ram_usage_text": clean_field(format_ram_usage_gb(), 18),
         "secondary_mount": clean_field(static["secondary_mount"], 24),
     }
 
@@ -897,6 +908,7 @@ def build_arduino_payload(snapshot) -> str:
         fields.append(clean_field(ramv, 8))
     fields.extend(snapshot["storage_lines"])
     fields.append(snapshot["optical"])
+    fields.append(snapshot["ram_usage_text"])
     return "|".join(fields) + "\n"
 
 
@@ -941,6 +953,7 @@ def build_debug_payload(snapshot) -> str:
         add(f"DRV{idx}", line, 40)
     add("OPTICAL", snapshot["optical"])
     add("OPT", snapshot["optical"])
+    add("RAMGB", snapshot["ram_usage_text"])
 
     return "|".join(pairs) + "\n"
 

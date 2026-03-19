@@ -34,7 +34,7 @@ const int SCREEN_W = 320;
 const int SCREEN_H = 240;
 const uint8_t TOTAL_PAGES = 5;
 const uint8_t GRAPH_POINTS = 16;
-const uint8_t FIELD_COUNT = 63;
+const uint8_t FIELD_COUNT = 64;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];

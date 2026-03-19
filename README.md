@@ -51,8 +51,10 @@ ArduinoUniversalSystemMonitor/
 ├── uninstall_monitor.sh                    # Remove service and installed files
 ├── UniversalMonitorControlCenter.sh        # Root-level Java GUI launcher/build helper
 ├── install_control_center_desktop.sh       # Optional Linux app-menu launcher installer
-├── UniversalArduinoMonitor28/              # Arduino UNO R3 2.8" TFT sketch
-├── UniversalArduinoMonitor35/              # Arduino UNO R4 WiFi 3.5" TFT sketch
+├── R3_MonitorScreen28/              # Arduino UNO R3 2.8" TFT sketch
+├── R3_MonitorScreen35/              # Placeholder for future Arduino UNO R3 3.5" TFT sketch
+├── R3_MEGA_MonitorScreen35/         # Arduino Mega 2560 R3 3.5" TFT sketch
+├── R4_MonitorScreen35/              # Arduino UNO R4 WiFi 3.5" TFT sketch
 ├── debug_tools/FakeArduinoDisplay/         # Java fake display + Control Center
 ├── legacy/Windows/                         # Older Windows-side monitor files
 └── screenshots/                            # README/device preview images
@@ -67,7 +69,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 - Python 3.8+
 - Java OpenJDK 21 (build) + OpenJDK 25 (runtime for the Control Center launcher; auto-installed on supported Linux distros)
 - Arduino IDE 1.8.19+
-- **Option A:** Arduino UNO R4 (USB-C) + Arduino 3.5" TFT Display
+- **Option A:** Arduino UNO R4 (USB-C) + Arduino 3.5" TFT Display, or Arduino Mega 2560 R3 + 3.5" TFT Display
 - **Option B:** Arduino UNO R3 (USB-B) + 2.8" TFT UNO R3 Display
 
 ### Windows Only
@@ -106,6 +108,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.2  - Refreshed README project layout and clarified the root-level install/update/uninstall helper scripts
 8.3  - Added a root-level Java Control Center launcher, runnable fat-jar build, and optional desktop-menu installer
 8.4  - Made Control Center updates rebuild/relaunch the Java app and added visible in-app version display
+8.5  - Renamed Arduino sketch folders, added Mega 2560 3.5" support, custom sketch upload, RAM GB display on 3.5" home page, and removed the two-board flashing cap
 ```
 
 ---
@@ -171,7 +174,8 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 `Would you like to install and flash your Arduino(s) now? [y/N]:`
 
 - Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
-- The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`), and flashes supported connected boards.
+- The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`), compiles each sketch once per board family, and flashes every supported connected board it detects.
+- The Java Control Center now also includes an `Upload Custom Sketch` action so you can compile/upload your own sketch folder or `.ino` file to a selected connected board from the GUI.
 - On Fedora and other distros that gate `/dev/ttyACM*` access more aggressively, the flasher now automatically retries the upload with `sudo` if the Arduino UNO R4 WiFi reset/upload step reports `Permission denied` or a failed 1200-bps touch reset, while preserving the original user's Arduino CLI home/config paths so installed board cores remain visible during the retry.
 - The Linux installer now runs the service with `/usr/bin/python3` again and installs Python dependencies with `pip` instead of pointing systemd at a project `.venv`.
 - On Ubuntu / Linux Mint, the installer automatically uses `pip --break-system-packages` when available so the required Python packages can still be installed on PEP 668 managed systems.

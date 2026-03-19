@@ -5,10 +5,12 @@ SERVICE_NAME="arduino-monitor.service"
 RESTART_DELAY=2
 
 R3_FQBN="arduino:avr:uno"
-R3_SKETCH="UniversalArduinoMonitor28"
+R3_SKETCH="R3_MonitorScreen28"
+R3_MEGA_FQBN="arduino:avr:mega"
+R3_MEGA_SKETCH="R3_MEGA_MonitorScreen35"
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
-R4_SKETCH="UniversalArduinoMonitor35"
+R4_SKETCH="R4_MonitorScreen35"
 
 REQUIRED_LIBS=(
     "MCUFRIEND_kbv|MCUFRIEND_kbv|MCUFRIEND_kbv.h"
@@ -193,6 +195,12 @@ upload_with_retry() {
 
 flash_boards() {
     local flashed_count=0
+    local compile_key=""
+    local port=""
+    local board_name=""
+    local fqbn=""
+    local sketch=""
+    declare -A compiled_sketches=()
 
     for line in "${BOARD_LINES[@]}"; do
         port="$(awk '{print $1}' <<< "$line")"
@@ -201,8 +209,12 @@ flash_boards() {
             board_name="Arduino UNO R4 WiFi"
             fqbn="$R4_FQBN"
             sketch="$R4_SKETCH"
+        elif grep -Eq "Arduino Mega|Mega 2560" <<< "$line"; then
+            board_name="Arduino Mega 2560"
+            fqbn="$R3_MEGA_FQBN"
+            sketch="$R3_MEGA_SKETCH"
         elif grep -q "Arduino UNO" <<< "$line"; then
-            board_name="Arduino UNO"
+            board_name="Arduino UNO R3"
             fqbn="$R3_FQBN"
             sketch="$R3_SKETCH"
         else
@@ -215,16 +227,21 @@ flash_boards() {
         echo "      Sketch: $sketch"
         echo "      FQBN:   $fqbn"
 
-        arduino-cli compile --fqbn "$fqbn" "$sketch"
-        upload_with_retry "$port" "$fqbn" "$sketch" "$board_name"
-
-        flashed_count=$((flashed_count + 1))
-
-        if [[ $flashed_count -ge 2 ]]; then
-            echo
-            echo "Flashed 2 boards, stopping here."
-            break
+        compile_key="$fqbn|$sketch"
+        if [[ -z "${compiled_sketches[$compile_key]:-}" ]]; then
+            echo "      Compiling $sketch once for all matching boards..."
+            arduino-cli compile --fqbn "$fqbn" "$sketch" || exit 1
+            compiled_sketches[$compile_key]=1
+        else
+            echo "      Reusing existing compile output for $sketch"
         fi
+
+        if upload_with_retry "$port" "$fqbn" "$sketch" "$board_name"; then
+            flashed_count=$((flashed_count + 1))
+        else
+            echo "      Upload failed for $board_name on $port; continuing with remaining boards."
+        fi
+
     done
 
     if [[ $flashed_count -eq 0 ]]; then
