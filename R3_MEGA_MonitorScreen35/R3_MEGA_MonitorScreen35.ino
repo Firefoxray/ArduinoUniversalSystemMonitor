@@ -17,10 +17,10 @@ MCUFRIEND_kbv tft;
 #define MAGENTA 0xF81F
 #define GRAY    0x8410
 
-#define YP A3
+#define YP A1
 #define XM A2
-#define YM 9
-#define XP 8
+#define YM 7
+#define XP 6
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 #define TS_MINX 120
@@ -207,7 +207,7 @@ static void updateHome() {
   drawPctRow(112, F("Disk0"), disk0Pct, MAGENTA);
   drawPctRow(146, F("Disk1"), disk1Pct, ORANGE);
   drawKV(182, F("Freq"), cpuFreqStr, ORANGE, 96);
-  drawKV(208, F("RAM"), ramUsageText, CYAN, 130);
+  drawKV(208, F("RAM"), ramUsageText, CYAN, 96);
   drawKV(234, F("Up"), uptimeStr, WHITE, 96);
   drawKV(260, F("OS"), osName, CYAN, 96);
   drawKV(286, F("Host"), hostName, GREEN, 96);
@@ -298,8 +298,12 @@ static void updateCurrentPage() {
 
 static bool screenPressed() {
   TSPoint p = ts.getPoint();
+  pinMode(XP, OUTPUT);
+  pinMode(YM, OUTPUT);
   pinMode(XM, OUTPUT);
   pinMode(YP, OUTPUT);
+  digitalWrite(XP, HIGH);
+  digitalWrite(YM, HIGH);
   digitalWrite(XM, HIGH);
   digitalWrite(YP, HIGH);
 

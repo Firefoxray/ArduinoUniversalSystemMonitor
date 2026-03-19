@@ -200,7 +200,7 @@ void updateHome() {
   drawLabelBar(114, "Disk0", disk0Pct, MAGENTA);
   drawLabelBar(148, "Disk1", disk1Pct, ORANGE);
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
-  drawInfoLine(210, "RAM", fitText(ramUsageStr, 18), CYAN, 120);
+  drawInfoLine(210, "RAM", fitText(ramUsageStr, 18), CYAN, 95);
   drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
   drawInfoLine(262, "OS", fitText(prettyOS(osName), 32), CYAN, 95);
   drawInfoLine(288, "Host", fitText(hostName, 24), GREEN, 95);
