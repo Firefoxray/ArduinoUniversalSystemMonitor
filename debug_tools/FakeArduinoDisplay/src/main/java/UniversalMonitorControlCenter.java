@@ -39,6 +39,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update from GitHub");
     private final JButton flashButton = new JButton("Flash Arduino");
+    private final JButton customFlashButton = new JButton("Upload Custom Sketch");
 
     private final JButton serviceOnButton = new JButton("Service On");
     private final JButton serviceOffButton = new JButton("Service Off");
@@ -134,6 +135,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         appActions.add(uninstallButton);
         appActions.add(updateButton);
         appActions.add(flashButton);
+        appActions.add(customFlashButton);
 
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
@@ -199,6 +201,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
         updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
+        customFlashButton.addActionListener(e -> uploadCustomSketch());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -614,6 +617,103 @@ public class UniversalMonitorControlCenter extends JFrame {
         SwingUtilities.invokeLater(this::disconnectPreviewPort);
     }
 
+
+    private void uploadCustomSketch() {
+        Path sketchPath = chooseSketchPath();
+        if (sketchPath == null) {
+            log("[INFO] Custom sketch upload canceled.");
+            return;
+        }
+
+        List<DetectedBoard> boards = detectConnectedBoards();
+        if (boards.isEmpty()) {
+            log("[WARN] No supported Arduino boards were detected for custom upload.");
+            return;
+        }
+
+        JComboBox<DetectedBoard> boardCombo = new JComboBox<>(boards.toArray(new DetectedBoard[0]));
+        JPanel panel = new JPanel(new GridLayout(0, 1, 6, 6));
+        panel.add(new JLabel("Sketch: " + sketchPath));
+        panel.add(new JLabel("Target board / port:"));
+        panel.add(boardCombo);
+
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "Upload Custom Arduino Sketch",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+        if (choice != JOptionPane.OK_OPTION) {
+            log("[INFO] Custom sketch upload canceled before flashing.");
+            return;
+        }
+
+        DetectedBoard target = (DetectedBoard) boardCombo.getSelectedItem();
+        if (target == null) {
+            log("[ERROR] No target board selected for custom upload.");
+            return;
+        }
+
+        String command = "cd " + escape(repoPath().toString())
+                + " && arduino-cli compile --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString())
+                + " && arduino-cli upload -p " + escape(target.port) + " --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString());
+        runCommand(command, repoPath().toFile(), "Upload custom sketch to " + target.port, true, true);
+    }
+
+    private Path chooseSketchPath() {
+        JFileChooser chooser = new JFileChooser(repoField.getText());
+        chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+        chooser.setDialogTitle("Choose an Arduino sketch folder or .ino file");
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return null;
+        }
+        File selected = chooser.getSelectedFile();
+        if (selected == null) {
+            return null;
+        }
+        Path path = selected.toPath().toAbsolutePath().normalize();
+        if (Files.isRegularFile(path) && path.getFileName().toString().toLowerCase().endsWith(".ino")) {
+            return path.getParent();
+        }
+        return path;
+    }
+
+    private List<DetectedBoard> detectConnectedBoards() {
+        List<DetectedBoard> boards = new ArrayList<>();
+        try {
+            Process process = new ProcessBuilder("bash", "-lc", "arduino-cli board list | tail -n +2")
+                    .directory(repoPath().toFile())
+                    .redirectErrorStream(true)
+                    .start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty()) {
+                        continue;
+                    }
+                    String[] parts = trimmed.split("\\s+");
+                    String port = parts.length > 0 ? parts[0] : "";
+                    if (port.isEmpty()) {
+                        continue;
+                    }
+                    if (trimmed.contains("Arduino UNO R4 WiFi")) {
+                        boards.add(new DetectedBoard(port, "Arduino UNO R4 WiFi", "arduino:renesas_uno:unor4wifi"));
+                    } else if (trimmed.contains("Mega 2560") || trimmed.contains("Arduino Mega")) {
+                        boards.add(new DetectedBoard(port, "Arduino Mega 2560", "arduino:avr:mega"));
+                    } else if (trimmed.contains("Arduino UNO")) {
+                        boards.add(new DetectedBoard(port, "Arduino UNO R3", "arduino:avr:uno"));
+                    }
+                }
+            }
+            process.waitFor();
+        } catch (Exception ex) {
+            log("[WARN] Failed to detect connected boards for custom upload: " + ex.getMessage());
+        }
+        return boards;
+    }
+
     private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt) {
         runCommand(shellCommand, workingDirectory, label, needsSudo, allowPrompt, null);
     }
@@ -739,6 +839,23 @@ public class UniversalMonitorControlCenter extends JFrame {
         return null;
     }
 
+    private static final class DetectedBoard {
+        private final String port;
+        private final String label;
+        private final String fqbn;
+
+        private DetectedBoard(String port, String label, String fqbn) {
+            this.port = port;
+            this.label = label;
+            this.fqbn = fqbn;
+        }
+
+        @Override
+        public String toString() {
+            return label + " [" + port + "]";
+        }
+    }
+
     private static String loadAppVersion() {
         Properties properties = new Properties();
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
@@ -762,6 +879,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             uninstallButton.setEnabled(enabled);
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
+            customFlashButton.setEnabled(enabled);
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
             serviceRestartButton.setEnabled(enabled);
