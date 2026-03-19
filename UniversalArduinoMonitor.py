@@ -194,6 +194,12 @@ def get_hostname() -> str:
 
 
 def get_os_name() -> str:
+    def normalize_os_name(value: str) -> str:
+        cleaned = re.sub(r"\s*\([^)]*\)", "", value).strip()
+        if cleaned.lower().startswith("fedora linux"):
+            return "Fedora Linux"
+        return cleaned or "Linux"
+
     try:
         os_release = Path("/etc/os-release")
         if os_release.exists():
@@ -205,10 +211,10 @@ def get_os_name() -> str:
                 data[key.strip()] = value.strip().strip('"')
             pretty = data.get("PRETTY_NAME")
             if pretty:
-                return clean_field(pretty, 28)
+                return clean_field(normalize_os_name(pretty), 28)
             name = data.get("NAME", "Linux")
             version = data.get("VERSION_ID", "")
-            return clean_field(f"{name} {version}".strip(), 28)
+            return clean_field(normalize_os_name(f"{name} {version}".strip()), 28)
     except Exception:
         pass
     return "Linux"

@@ -207,7 +207,7 @@ static void updateHome() {
   drawPctRow(112, F("Disk0"), disk0Pct, MAGENTA);
   drawPctRow(146, F("Disk1"), disk1Pct, ORANGE);
   drawKV(182, F("Freq"), cpuFreqStr, ORANGE, 96);
-  drawKV(208, F("RAM GB"), ramUsageText, CYAN, 130);
+  drawKV(208, F("RAM"), ramUsageText, CYAN, 130);
   drawKV(234, F("Up"), uptimeStr, WHITE, 96);
   drawKV(260, F("OS"), osName, CYAN, 96);
   drawKV(286, F("Host"), hostName, GREEN, 96);
@@ -297,12 +297,16 @@ static void updateCurrentPage() {
 }
 
 static bool screenPressed() {
-  pinMode(YP, OUTPUT);
-  pinMode(XM, OUTPUT);
   TSPoint p = ts.getPoint();
-  pinMode(YP, OUTPUT);
   pinMode(XM, OUTPUT);
-  return p.z > MINPRESSURE && p.z < MAXPRESSURE;
+  pinMode(YP, OUTPUT);
+  digitalWrite(XM, HIGH);
+  digitalWrite(YP, HIGH);
+
+  if (p.z < MINPRESSURE || p.z > MAXPRESSURE) return false;
+  if (p.x < TS_MINX - 80 || p.x > TS_MAXX + 80) return false;
+  if (p.y < TS_MINY - 80 || p.y > TS_MAXY + 80) return false;
+  return true;
 }
 
 static void handleTouch() {
