@@ -2,6 +2,7 @@ import com.fazecast.jSerialComm.SerialPort;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.io.BufferedReader;
 import java.io.File;
@@ -15,6 +16,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class UniversalMonitorControlCenter extends JFrame {
 
@@ -53,8 +55,24 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
+    private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
+
+    private final Color darkBackground = new Color(27, 45, 74);
+    private final Color darkPanelBackground = new Color(39, 60, 95);
+    private final Color darkAccent = new Color(92, 143, 214);
+    private final Color darkText = new Color(232, 240, 252);
+    private final Color darkFieldBackground = new Color(20, 33, 55);
+    private final Color darkButtonBackground = new Color(76, 117, 184);
+    private final Color lightBackground = new Color(236, 242, 252);
+    private final Color lightPanelBackground = new Color(248, 251, 255);
+    private final Color lightAccent = new Color(125, 160, 219);
+    private final Color lightText = new Color(31, 46, 71);
+    private final Color lightFieldBackground = Color.WHITE;
+    private final Color lightButtonBackground = new Color(214, 226, 245);
+
+    private boolean darkMode;
 
     private volatile Process fakePortsProcess;
     private volatile SerialPort previewPort;
@@ -69,6 +87,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(1500, 940);
         setLocationRelativeTo(null);
+
+        darkMode = shouldUseDarkModeByDefault();
 
         setLayout(new BorderLayout(10, 10));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -88,7 +108,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         add(topPanel, BorderLayout.NORTH);
         add(splitPane, BorderLayout.CENTER);
 
+        lightModeToggle.setSelected(!darkMode);
+
         wireActions();
+        applyTheme();
         updatePortButtons();
         setServiceIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
@@ -122,6 +145,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
         panel.add(Box.createHorizontalStrut(12));
         panel.add(versionLabel);
+        panel.add(Box.createHorizontalStrut(18));
+        lightModeToggle.setFocusable(false);
+        panel.add(lightModeToggle);
 
         return panel;
     }
@@ -216,6 +242,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
         connectPreviewButton.addActionListener(e -> connectPreviewPort());
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
+        lightModeToggle.addActionListener(e -> {
+            darkMode = !lightModeToggle.isSelected();
+            applyTheme();
+        });
     }
 
     private void browseRepoPath() {
@@ -617,6 +647,161 @@ public class UniversalMonitorControlCenter extends JFrame {
         SwingUtilities.invokeLater(this::disconnectPreviewPort);
     }
 
+
+
+    private void applyTheme() {
+        SwingUtilities.invokeLater(() -> {
+            Color background = darkMode ? darkBackground : lightBackground;
+            Color panelBackground = darkMode ? darkPanelBackground : lightPanelBackground;
+            Color textColor = darkMode ? darkText : lightText;
+            Color accent = darkMode ? darkAccent : lightAccent;
+            Color fieldBackground = darkMode ? darkFieldBackground : lightFieldBackground;
+            Color buttonBackground = darkMode ? darkButtonBackground : lightButtonBackground;
+
+            getContentPane().setBackground(background);
+            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground);
+            outputArea.setCaretColor(textColor);
+            versionLabel.setForeground(accent);
+            lightModeToggle.setForeground(textColor);
+            lightModeToggle.setBackground(panelBackground);
+            fakeDisplayPanel.setBorder(new LineBorder(accent, 1, true));
+
+            repaint();
+        });
+    }
+
+    private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent,
+                                    Color fieldBackground, Color buttonBackground) {
+        if (component instanceof JPanel panel) {
+            panel.setOpaque(true);
+            panel.setBackground(panelBackground);
+            if (panel.getBorder() instanceof javax.swing.border.TitledBorder titledBorder) {
+                titledBorder.setTitleColor(textColor);
+            }
+        } else if (component instanceof JSplitPane splitPane) {
+            splitPane.setBackground(background);
+            splitPane.setBorder(BorderFactory.createLineBorder(accent));
+        } else if (component instanceof JScrollPane scrollPane) {
+            scrollPane.getViewport().setBackground(fieldBackground);
+            scrollPane.setBorder(BorderFactory.createLineBorder(accent));
+            scrollPane.setBackground(panelBackground);
+        } else if (component instanceof JTextArea area) {
+            area.setBackground(fieldBackground);
+            area.setForeground(textColor);
+            area.setSelectionColor(accent.darker());
+            area.setSelectedTextColor(Color.WHITE);
+            area.setBorder(new EmptyBorder(6, 6, 6, 6));
+        } else if (component instanceof JPasswordField field) {
+            field.setBackground(fieldBackground);
+            field.setForeground(textColor);
+            field.setCaretColor(textColor);
+            field.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(accent),
+                    BorderFactory.createEmptyBorder(4, 6, 4, 6)
+            ));
+        } else if (component instanceof JTextField field) {
+            field.setBackground(fieldBackground);
+            field.setForeground(textColor);
+            field.setCaretColor(textColor);
+            field.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(accent),
+                    BorderFactory.createEmptyBorder(4, 6, 4, 6)
+            ));
+        } else if (component instanceof AbstractButton button) {
+            button.setBackground(buttonBackground);
+            button.setForeground(textColor);
+            button.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(accent),
+                    BorderFactory.createEmptyBorder(6, 10, 6, 10)
+            ));
+            button.setOpaque(true);
+        } else if (component instanceof JLabel label) {
+            if (label != serviceIndicator && label != debugIndicator) {
+                label.setForeground(textColor);
+            }
+        } else if (component instanceof JComboBox<?> comboBox) {
+            comboBox.setBackground(fieldBackground);
+            comboBox.setForeground(textColor);
+        }
+
+        if (component instanceof JComponent jComponent) {
+            jComponent.setForeground(textColor);
+            if (!(jComponent instanceof JTextArea) && !(jComponent instanceof JTextField)
+                    && !(jComponent instanceof JPasswordField) && !(jComponent instanceof JScrollPane)
+                    && !(jComponent instanceof JSplitPane) && !(jComponent instanceof JPanel)
+                    && !(jComponent instanceof AbstractButton)) {
+                jComponent.setBackground(panelBackground);
+            }
+        }
+
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground);
+            }
+        }
+    }
+
+    private boolean shouldUseDarkModeByDefault() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        Object desktopPreference = Toolkit.getDefaultToolkit().getDesktopProperty("win.darkMode.on");
+        if (desktopPreference instanceof Boolean preference) {
+            return preference;
+        }
+
+        String gtkTheme = firstNonBlank(System.getenv("GTK_THEME"), System.getenv("GTK_THEME_VARIANT"));
+        if (gtkTheme != null) {
+            return gtkTheme.toLowerCase(Locale.ROOT).contains("dark");
+        }
+
+        if (osName.contains("linux")) {
+            Boolean gnomePreference = queryGnomeDarkMode();
+            if (gnomePreference != null) {
+                return gnomePreference;
+            }
+        }
+
+        if (osName.contains("mac")) {
+            String appearance = System.getProperty("apple.awt.application.appearance", "");
+            if (!appearance.isBlank()) {
+                return appearance.toLowerCase(Locale.ROOT).contains("dark");
+            }
+        }
+
+        String colorScheme = firstNonBlank(System.getenv("COLORFGBG"), System.getenv("XDG_CURRENT_DESKTOP"));
+        return colorScheme != null && colorScheme.toLowerCase(Locale.ROOT).contains("dark");
+    }
+
+    private Boolean queryGnomeDarkMode() {
+        String[] commands = {
+                "gsettings get org.gnome.desktop.interface color-scheme",
+                "gsettings get org.gnome.desktop.interface gtk-theme"
+        };
+
+        for (String command : commands) {
+            try {
+                Process process = new ProcessBuilder("bash", "-lc", command).start();
+                String output;
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    output = reader.readLine();
+                }
+                if (process.waitFor() == 0 && output != null && !output.isBlank()) {
+                    return output.toLowerCase(Locale.ROOT).contains("dark");
+                }
+            } catch (Exception ignored) {
+                // Fall back to env-based detection below.
+            }
+        }
+        return null;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
 
     private void uploadCustomSketch() {
         Path sketchPath = chooseSketchPath();
