@@ -1022,6 +1022,30 @@ public class UniversalMonitorControlCenter extends JFrame {
         });
     }
 
+    private String readWifiHeaderDefine(Path path, String defineName, String defaultValue) {
+        if (!Files.exists(path)) {
+            return defaultValue;
+        }
+        try {
+            String text = Files.readString(path, StandardCharsets.UTF_8);
+            String marker = "#define " + defineName;
+            for (String rawLine : text.split("\\R")) {
+                String line = rawLine.trim();
+                if (!line.startsWith(marker)) {
+                    continue;
+                }
+                String value = line.substring(marker.length()).trim();
+                if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
+                    return value.substring(1, value.length() - 1);
+                }
+                return value.isEmpty() ? defaultValue : value;
+            }
+        } catch (IOException ex) {
+            log("[WARN] Failed to read Wi-Fi config header " + path + ": " + ex.getMessage());
+        }
+        return defaultValue;
+    }
+
     private void cycleServiceForTransportChange() {
         String command = "systemctl stop " + SERVICE_NAME
                 + " && sleep " + TRANSPORT_SWITCH_DELAY_SECONDS
@@ -1037,19 +1061,47 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void promptForWifiCredentials() {
+        Path localConfigPath = repoPath().resolve("R4_WIFI35/wifi_config.local.h");
+        Path defaultConfigPath = repoPath().resolve("R4_WIFI35/wifi_config.h");
+
         JTextField ssidField = new JTextField(24);
         JPasswordField passwordField = new JPasswordField(24);
+        JTextField tcpPortField = new JTextField(8);
+
+        String savedSsid = readWifiHeaderDefine(localConfigPath, "WIFI_SSID_VALUE", "");
+        if (savedSsid.isEmpty()) {
+            savedSsid = readWifiHeaderDefine(defaultConfigPath, "WIFI_SSID_VALUE", "");
+        }
+        if (!savedSsid.equals("YOUR_WIFI_SSID")) {
+            ssidField.setText(savedSsid);
+        }
+
+        String savedPassword = readWifiHeaderDefine(localConfigPath, "WIFI_PASS_VALUE", "");
+        if (savedPassword.isEmpty()) {
+            savedPassword = readWifiHeaderDefine(defaultConfigPath, "WIFI_PASS_VALUE", "");
+        }
+        if (!savedPassword.equals("YOUR_WIFI_PASSWORD")) {
+            passwordField.setText(savedPassword);
+        }
+
+        String savedTcpPort = readWifiHeaderDefine(localConfigPath, "WIFI_TCP_PORT_VALUE", "");
+        if (savedTcpPort.isEmpty()) {
+            savedTcpPort = readWifiHeaderDefine(defaultConfigPath, "WIFI_TCP_PORT_VALUE", "5000");
+        }
+        tcpPortField.setText(savedTcpPort.isEmpty() ? "5000" : savedTcpPort);
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 0, 8));
         panel.add(new JLabel("Wi-Fi SSID"));
         panel.add(ssidField);
         panel.add(new JLabel("Wi-Fi Password"));
         panel.add(passwordField);
+        panel.add(new JLabel("Wi-Fi TCP Port"));
+        panel.add(tcpPortField);
 
         int result = JOptionPane.showConfirmDialog(
                 this,
                 panel,
-                "Set R4 Wi-Fi Credentials",
+                "Set R4 Wi-Fi Settings",
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.PLAIN_MESSAGE
         );
@@ -1061,8 +1113,20 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         String ssid = ssidField.getText() == null ? "" : ssidField.getText().trim();
         String password = new String(passwordField.getPassword());
+        String tcpPortText = tcpPortField.getText() == null ? "" : tcpPortField.getText().trim();
         if (ssid.isEmpty()) {
             log("[WARN] Wi-Fi credentials not saved: SSID is required.");
+            return;
+        }
+        int tcpPort;
+        try {
+            tcpPort = Integer.parseInt(tcpPortText);
+        } catch (NumberFormatException ex) {
+            log("[WARN] Wi-Fi settings not saved: TCP port must be a number.");
+            return;
+        }
+        if (tcpPort < 1 || tcpPort > 65535) {
+            log("[WARN] Wi-Fi settings not saved: TCP port must be between 1 and 65535.");
             return;
         }
 
@@ -1072,7 +1136,8 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         String header = "#pragma once\n\n"
                 + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
-                + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n";
+                + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n"
+                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n";
 
         int savedCount = 0;
         for (Path target : targets) {
@@ -1097,11 +1162,11 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (savedCount > 0) {
             refreshWifiCredentialsIndicator(false);
-            log("[INFO] Wi-Fi credentials saved for the R4 Wi-Fi sketch. Reflash the board to apply them.");
-            log("[INFO] Credentials were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
+            log("[INFO] Wi-Fi settings saved for the R4 Wi-Fi sketch (TCP port " + tcpPort + "). Reflash the board to apply them.");
+            log("[INFO] Settings were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
         } else {
             refreshWifiCredentialsIndicator(false);
-            log("[ERROR] Wi-Fi credentials were not saved to any sketch folder.");
+            log("[ERROR] Wi-Fi settings were not saved to any sketch folder.");
         }
     }
 
