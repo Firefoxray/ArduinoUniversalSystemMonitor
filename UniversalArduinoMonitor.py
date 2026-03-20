@@ -629,6 +629,15 @@ def send_to_usb_devices(payload: str, arduino_serials: Dict[str, serial.Serial])
     return arduino_serials
 
 
+def close_serials(arduino_serials: Dict[str, serial.Serial]) -> Dict[str, serial.Serial]:
+    for ser in list(arduino_serials.values()):
+        try:
+            ser.close()
+        except Exception:
+            pass
+    return {}
+
+
 def send_to_wifi_device(payload: str, wifi_sock: Optional[socket.socket]) -> Optional[socket.socket]:
     if wifi_sock is None:
         return None
@@ -660,6 +669,10 @@ def current_wifi_retry_delay(start_ts: float, last_success_ts: float, now: float
 
 def should_prefer_usb_transport(arduino_serials: Dict[str, serial.Serial]) -> bool:
     return PREFER_USB and bool(arduino_serials)
+
+
+def wifi_first_mode() -> bool:
+    return WIFI_ENABLED and not PREFER_USB
 
 
 def prime_process_cpu() -> None:
@@ -1228,7 +1241,7 @@ def main() -> None:
     print(f"Primary GPU vendor guess: {static['gpu_vendor']}")
     print(f"Primary disk mount: {ROOT_MOUNT}")
     print(f"Secondary disk mount: {static['secondary_mount']}")
-    print(f"Preferred transport: {'USB first, Wi-Fi fallback' if WIFI_ENABLED and PREFER_USB else ('USB + Wi-Fi simultaneous' if WIFI_ENABLED else 'USB only')}")
+    print(f"Preferred transport: {'USB first, Wi-Fi fallback' if WIFI_ENABLED and PREFER_USB else ('Wi-Fi first, USB fallback' if WIFI_ENABLED else 'USB only')}")
     if WIFI_ENABLED:
         if WIFI_AUTO_DISCOVERY:
             fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
@@ -1280,22 +1293,14 @@ def main() -> None:
                 snapshot, last_net, last_time = build_snapshot(last_net, last_time)
                 payload = build_arduino_payload(snapshot)
 
-                if (now - last_discovery_attempt) >= RETRY_DELAY:
-                    last_discovery_attempt = now
-                    arduino_serials = connect_arduinos(arduino_serials)
-
-                usb_preferred = should_prefer_usb_transport(arduino_serials)
-
-                if usb_preferred and wifi_sock is not None:
-                    print("USB transport detected; closing Wi-Fi session until USB disconnects.")
-                    close_socket(wifi_sock)
-                    wifi_sock = None
-                    if WIFI_AUTO_DISCOVERY:
-                        wifi_host_active = ""
-                        wifi_name_active = None
-
                 wifi_retry_delay = current_wifi_retry_delay(monitor_start, last_wifi_success, now)
-                if WIFI_ENABLED and not usb_preferred and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
+                if WIFI_ENABLED and wifi_first_mode() and arduino_serials:
+                    print("Wi-Fi mode active; closing USB serial session so the UNO R4 can accept TCP data.")
+                    arduino_serials = close_serials(arduino_serials)
+
+                if WIFI_ENABLED and (
+                    wifi_first_mode() or not should_prefer_usb_transport(arduino_serials)
+                ) and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
                     last_wifi_attempt = now
                     wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_name = resolve_wifi_endpoint(
                         wifi_host_active,
@@ -1324,6 +1329,28 @@ def main() -> None:
                         if not quiet_wifi:
                             last_wifi_error_log = now
                             wifi_error_suppressed = True
+
+                should_probe_usb = (
+                    not WIFI_ENABLED
+                    or PREFER_USB
+                    or wifi_sock is None
+                )
+                if should_probe_usb and (now - last_discovery_attempt) >= RETRY_DELAY:
+                    last_discovery_attempt = now
+                    arduino_serials = connect_arduinos(arduino_serials)
+
+                usb_preferred = should_prefer_usb_transport(arduino_serials)
+
+                if usb_preferred and wifi_sock is not None:
+                    print("USB transport detected; closing Wi-Fi session until USB disconnects.")
+                    close_socket(wifi_sock)
+                    wifi_sock = None
+                    if WIFI_AUTO_DISCOVERY:
+                        wifi_host_active = ""
+                        wifi_name_active = None
+
+                if wifi_sock is not None and wifi_first_mode() and arduino_serials:
+                    arduino_serials = close_serials(arduino_serials)
 
                 if arduino_serials:
                     arduino_serials = send_to_usb_devices(payload, arduino_serials)
