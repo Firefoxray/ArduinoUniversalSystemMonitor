@@ -68,6 +68,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel transportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
+    private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
+    private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
+    private final JTextField wifiPortField = new JTextField(6);
+    private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
+    private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
+    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
@@ -113,6 +119,19 @@ public class UniversalMonitorControlCenter extends JFrame {
         sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
         rememberPasswordToggle.setToolTipText("Stores the sudo password in the local " + SUDO_PASSWORD_FILE + " file inside the repo. Git ignores that file so it stays on this machine.");
         clearSavedPasswordButton.setToolTipText("Deletes the saved sudo password file from this repo.");
+        flashButton.setToolTipText("Builds and uploads the repo's included monitor sketch for the detected board.");
+        customFlashButton.setToolTipText("Lets you choose a local .ino or sketch folder and upload that custom sketch.");
+        wifiCredentialsButton.setToolTipText("Saves the SSID and password into the local R4 Wi-Fi sketch config before flashing.");
+        debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
+        wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
+        startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
+        connectPreviewButton.setToolTipText("Connects the built-in preview window to the fake output serial port.");
+        unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto every detected Arduino UNO R3. R4 boards are not affected.");
+        arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
+        wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
+        refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
+        loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from monitor_config.json.");
+        saveMonitorSettingsButton.setToolTipText("Saves the selected serial/TCP port settings into monitor_config.json.");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
         topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
@@ -134,6 +153,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setServiceIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
         loadSavedSudoPassword();
+        refreshMonitorConnectionSettings(false);
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
@@ -169,27 +189,36 @@ public class UniversalMonitorControlCenter extends JFrame {
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
         panel.add(Box.createHorizontalStrut(12));
         panel.add(versionLabel);
-        panel.add(Box.createHorizontalStrut(18));
-        lightModeToggle.setFocusable(false);
-        panel.add(lightModeToggle);
 
         return panel;
     }
 
     private JPanel buildActionPanel() {
-        JPanel panel = new JPanel(new GridLayout(5, 1, 10, 10));
+        JPanel panel = new JPanel(new GridLayout(6, 1, 10, 10));
 
-        JPanel appActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel appActions = new JPanel(new BorderLayout(12, 0));
         appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
-        appActions.add(installButton);
-        appActions.add(uninstallButton);
-        appActions.add(updateButton);
-        appActions.add(flashButton);
-        appActions.add(customFlashButton);
-        appActions.add(wifiCredentialsButton);
+
+        JPanel appActionButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        appActionButtons.add(installButton);
+        appActionButtons.add(uninstallButton);
+        appActionButtons.add(updateButton);
+        appActionButtons.add(flashButton);
+        appActionButtons.add(customFlashButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        appActions.add(customSketchIndicator);
+        appActionButtons.add(customSketchIndicator);
+        appActionButtons.add(wifiCredentialsButton);
+
+        JPanel displayOptionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        lightModeToggle.setFocusable(false);
+        displayOptionsPanel.add(lightModeToggle);
+        displayOptionsPanel.add(new JLabel("UNO R3 mode:"));
+        unoR3ScreenSizeSelector.setSelectedIndex(0);
+        displayOptionsPanel.add(unoR3ScreenSizeSelector);
+
+        appActions.add(appActionButtons, BorderLayout.CENTER);
+        appActions.add(displayOptionsPanel, BorderLayout.EAST);
 
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
@@ -233,11 +262,25 @@ public class UniversalMonitorControlCenter extends JFrame {
         fakePorts.add(connectPreviewButton);
         fakePorts.add(disconnectPreviewButton);
 
+        JPanel monitorSettingsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Monitor Connection Settings"));
+        arduinoPortSelector.setEditable(true);
+        arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
+        monitorSettingsPanel.add(new JLabel("Arduino Port:"));
+        monitorSettingsPanel.add(arduinoPortSelector);
+        monitorSettingsPanel.add(refreshMonitorPortsButton);
+        monitorSettingsPanel.add(Box.createHorizontalStrut(12));
+        monitorSettingsPanel.add(new JLabel("Wi-Fi TCP Port:"));
+        monitorSettingsPanel.add(wifiPortField);
+        monitorSettingsPanel.add(loadMonitorSettingsButton);
+        monitorSettingsPanel.add(saveMonitorSettingsButton);
+
         panel.add(appActions);
         panel.add(servicePanel);
         panel.add(debugPanel);
         panel.add(transportPanel);
         panel.add(fakePorts);
+        panel.add(monitorSettingsPanel);
         return panel;
     }
 
@@ -286,6 +329,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
         connectPreviewButton.addActionListener(e -> connectPreviewPort());
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
+        refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
+        loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
+        saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
         lightModeToggle.addActionListener(e -> {
             darkMode = !lightModeToggle.isSelected();
             applyTheme();
@@ -297,6 +343,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             repoField.setText(chooser.getSelectedFile().getAbsolutePath());
+            refreshMonitorConnectionSettings(true);
         }
     }
 
@@ -353,44 +400,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String resolveUnoR3ScreenSizeForControlCenter() {
-        List<DetectedBoard> boards = detectConnectedBoards();
-        long unoR3Count = boards.stream()
-                .filter(board -> "arduino:avr:uno".equals(board.fqbn))
-                .count();
-
-        if (unoR3Count <= 1) {
-            if (unoR3Count == 1) {
-                log("[INFO] Exactly one Arduino UNO R3 detected; forcing the default 2.8\" TFT sketch.");
-                return "28";
-            }
-            return null;
-        }
-
-        String[] options = {"2.8\" TFT shield", "3.5\" TFT shield"};
-        int choice = JOptionPane.showOptionDialog(
-                this,
-                "Two Arduino UNO R3 boards were detected.\n"
-                        + "Choose which sketch to use for this flashing run.\n\n"
-                        + "If you need different R3 shield sizes flashed separately, unplug one R3 and rerun the flasher.",
-                "Select UNO R3 TFT Size",
-                JOptionPane.DEFAULT_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                options,
-                options[0]
-        );
-
-        if (choice == 0) {
-            log("[INFO] Control Center selected the 2.8\" TFT sketch for the detected Arduino UNO R3 boards.");
-            return "28";
-        }
-        if (choice == 1) {
-            log("[INFO] Control Center selected the 3.5\" TFT sketch for the detected Arduino UNO R3 boards.");
-            return "35";
-        }
-
-        log("[INFO] Arduino flashing canceled before upload because no UNO R3 TFT size was selected.");
-        return "";
+        Object selected = unoR3ScreenSizeSelector.getSelectedItem();
+        String choice = selected == null ? "2.8\" mode" : selected.toString();
+        String unoScreenSize = choice.startsWith("3.5") ? "35" : "28";
+        log("[INFO] Control Center will flash Arduino UNO R3 boards with the "
+                + ("35".equals(unoScreenSize) ? "3.5\"" : "2.8\"")
+                + " TFT sketch. R4 boards are unchanged.");
+        return unoScreenSize;
     }
 
     private void runServiceCommand(String action) {
@@ -650,6 +666,133 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private void refreshMonitorPortChoices(boolean verbose) {
+        List<String> ports = new ArrayList<>();
+        ports.add("AUTO");
+        for (DetectedBoard board : detectConnectedBoards()) {
+            if (!board.port.isBlank() && !ports.contains(board.port)) {
+                ports.add(board.port);
+            }
+        }
+        for (SerialPort port : SerialPort.getCommPorts()) {
+            String systemPort = port.getSystemPortName();
+            if (systemPort != null && !systemPort.isBlank() && !ports.contains(systemPort)) {
+                ports.add(systemPort);
+            }
+            String devicePath = port.getSystemPortPath();
+            if (devicePath != null && !devicePath.isBlank() && !ports.contains(devicePath)) {
+                ports.add(devicePath);
+            }
+        }
+
+        Object currentSelection = arduinoPortSelector.isEditable()
+                ? arduinoPortSelector.getEditor().getItem()
+                : arduinoPortSelector.getSelectedItem();
+        String selectedValue = currentSelection == null ? "AUTO" : currentSelection.toString().trim();
+
+        arduinoPortSelector.removeAllItems();
+        for (String port : ports) {
+            arduinoPortSelector.addItem(port);
+        }
+
+        if (selectedValue.isEmpty()) {
+            selectedValue = "AUTO";
+        }
+        arduinoPortSelector.setSelectedItem(selectedValue);
+
+        if (verbose) {
+            log("[INFO] Refreshed Arduino port list (" + Math.max(ports.size() - 1, 0) + " detected + AUTO).");
+        }
+    }
+
+    private void refreshMonitorConnectionSettings(boolean verbose) {
+        refreshMonitorPortChoices(false);
+
+        Path configPath = repoPath().resolve("monitor_config.json");
+        if (!Files.exists(configPath)) {
+            arduinoPortSelector.setSelectedItem("AUTO");
+            wifiPortField.setText("5000");
+            if (verbose) {
+                log("[WARN] Cannot load monitor settings: monitor_config.json not found at " + configPath);
+            }
+            return;
+        }
+
+        try {
+            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            String arduinoPort = readStringConfigValue(text, "arduino_port", "AUTO");
+            int wifiPort = readIntConfigValue(text, "wifi_port", 5000);
+            arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
+            wifiPortField.setText(String.valueOf(wifiPort));
+            if (verbose) {
+                log("[INFO] Loaded monitor connection settings from " + configPath.getFileName() + ".");
+            }
+        } catch (Exception ex) {
+            if (verbose) {
+                log("[WARN] Failed to load monitor connection settings: " + ex.getMessage());
+            }
+        }
+    }
+
+    private void saveMonitorConnectionSettings() {
+        String arduinoPort = "";
+        Object portValue = arduinoPortSelector.isEditable()
+                ? arduinoPortSelector.getEditor().getItem()
+                : arduinoPortSelector.getSelectedItem();
+        if (portValue != null) {
+            arduinoPort = portValue.toString().trim();
+        }
+        if (arduinoPort.isEmpty()) {
+            arduinoPort = "AUTO";
+        }
+
+        String wifiPortText = wifiPortField.getText() == null ? "" : wifiPortField.getText().trim();
+        int wifiPort;
+        try {
+            wifiPort = Integer.parseInt(wifiPortText);
+        } catch (NumberFormatException ex) {
+            log("[WARN] Wi-Fi TCP port must be a number.");
+            return;
+        }
+        if (wifiPort < 1 || wifiPort > 65535) {
+            log("[WARN] Wi-Fi TCP port must be between 1 and 65535.");
+            return;
+        }
+
+        List<Path> configPaths = new ArrayList<>();
+        configPaths.add(repoPath().resolve("monitor_config.json"));
+        Path wifiConfigPath = repoPath().resolve("R4_WIFI/monitor_config.json");
+        if (Files.exists(wifiConfigPath)) {
+            configPaths.add(wifiConfigPath);
+        }
+
+        int updatedCount = 0;
+        for (Path configPath : configPaths) {
+            if (!Files.exists(configPath)) {
+                log("[WARN] Cannot save monitor settings: missing " + configPath);
+                continue;
+            }
+            try {
+                String text = Files.readString(configPath, StandardCharsets.UTF_8);
+                String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
+                updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
+                if (!updated.equals(text)) {
+                    Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                    log("[INFO] Saved monitor port settings to " + configPath + ".");
+                } else {
+                    log("[INFO] Monitor port settings already matched in " + configPath + ".");
+                }
+                updatedCount++;
+            } catch (Exception ex) {
+                log("[WARN] Failed to save monitor settings to " + configPath + ": " + ex.getMessage());
+            }
+        }
+
+        if (updatedCount > 0) {
+            log("[INFO] Restart the monitor service if you want the new port settings to apply immediately.");
+        }
+    }
+
     private boolean updateBooleanConfig(String key, boolean enabled) {
         Path configPath = repoPath().resolve("monitor_config.json");
         if (!Files.exists(configPath)) {
@@ -697,6 +840,75 @@ public class UniversalMonitorControlCenter extends JFrame {
             return false;
         }
         return defaultValue;
+    }
+
+    private String readStringConfigValue(String text, String key, String defaultValue) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return defaultValue;
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return defaultValue;
+        }
+        int firstQuote = text.indexOf('"', colonIndex + 1);
+        if (firstQuote < 0) {
+            return defaultValue;
+        }
+        int secondQuote = text.indexOf('"', firstQuote + 1);
+        if (secondQuote < 0) {
+            return defaultValue;
+        }
+        return text.substring(firstQuote + 1, secondQuote);
+    }
+
+    private int readIntConfigValue(String text, String key, int defaultValue) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return defaultValue;
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return defaultValue;
+        }
+        String tail = text.substring(colonIndex + 1).trim();
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < tail.length(); i++) {
+            char ch = tail.charAt(i);
+            if (Character.isDigit(ch)) {
+                digits.append(ch);
+            } else if (digits.length() > 0) {
+                break;
+            } else if (!Character.isWhitespace(ch)) {
+                break;
+            }
+        }
+        if (digits.length() == 0) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(digits.toString());
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
+    private String upsertStringConfigValue(String text, String key, String value) {
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\\"[^\\\"]*\\\"";
+        String replacement = "\"" + key + "\": \"" + escapeJson(value) + "\"";
+        return text.matches("(?s).*" + pattern + ".*")
+                ? text.replaceAll(pattern, replacement)
+                : appendConfigEntry(text, "  \"" + key + "\": \"" + escapeJson(value) + "\"");
+    }
+
+    private String upsertNumberConfigValue(String text, String key, int value) {
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\d+";
+        String replacement = "\"" + key + "\": " + value;
+        return text.matches("(?s).*" + pattern + ".*")
+                ? text.replaceAll(pattern, replacement)
+                : appendConfigEntry(text, "  \"" + key + "\": " + value);
     }
 
     private String appendConfigEntry(String text, String newEntry) {
@@ -1460,7 +1672,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "8.11").trim();
+                String version = properties.getProperty("app.version", "8.12").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -1468,7 +1680,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "8.11";
+        return "8.12";
     }
 
     private boolean runningAsRoot() {

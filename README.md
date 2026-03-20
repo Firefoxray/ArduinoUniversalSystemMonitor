@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.11  
+**Version:** 8.12
 **Last Modified:** March 20, 2026  
 
 ---
@@ -117,6 +117,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.9  - Added committed Wi-Fi config templates and a Control Center button for saving R4 Wi-Fi credentials into wifi_config.h before flashing
 8.10  - Cleaned up .gitignore for tracked Wi-Fi templates and added a Control Center warning not to commit real Wi-Fi credentials
 8.11  - Switched real R4 Wi-Fi credentials to git-ignored wifi_config.local.h files so test pushes do not include passwords
+8.12  - Added Control Center UNO R3 mode selection, moved the visible display toggles into the action area, and added monitor connection port settings directly in the Control Center
 ```
 
 ---
