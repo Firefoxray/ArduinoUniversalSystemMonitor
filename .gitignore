@@ -1,2 +1,3 @@
 .venv/
 .control_center_sudo_password
+wifi_config.h
