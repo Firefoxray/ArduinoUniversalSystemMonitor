@@ -31,6 +31,8 @@ from serial import SerialException
 from serial.tools import list_ports
 
 CONFIG_PATH = Path(__file__).with_name("monitor_config.json")
+WIFI_LOCAL_CONFIG_PATH = Path(__file__).with_name("R4_WIFI35").joinpath("wifi_config.local.h")
+WIFI_DEFAULT_CONFIG_PATH = Path(__file__).with_name("R4_WIFI35").joinpath("wifi_config.h")
 LOCK_PATH = Path("/tmp/universal_arduino_monitor.lock")
 _LOCK_HANDLE = None
 
@@ -117,6 +119,25 @@ def to_float(value: object, default: float) -> float:
         return default
 
 
+def read_wifi_header_define(define_name: str, default_value: str = "") -> str:
+    marker = f"#define {define_name}"
+    for path in (WIFI_LOCAL_CONFIG_PATH, WIFI_DEFAULT_CONFIG_PATH):
+        try:
+            if not path.exists():
+                continue
+            for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = raw_line.strip()
+                if not line.startswith(marker):
+                    continue
+                value = line[len(marker):].strip()
+                if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+                    return value[1:-1]
+                return value or default_value
+        except Exception:
+            continue
+    return default_value
+
+
 CONFIG = load_config()
 
 BAUD = to_int(os.environ.get("ARDUINO_MONITOR_BAUD", CONFIG.get("baud")), 115200)
@@ -178,7 +199,14 @@ DEBUG_MIRROR_ENABLED = to_bool(CONFIG.get("debug_enabled"), False) and bool(DEBU
 
 WIFI_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_WIFI_ENABLED", CONFIG.get("wifi_enabled")), True)
 WIFI_HOST = str(os.environ.get("ARDUINO_MONITOR_WIFI_HOST") or CONFIG.get("wifi_host") or "").strip()
-WIFI_PORT = to_int(os.environ.get("ARDUINO_MONITOR_WIFI_PORT", CONFIG.get("wifi_port")), 5000)
+_wifi_port_override = os.environ.get("ARDUINO_MONITOR_WIFI_PORT")
+_wifi_port_config = CONFIG.get("wifi_port")
+if _wifi_port_override is not None:
+    WIFI_PORT = to_int(_wifi_port_override, 5000)
+elif _wifi_port_config not in (None, "", 5000, "5000"):
+    WIFI_PORT = to_int(_wifi_port_config, 5000)
+else:
+    WIFI_PORT = to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000)
 PREFER_USB = to_bool(os.environ.get("ARDUINO_MONITOR_PREFER_USB", CONFIG.get("prefer_usb")), True)
 WIFI_RETRY_DELAY = max(2, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_RETRY_DELAY", CONFIG.get("wifi_retry_delay")), 5))
 WIFI_QUICK_RETRY_DELAY = max(0.5, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_QUICK_RETRY_DELAY"), 1.0))
