@@ -610,6 +610,10 @@ def describe_active_transports(arduino_serials: Dict[str, serial.Serial], wifi_s
     return "+".join(parts) if parts else "NONE"
 
 
+def should_prefer_usb_transport(arduino_serials: Dict[str, serial.Serial]) -> bool:
+    return PREFER_USB and bool(arduino_serials)
+
+
 def prime_process_cpu() -> None:
     for proc in psutil.process_iter(["name"]):
         try:
@@ -1176,7 +1180,7 @@ def main() -> None:
     print(f"Primary GPU vendor guess: {static['gpu_vendor']}")
     print(f"Primary disk mount: {ROOT_MOUNT}")
     print(f"Secondary disk mount: {static['secondary_mount']}")
-    print(f"Preferred transport: {'USB + Wi-Fi simultaneous' if WIFI_ENABLED else 'USB only'}")
+    print(f"Preferred transport: {'USB first, Wi-Fi fallback' if WIFI_ENABLED and PREFER_USB else ('USB + Wi-Fi simultaneous' if WIFI_ENABLED else 'USB only')}")
     if WIFI_ENABLED:
         if WIFI_AUTO_DISCOVERY:
             fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
@@ -1230,7 +1234,17 @@ def main() -> None:
                     last_discovery_attempt = now
                     arduino_serials = connect_arduinos(arduino_serials)
 
-                if WIFI_ENABLED and wifi_sock is None and (now - last_wifi_attempt) >= WIFI_RETRY_DELAY:
+                usb_preferred = should_prefer_usb_transport(arduino_serials)
+
+                if usb_preferred and wifi_sock is not None:
+                    print("USB transport detected; closing Wi-Fi session until USB disconnects.")
+                    close_socket(wifi_sock)
+                    wifi_sock = None
+                    if WIFI_AUTO_DISCOVERY:
+                        wifi_host_active = ""
+                        wifi_name_active = None
+
+                if WIFI_ENABLED and not usb_preferred and wifi_sock is None and (now - last_wifi_attempt) >= WIFI_RETRY_DELAY:
                     last_wifi_attempt = now
                     wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_name = resolve_wifi_endpoint(
                         wifi_host_active,
@@ -1262,7 +1276,7 @@ def main() -> None:
                 if arduino_serials:
                     arduino_serials = send_to_usb_devices(payload, arduino_serials)
 
-                if wifi_sock is not None:
+                if not usb_preferred and wifi_sock is not None:
                     wifi_sock = send_to_wifi_device(payload, wifi_sock)
                     if wifi_sock is None:
                         last_wifi_attempt = now

@@ -38,6 +38,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextField fakeOutField = new JTextField("/tmp/fakearduino_out", 22);
 
     private final JTextArea outputArea = new JTextArea();
+    private final JTextArea settingsOutputArea = new JTextArea();
 
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
     private final JButton stopFakePortsButton = new JButton("Stop Fake Ports");
@@ -75,6 +76,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
+    private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -145,7 +147,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         setServiceIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
         loadSavedSudoPassword();
+        settingsOutputArea.setDocument(outputArea.getDocument());
         refreshMonitorConnectionSettings(false);
+        refreshWifiCredentialsIndicator(false);
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
@@ -217,6 +221,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.add(buildMonitorSettingsPanel());
         content.add(Box.createVerticalStrut(10));
         content.add(buildPreviewControlsPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildSettingsOutputPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -278,6 +284,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         panel.add(customSketchIndicator);
         panel.add(wifiCredentialsButton);
+        wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
+        wifiCredentialsIndicator.setOpaque(true);
+        wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
+        wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
+        panel.add(wifiCredentialsIndicator);
         return panel;
     }
 
@@ -305,20 +316,31 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildMonitorSettingsPanel() {
-        JPanel monitorSettingsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel monitorSettingsPanel = new JPanel();
+        monitorSettingsPanel.setLayout(new BoxLayout(monitorSettingsPanel, BoxLayout.Y_AXIS));
         monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Physical Arduino Monitor Connection Settings"));
+
+        JPanel controlsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         arduinoPortSelector.setEditable(true);
         arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
-        monitorSettingsPanel.add(new JLabel("Arduino USB Port:"));
-        monitorSettingsPanel.add(arduinoPortSelector);
-        monitorSettingsPanel.add(refreshMonitorPortsButton);
-        monitorSettingsPanel.add(Box.createHorizontalStrut(12));
-        monitorSettingsPanel.add(new JLabel("Arduino Wi-Fi TCP Port:"));
-        monitorSettingsPanel.add(wifiPortField);
-        monitorSettingsPanel.add(loadMonitorSettingsButton);
-        monitorSettingsPanel.add(saveMonitorSettingsButton);
-        JLabel helper = new JLabel("These settings are written to monitor_config.json for the real Arduino monitor, not the preview ports.");
-        helper.setBorder(new EmptyBorder(0, 6, 0, 0));
+        controlsRow.add(new JLabel("Arduino USB Port:"));
+        controlsRow.add(arduinoPortSelector);
+        controlsRow.add(refreshMonitorPortsButton);
+        controlsRow.add(Box.createHorizontalStrut(12));
+        controlsRow.add(new JLabel("Arduino Wi-Fi TCP Port:"));
+        controlsRow.add(wifiPortField);
+        controlsRow.add(loadMonitorSettingsButton);
+        controlsRow.add(saveMonitorSettingsButton);
+        monitorSettingsPanel.add(controlsRow);
+
+        JTextArea helper = new JTextArea("These settings are written to monitor_config.json for the real Arduino monitor, not the preview ports.");
+        helper.setEditable(false);
+        helper.setFocusable(false);
+        helper.setLineWrap(true);
+        helper.setWrapStyleWord(true);
+        helper.setOpaque(false);
+        helper.setBorder(new EmptyBorder(0, 10, 8, 10));
+        helper.setAlignmentX(Component.LEFT_ALIGNMENT);
         monitorSettingsPanel.add(helper);
         return monitorSettingsPanel;
     }
@@ -335,11 +357,22 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildOutputPanel() {
+        return buildOutputPanel(outputArea, "Command Output / Logs");
+    }
+
+    private JPanel buildSettingsOutputPanel() {
+        JPanel panel = buildOutputPanel(settingsOutputArea, "Command Output / Logs (also shown here while working in Settings)");
+        panel.setPreferredSize(new Dimension(1000, 240));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return panel;
+    }
+
+    private JPanel buildOutputPanel(JTextArea area, String title) {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Command Output / Logs"));
-        outputArea.setEditable(false);
-        outputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        panel.add(new JScrollPane(outputArea), BorderLayout.CENTER);
+        panel.setBorder(BorderFactory.createTitledBorder(title));
+        area.setEditable(false);
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        panel.add(new JScrollPane(area), BorderLayout.CENTER);
         return panel;
     }
 
@@ -383,6 +416,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             repoField.setText(chooser.getSelectedFile().getAbsolutePath());
             refreshMonitorConnectionSettings(true);
+            refreshWifiCredentialsIndicator(false);
         }
     }
 
@@ -961,6 +995,38 @@ public class UniversalMonitorControlCenter extends JFrame {
         return before + suffix + newEntry + "\n}\n";
     }
 
+    private void refreshWifiCredentialsIndicator(boolean verbose) {
+        List<Path> targets = List.of(
+                repoPath().resolve("R4_WIFI35/wifi_config.local.h"),
+                repoPath().resolve("R4_WIFI/R4_WIFI35/wifi_config.local.h")
+        );
+
+        boolean saved = false;
+        for (Path target : targets) {
+            try {
+                if (!Files.exists(target)) {
+                    continue;
+                }
+                String text = Files.readString(target, StandardCharsets.UTF_8);
+                if (text.contains("#define WIFI_SSID_VALUE \"") && !text.contains("#define WIFI_SSID_VALUE \"\"")) {
+                    saved = true;
+                    break;
+                }
+            } catch (IOException ex) {
+                if (verbose) {
+                    log("[WARN] Could not inspect saved Wi-Fi credentials at " + target + ": " + ex.getMessage());
+                }
+            }
+        }
+
+        final boolean credentialsSaved = saved;
+        SwingUtilities.invokeLater(() -> {
+            wifiCredentialsIndicator.setText(credentialsSaved ? "Credentials saved" : "Credentials not saved");
+            wifiCredentialsIndicator.setBackground(credentialsSaved ? new Color(24, 170, 24) : new Color(170, 80, 24));
+            wifiCredentialsIndicator.setForeground(Color.WHITE);
+        });
+    }
+
     private void cycleServiceForTransportChange() {
         String command = "systemctl stop " + SERVICE_NAME
                 + " && sleep " + TRANSPORT_SWITCH_DELAY_SECONDS
@@ -1036,9 +1102,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         if (savedCount > 0) {
+            refreshWifiCredentialsIndicator(false);
             log("[INFO] Wi-Fi credentials saved for the R4 Wi-Fi sketch. Reflash the board to apply them.");
             log("[INFO] Credentials were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
         } else {
+            refreshWifiCredentialsIndicator(false);
             log("[ERROR] Wi-Fi credentials were not saved to any sketch folder.");
         }
     }
