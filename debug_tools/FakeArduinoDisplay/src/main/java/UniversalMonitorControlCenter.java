@@ -133,17 +133,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from monitor_config.json.");
         saveMonitorSettingsButton.setToolTipText("Saves the selected serial/TCP port settings into monitor_config.json.");
 
-        JPanel topPanel = new JPanel(new BorderLayout(10, 10));
-        topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
-        topPanel.add(buildActionPanel(), BorderLayout.CENTER);
+        JTabbedPane mainTabs = buildMainTabs();
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setResizeWeight(0.62);
-        splitPane.setLeftComponent(buildPreviewPanel());
-        splitPane.setRightComponent(buildOutputPanel());
-
-        add(topPanel, BorderLayout.NORTH);
-        add(splitPane, BorderLayout.CENTER);
+        add(mainTabs, BorderLayout.CENTER);
 
         lightModeToggle.setSelected(!darkMode);
 
@@ -168,7 +160,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildRepoPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Project Location / Privileges"));
         panel.add(new JLabel("Program Root:"));
         panel.add(repoField);
@@ -189,32 +181,52 @@ public class UniversalMonitorControlCenter extends JFrame {
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
         panel.add(Box.createHorizontalStrut(12));
         panel.add(versionLabel);
-        panel.add(Box.createHorizontalStrut(18));
-        lightModeToggle.setFocusable(false);
-        panel.add(lightModeToggle);
-        panel.add(Box.createHorizontalStrut(18));
-        panel.add(new JLabel("UNO R3 mode:"));
-        unoR3ScreenSizeSelector.setSelectedIndex(0);
-        panel.add(unoR3ScreenSizeSelector);
 
         return panel;
     }
 
-    private JPanel buildActionPanel() {
-        JPanel panel = new JPanel(new GridLayout(6, 1, 10, 10));
+    private JTabbedPane buildMainTabs() {
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Dashboard", buildDashboardTab());
+        tabs.addTab("Settings", buildSettingsTab());
+        return tabs;
+    }
 
-        JPanel appActions = new JPanel(new BorderLayout(12, 0));
-        appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
-        appActions.add(installButton);
-        appActions.add(uninstallButton);
-        appActions.add(updateButton);
-        appActions.add(flashButton);
-        appActions.add(customFlashButton);
-        customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
-        customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        appActions.add(customSketchIndicator);
-        appActions.add(wifiCredentialsButton);
+    private JPanel buildDashboardTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.add(buildQuickStatusPanel(), BorderLayout.NORTH);
 
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        splitPane.setResizeWeight(0.62);
+        splitPane.setLeftComponent(buildPreviewPanel());
+        splitPane.setRightComponent(buildOutputPanel());
+        panel.add(splitPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildSettingsTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.add(buildRepoPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildDisplayAndFlashPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildAppManagementPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildMonitorSettingsPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildPreviewControlsPanel());
+
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildQuickStatusPanel() {
+        JPanel panel = new JPanel(new GridLayout(3, 1, 10, 10));
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
         serviceIndicator.setOpaque(true);
@@ -246,37 +258,69 @@ public class UniversalMonitorControlCenter extends JFrame {
         transportPanel.add(new JLabel("Indicator:"));
         transportPanel.add(transportIndicator);
 
-        JPanel fakePorts = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        fakePorts.setBorder(BorderFactory.createTitledBorder("Virtual Serial Ports + Preview Feed"));
-        fakePorts.add(new JLabel("Input:"));
-        fakePorts.add(fakeInField);
-        fakePorts.add(new JLabel("Output:"));
-        fakePorts.add(fakeOutField);
-        fakePorts.add(startFakePortsButton);
-        fakePorts.add(stopFakePortsButton);
-        fakePorts.add(connectPreviewButton);
-        fakePorts.add(disconnectPreviewButton);
-
-        JPanel monitorSettingsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Monitor Connection Settings"));
-        arduinoPortSelector.setEditable(true);
-        arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
-        monitorSettingsPanel.add(new JLabel("Arduino Port:"));
-        monitorSettingsPanel.add(arduinoPortSelector);
-        monitorSettingsPanel.add(refreshMonitorPortsButton);
-        monitorSettingsPanel.add(Box.createHorizontalStrut(12));
-        monitorSettingsPanel.add(new JLabel("Wi-Fi TCP Port:"));
-        monitorSettingsPanel.add(wifiPortField);
-        monitorSettingsPanel.add(loadMonitorSettingsButton);
-        monitorSettingsPanel.add(saveMonitorSettingsButton);
-
-        panel.add(appActions);
         panel.add(servicePanel);
         panel.add(debugPanel);
         panel.add(transportPanel);
-        panel.add(fakePorts);
-        panel.add(monitorSettingsPanel);
         return panel;
+    }
+
+    private JPanel buildDisplayAndFlashPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        panel.setBorder(BorderFactory.createTitledBorder("Display / Flash Settings"));
+        lightModeToggle.setFocusable(false);
+        panel.add(lightModeToggle);
+        panel.add(new JLabel("UNO R3 mode:"));
+        unoR3ScreenSizeSelector.setSelectedIndex(0);
+        panel.add(unoR3ScreenSizeSelector);
+        panel.add(flashButton);
+        panel.add(customFlashButton);
+        customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
+        customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
+        panel.add(customSketchIndicator);
+        panel.add(wifiCredentialsButton);
+        return panel;
+    }
+
+    private JPanel buildAppManagementPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        panel.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
+        panel.add(installButton);
+        panel.add(uninstallButton);
+        panel.add(updateButton);
+        return panel;
+    }
+
+    private JPanel buildPreviewControlsPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        panel.setBorder(BorderFactory.createTitledBorder("Preview / Virtual Serial Ports (test bench only)"));
+        panel.add(new JLabel("Input:"));
+        panel.add(fakeInField);
+        panel.add(new JLabel("Output:"));
+        panel.add(fakeOutField);
+        panel.add(startFakePortsButton);
+        panel.add(stopFakePortsButton);
+        panel.add(connectPreviewButton);
+        panel.add(disconnectPreviewButton);
+        return panel;
+    }
+
+    private JPanel buildMonitorSettingsPanel() {
+        JPanel monitorSettingsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Physical Arduino Monitor Connection Settings"));
+        arduinoPortSelector.setEditable(true);
+        arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
+        monitorSettingsPanel.add(new JLabel("Arduino USB Port:"));
+        monitorSettingsPanel.add(arduinoPortSelector);
+        monitorSettingsPanel.add(refreshMonitorPortsButton);
+        monitorSettingsPanel.add(Box.createHorizontalStrut(12));
+        monitorSettingsPanel.add(new JLabel("Arduino Wi-Fi TCP Port:"));
+        monitorSettingsPanel.add(wifiPortField);
+        monitorSettingsPanel.add(loadMonitorSettingsButton);
+        monitorSettingsPanel.add(saveMonitorSettingsButton);
+        JLabel helper = new JLabel("These settings are written to monitor_config.json for the real Arduino monitor, not the preview ports.");
+        helper.setBorder(new EmptyBorder(0, 6, 0, 0));
+        monitorSettingsPanel.add(helper);
+        return monitorSettingsPanel;
     }
 
     private JPanel buildPreviewPanel() {
@@ -1185,6 +1229,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         } else if (component instanceof JSplitPane splitPane) {
             splitPane.setBackground(background);
             splitPane.setBorder(BorderFactory.createLineBorder(accent));
+        } else if (component instanceof JTabbedPane tabbedPane) {
+            tabbedPane.setBackground(panelBackground);
+            tabbedPane.setForeground(textColor);
+            tabbedPane.setOpaque(true);
         } else if (component instanceof JScrollPane scrollPane) {
             scrollPane.getViewport().setBackground(fieldBackground);
             scrollPane.setBorder(BorderFactory.createLineBorder(accent));
@@ -1220,7 +1268,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             ));
             button.setOpaque(true);
         } else if (component instanceof JLabel label) {
-            if (label != serviceIndicator && label != debugIndicator) {
+            if (label != serviceIndicator && label != debugIndicator && label != transportIndicator) {
                 label.setForeground(textColor);
             }
         } else if (component instanceof JComboBox<?> comboBox) {
