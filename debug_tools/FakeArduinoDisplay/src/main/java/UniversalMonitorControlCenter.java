@@ -299,8 +299,70 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        String command = "cd " + escape(repoPath().toString()) + " && chmod +x " + escape(scriptName) + " && ./" + scriptName;
+        String command = buildRepoScriptCommand(scriptName);
+        if (command == null) {
+            return;
+        }
         runCommand(command, repoPath().toFile(), scriptName, needsSudo, true);
+    }
+
+    private String buildRepoScriptCommand(String scriptName) {
+        StringBuilder command = new StringBuilder();
+        command.append("cd ").append(escape(repoPath().toString()))
+                .append(" && chmod +x ").append(escape(scriptName))
+                .append(" && ");
+
+        if ("arduino_install.sh".equals(scriptName)) {
+            String unoScreenSize = resolveUnoR3ScreenSizeForControlCenter();
+            if ("".equals(unoScreenSize)) {
+                return null;
+            }
+            if (unoScreenSize != null) {
+                command.append("UNO_R3_SCREEN_SIZE=").append(escape(unoScreenSize)).append(' ');
+            }
+        }
+
+        command.append("./").append(scriptName);
+        return command.toString();
+    }
+
+    private String resolveUnoR3ScreenSizeForControlCenter() {
+        List<DetectedBoard> boards = detectConnectedBoards();
+        long unoR3Count = boards.stream()
+                .filter(board -> "arduino:avr:uno".equals(board.fqbn))
+                .count();
+
+        if (unoR3Count <= 1) {
+            if (unoR3Count == 1) {
+                log("[INFO] One Arduino UNO R3 detected; defaulting to the 2.8\" TFT sketch.");
+                return "28";
+            }
+            return null;
+        }
+
+        String[] options = {"2.8\" TFT shield", "3.5\" TFT shield"};
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                "Multiple Arduino UNO R3 boards are connected.\nChoose the TFT shield size to flash on all connected R3 boards.",
+                "Select UNO R3 TFT Size",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]
+        );
+
+        if (choice == 0) {
+            log("[INFO] Control Center selected the 2.8\" TFT sketch for connected Arduino UNO R3 boards.");
+            return "28";
+        }
+        if (choice == 1) {
+            log("[INFO] Control Center selected the 3.5\" TFT sketch for connected Arduino UNO R3 boards.");
+            return "35";
+        }
+
+        log("[INFO] Arduino flashing canceled before upload because no UNO R3 TFT size was selected.");
+        return "";
     }
 
     private void runServiceCommand(String action) {
