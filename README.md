@@ -3,26 +3,29 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.12
+**Version:** 9.0 beta
 **Last Modified:** March 20, 2026  
 
 ---
 
 ## Preview
 
-### Main View
+### Main Views
 <p align="center">
-  <img src="screenshots/home1.JPEG" width="500"/>
+  <img src="screenshots/home1.JPEG" width="420"/>
+  <img src="screenshots/home2.JPEG" width="420"/>
 </p>
 
-### Other Pages
+### Detail Pages
 <p align="center">
   <img src="screenshots/cpu1.JPEG" width="160"/>
+  <img src="screenshots/cpu2.JPEG" width="160"/>
   <img src="screenshots/gpu1.JPEG" width="160"/>
   <img src="screenshots/network1.JPEG" width="160"/>
   <img src="screenshots/storage1.JPEG" width="160"/>
   <img src="screenshots/processes1.JPEG" width="160"/>
   <img src="screenshots/graph1.JPEG" width="160"/>
+  <img src="screenshots/graph2.JPEG" width="160"/>
 </p>
 
 ---
@@ -42,7 +45,8 @@ Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and pr
 ```text
 ArduinoUniversalSystemMonitor/
 ├── UniversalArduinoMonitor.py              # Main desktop monitor sender
-├── monitor_config.json                     # Runtime config / optional debug mirror settings
+├── monitor_config.default.json             # Tracked baseline monitor settings
+├── monitor_config.json                     # Shared runtime config template
 ├── requirements.txt                        # Python dependencies
 ├── install.sh                              # Main Linux installer
 ├── arduino_install.sh                      # Small entrypoint wrapper for Arduino flashing
@@ -118,6 +122,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.11  - Switched real R4 Wi-Fi credentials to git-ignored wifi_config.local.h files so test pushes do not include passwords
 8.12  - Added Control Center UNO R3 mode selection, moved the visible display toggles into the action area, and added monitor connection port settings directly in the Control Center
 8.13  - Removed duplicate nested R4 Wi-Fi monitor/sketch copies so the repo now uses one root Python monitor, one root monitor_config.json, and one canonical R4_WIFI35 sketch folder
+9.0 beta  - Added layered default/shared/local monitor config support for per-computer port overrides, refreshed README screenshots with the newer captures, and bumped the project/control-center release branding to version 9 beta
 ```
 
 ---
@@ -193,7 +198,7 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 - On Ubuntu / Linux Mint, the installer automatically uses `pip --break-system-packages` when available so the required Python packages can still be installed on PEP 668 managed systems.
 - Install flow order is: dependency setup -> Arduino flash prompt -> systemd service start.
 
-A default `monitor_config.json` is automatically created during installation.
+Default/shared `monitor_config.default.json` + `monitor_config.json` files are created during installation, and a git-ignored `monitor_config.local.json` is also created for per-computer overrides such as serial port and Wi-Fi port changes.
 
 `install.sh` also writes the systemd service file with your real detected username and install path automatically. The `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
 
@@ -428,7 +433,7 @@ For the full Java instructions, including JDK setup and launching only the fake 
 Use it with a virtual serial pair such as:
 `/tmp/fakearduino_in` and `/tmp/fakearduino_out`
 
-Debug mirror is configured from `monitor_config.json` and is disabled by default:
+Debug mirror is configured from the merged `monitor_config.default.json` / `monitor_config.json` / `monitor_config.local.json` settings, with local overrides taking precedence:
 
 ```json
 {

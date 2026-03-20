@@ -133,8 +133,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
-        loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from monitor_config.json.");
-        saveMonitorSettingsButton.setToolTipText("Saves the selected serial/TCP port settings into monitor_config.json, mirrors the Wi-Fi port into wifi_config.local.h, and restarts the monitor service.");
+        loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from the default/shared/local monitor config files.");
+        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings into monitor_config.local.json, mirrors the Wi-Fi port into wifi_config.local.h, and restarts the monitor service.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -334,7 +334,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(saveMonitorSettingsButton);
         monitorSettingsPanel.add(controlsRow);
 
-        JTextArea helper = new JTextArea("These settings are written into monitor_config.json and mirrored into R4_WIFI35/wifi_config.local.h so the flashed board and Python monitor stay on the same Wi-Fi port.");
+        JTextArea helper = new JTextArea("These settings are written into monitor_config.local.json and mirrored into R4_WIFI35/wifi_config.local.h so the flashed board and Python monitor stay on the same Wi-Fi port on this computer.");
         helper.setEditable(false);
         helper.setFocusable(false);
         helper.setLineWrap(true);
@@ -665,26 +665,23 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshDebugStatus(boolean verbose) {
-        Path configPath = repoPath().resolve("monitor_config.json");
-        if (!Files.exists(configPath)) {
-            setDebugIndicator("UNKNOWN", Color.GRAY);
-            lastDebugEnabledState = null;
-            if (verbose || !debugStatusMissingLogged) {
-                log("[WARN] Cannot refresh debug status: monitor_config.json not found at " + configPath);
-                debugStatusMissingLogged = true;
-            }
-            return;
-        }
-
-        debugStatusMissingLogged = false;
-
         try {
-            String text = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);
-            boolean enabled = text.matches("(?s).*\"debug_enabled\"\s*:\s*true.*");
+            String text = loadMergedMonitorConfigText();
+            if (text == null || text.isBlank()) {
+                setDebugIndicator("UNKNOWN", Color.GRAY);
+                lastDebugEnabledState = null;
+                if (verbose || !debugStatusMissingLogged) {
+                    log("[WARN] Cannot refresh debug status: no monitor config file was found.");
+                    debugStatusMissingLogged = true;
+                }
+                return;
+            }
+            debugStatusMissingLogged = false;
+            boolean enabled = text.matches("(?s).*\"debug_enabled\"\\s*:\\s*true.*");
             setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
 
             if (verbose || lastDebugEnabledState == null || lastDebugEnabledState != enabled) {
-                log("[INFO] Debug mode is " + (enabled ? "enabled" : "disabled") + " in monitor_config.json");
+                log("[INFO] Debug mode is " + (enabled ? "enabled" : "disabled") + " in the merged monitor config.");
             }
             lastDebugEnabledState = enabled;
         } catch (Exception ex) {
@@ -708,21 +705,18 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshTransportModeStatus(boolean verbose) {
-        Path configPath = repoPath().resolve("monitor_config.json");
-        if (!Files.exists(configPath)) {
-            setTransportIndicator("UNKNOWN", Color.GRAY);
-            lastWifiEnabledState = null;
-            if (verbose || !transportStatusMissingLogged) {
-                log("[WARN] Cannot refresh transport mode: monitor_config.json not found at " + configPath);
-                transportStatusMissingLogged = true;
-            }
-            return;
-        }
-
-        transportStatusMissingLogged = false;
-
         try {
-            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            String text = loadMergedMonitorConfigText();
+            if (text == null || text.isBlank()) {
+                setTransportIndicator("UNKNOWN", Color.GRAY);
+                lastWifiEnabledState = null;
+                if (verbose || !transportStatusMissingLogged) {
+                    log("[WARN] Cannot refresh transport mode: no monitor config file was found.");
+                    transportStatusMissingLogged = true;
+                }
+                return;
+            }
+            transportStatusMissingLogged = false;
             boolean enabled = readBooleanConfigValue(text, "wifi_enabled", true);
             setTransportIndicator(
                     enabled ? "WIFI" : "USB ONLY",
@@ -730,7 +724,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             );
 
             if (verbose || lastWifiEnabledState == null || lastWifiEnabledState != enabled) {
-                log("[INFO] Monitor transport is set to " + (enabled ? "Wi-Fi + USB fallback" : "USB only") + " in monitor_config.json");
+                log("[INFO] Monitor transport is set to " + (enabled ? "Wi-Fi + USB fallback" : "USB only") + " in the merged monitor config.");
             }
             lastWifiEnabledState = enabled;
         } catch (Exception ex) {
@@ -738,6 +732,141 @@ public class UniversalMonitorControlCenter extends JFrame {
             lastWifiEnabledState = null;
             log("[WARN] Failed to refresh transport mode: " + ex.getMessage());
         }
+    }
+
+    private Path monitorDefaultConfigPath() {
+        return repoPath().resolve("monitor_config.default.json");
+    }
+
+    private Path monitorSharedConfigPath() {
+        return repoPath().resolve("monitor_config.json");
+    }
+
+    private Path monitorLocalConfigPath() {
+        return repoPath().resolve("monitor_config.local.json");
+    }
+
+    private String readConfigFileIfPresent(Path path) throws IOException {
+        return Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : null;
+    }
+
+    private String loadMergedMonitorConfigText() throws IOException {
+        String merged = null;
+        for (Path path : List.of(monitorDefaultConfigPath(), monitorSharedConfigPath(), monitorLocalConfigPath())) {
+            String text = readConfigFileIfPresent(path);
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            merged = mergeConfigTexts(merged, text);
+        }
+        return merged;
+    }
+
+    private String ensureWritableLocalMonitorConfig() throws IOException {
+        Path localPath = monitorLocalConfigPath();
+        if (Files.exists(localPath)) {
+            return Files.readString(localPath, StandardCharsets.UTF_8);
+        }
+
+        Path sharedPath = monitorSharedConfigPath();
+        String seedText = readConfigFileIfPresent(sharedPath);
+        if (seedText == null || seedText.isBlank()) {
+            seedText = readConfigFileIfPresent(monitorDefaultConfigPath());
+        }
+        if (seedText == null || seedText.isBlank()) {
+            seedText = "{\n}\n";
+        }
+
+        Files.writeString(localPath, seedText, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+        return seedText;
+    }
+
+    private String mergeConfigTexts(String baseText, String overrideText) {
+        String merged = baseText == null || baseText.isBlank() ? "{\n}\n" : baseText;
+        for (String key : List.of(
+                "arduino_port",
+                "baud",
+                "debug_enabled",
+                "debug_port",
+                "root_mount",
+                "secondary_mount",
+                "send_interval",
+                "wifi_enabled",
+                "wifi_host",
+                "wifi_port",
+                "prefer_usb",
+                "wifi_retry_delay",
+                "wifi_auto_discovery",
+                "wifi_discovery_port",
+                "wifi_discovery_timeout",
+                "wifi_discovery_refresh",
+                "wifi_discovery_magic"
+        )) {
+            merged = copyConfigEntryIfPresent(merged, overrideText, key);
+        }
+        return merged;
+    }
+
+    private String copyConfigEntryIfPresent(String targetText, String sourceText, String key) {
+        String rawValue = findRawConfigValue(sourceText, key);
+        if (rawValue == null) {
+            return targetText;
+        }
+        return upsertRawConfigValue(targetText, key, rawValue);
+    }
+
+    private String findRawConfigValue(String text, String key) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return null;
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return null;
+        }
+        int index = colonIndex + 1;
+        while (index < text.length() && Character.isWhitespace(text.charAt(index))) {
+            index++;
+        }
+        if (index >= text.length()) {
+            return null;
+        }
+        char first = text.charAt(index);
+        if (first == '"') {
+            int end = index + 1;
+            boolean escaped = false;
+            while (end < text.length()) {
+                char ch = text.charAt(end);
+                if (ch == '"' && !escaped) {
+                    return text.substring(index, end + 1);
+                }
+                escaped = ch == '\\' && !escaped;
+                if (ch != '\\') {
+                    escaped = false;
+                }
+                end++;
+            }
+            return null;
+        }
+        int end = index;
+        while (end < text.length()) {
+            char ch = text.charAt(end);
+            if (ch == ',' || ch == '}' || ch == '\n' || ch == '\r') {
+                break;
+            }
+            end++;
+        }
+        String raw = text.substring(index, end).trim();
+        return raw.isEmpty() ? null : raw;
+    }
+
+    private String upsertRawConfigValue(String text, String key, String rawValue) {
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*(\\\"(?:\\\\.|[^\\\"])*\\\"|true|false|-?\\d+(?:\\.\\d+)?)";
+        String replacement = "\"" + key + "\": " + rawValue;
+        return text.matches("(?s).*" + pattern + ".*")
+                ? text.replaceAll(pattern, replacement)
+                : appendConfigEntry(text, "  \"" + key + "\": " + rawValue);
     }
 
     private void refreshMonitorPortChoices(boolean verbose) {
@@ -782,25 +911,23 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void refreshMonitorConnectionSettings(boolean verbose) {
         refreshMonitorPortChoices(false);
 
-        Path configPath = repoPath().resolve("monitor_config.json");
-        if (!Files.exists(configPath)) {
-            arduinoPortSelector.setSelectedItem("AUTO");
-            wifiPortField.setText("5000");
-            if (verbose) {
-                log("[WARN] Cannot load monitor settings: monitor_config.json not found at " + configPath);
-            }
-            return;
-        }
-
         try {
-            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            String text = loadMergedMonitorConfigText();
+            if (text == null || text.isBlank()) {
+                arduinoPortSelector.setSelectedItem("AUTO");
+                wifiPortField.setText("5000");
+                if (verbose) {
+                    log("[WARN] Cannot load monitor settings: no monitor config file was found.");
+                }
+                return;
+            }
             String arduinoPort = readStringConfigValue(text, "arduino_port", "AUTO");
             int wifiPort = readIntConfigValue(text, "wifi_port", 5000);
             wifiPort = resolveSharedWifiPort(wifiPort);
             arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
             wifiPortField.setText(String.valueOf(wifiPort));
             if (verbose) {
-                log("[INFO] Loaded monitor connection settings from " + configPath.getFileName() + ".");
+                log("[INFO] Loaded merged monitor connection settings (default/shared/local). ");
             }
         } catch (Exception ex) {
             if (verbose) {
@@ -834,30 +961,22 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        List<Path> configPaths = new ArrayList<>();
-        configPaths.add(repoPath().resolve("monitor_config.json"));
-
         int updatedCount = 0;
         boolean syncedWifiHeader = false;
-        for (Path configPath : configPaths) {
-            if (!Files.exists(configPath)) {
-                log("[WARN] Cannot save monitor settings: missing " + configPath);
-                continue;
+        Path configPath = monitorLocalConfigPath();
+        try {
+            String text = ensureWritableLocalMonitorConfig();
+            String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
+            updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
+            if (!updated.equals(text)) {
+                Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                log("[INFO] Saved machine-local monitor port settings to " + configPath + ".");
+            } else {
+                log("[INFO] Machine-local monitor port settings already matched in " + configPath + ".");
             }
-            try {
-                String text = Files.readString(configPath, StandardCharsets.UTF_8);
-                String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
-                updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
-                if (!updated.equals(text)) {
-                    Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                    log("[INFO] Saved monitor port settings to " + configPath + ".");
-                } else {
-                    log("[INFO] Monitor port settings already matched in " + configPath + ".");
-                }
-                updatedCount++;
-            } catch (Exception ex) {
-                log("[WARN] Failed to save monitor settings to " + configPath + ": " + ex.getMessage());
-            }
+            updatedCount++;
+        } catch (Exception ex) {
+            log("[WARN] Failed to save machine-local monitor settings to " + configPath + ": " + ex.getMessage());
         }
 
         syncedWifiHeader = syncWifiPortIntoLocalHeader(wifiPort);
@@ -869,19 +988,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             restartMonitorServiceForSettingsChange();
         } else if (syncedWifiHeader) {
-            log("[INFO] Synced wifi_config.local.h to the requested Wi-Fi TCP port even though monitor_config.json was already up to date.");
+            log("[INFO] Synced wifi_config.local.h to the requested Wi-Fi TCP port even though monitor_config.local.json was already up to date.");
         }
     }
 
     private boolean updateBooleanConfig(String key, boolean enabled) {
-        Path configPath = repoPath().resolve("monitor_config.json");
-        if (!Files.exists(configPath)) {
-            log("[WARN] monitor_config.json not found at " + configPath);
-            return false;
-        }
-
+        Path configPath = monitorLocalConfigPath();
         try {
-            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            String text = ensureWritableLocalMonitorConfig();
             String pattern = "\\\"" + key + "\\\"\\s*:\\s*(true|false)";
             String replacement = "\"" + key + "\": " + (enabled ? "true" : "false");
             String updated = text.matches("(?s).*" + pattern + ".*")
@@ -890,13 +1004,13 @@ public class UniversalMonitorControlCenter extends JFrame {
 
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                log("[INFO] Updated monitor_config.json: " + key + "=" + enabled);
+                log("[INFO] Updated monitor_config.local.json: " + key + "=" + enabled);
             } else {
-                log("[INFO] monitor_config.json already had " + key + "=" + enabled + ".");
+                log("[INFO] monitor_config.local.json already had " + key + "=" + enabled + ".");
             }
             return true;
         } catch (Exception ex) {
-            log("[WARN] Could not update monitor_config.json entry " + key + ": " + ex.getMessage());
+            log("[WARN] Could not update monitor_config.local.json entry " + key + ": " + ex.getMessage());
             return false;
         }
     }
@@ -1208,22 +1322,20 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort);
-        Path configPath = repoPath().resolve("monitor_config.json");
+        Path configPath = monitorLocalConfigPath();
         boolean savedMonitorConfig = false;
-        if (Files.exists(configPath)) {
-            try {
-                String text = Files.readString(configPath, StandardCharsets.UTF_8);
-                String updated = upsertNumberConfigValue(text, "wifi_port", tcpPort);
-                if (!updated.equals(text)) {
-                    Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                    log("[INFO] Synced monitor_config.json to Wi-Fi TCP port " + tcpPort + ".");
-                } else {
-                    log("[INFO] monitor_config.json already matched Wi-Fi TCP port " + tcpPort + ".");
-                }
-                savedMonitorConfig = true;
-            } catch (IOException ex) {
-                log("[WARN] Failed to sync monitor_config.json Wi-Fi port: " + ex.getMessage());
+        try {
+            String text = ensureWritableLocalMonitorConfig();
+            String updated = upsertNumberConfigValue(text, "wifi_port", tcpPort);
+            if (!updated.equals(text)) {
+                Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                log("[INFO] Synced monitor_config.local.json to Wi-Fi TCP port " + tcpPort + ".");
+            } else {
+                log("[INFO] monitor_config.local.json already matched Wi-Fi TCP port " + tcpPort + ".");
             }
+            savedMonitorConfig = true;
+        } catch (IOException ex) {
+            log("[WARN] Failed to sync monitor_config.local.json Wi-Fi port: " + ex.getMessage());
         }
 
         if (savedHeader) {
@@ -1241,32 +1353,31 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private boolean updateDebugConfig(boolean enabled, String fakeIn, boolean applyPort) {
-        Path configPath = repoPath().resolve("monitor_config.json");
-        if (!Files.exists(configPath)) {
-            log("[WARN] monitor_config.json not found at " + configPath);
-            return false;
-        }
-
+        Path configPath = monitorLocalConfigPath();
         try {
-            String text = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);
+            String text = ensureWritableLocalMonitorConfig();
             String updated = text;
 
             if (updated.contains("\"debug_enabled\"")) {
                 updated = updated.replaceAll("\\\"debug_enabled\\\"\\s*:\\s*(true|false)", "\"debug_enabled\": " + (enabled ? "true" : "false"));
+            } else {
+                updated = appendConfigEntry(updated, "  \"debug_enabled\": " + (enabled ? "true" : "false"));
             }
             if (applyPort && updated.contains("\"debug_port\"")) {
                 updated = updated.replaceAll("\\\"debug_port\\\"\\s*:\\s*\\\"[^\\\"]*\\\"", "\"debug_port\": \"" + escapeJson(fakeIn) + "\"");
+            } else if (applyPort) {
+                updated = appendConfigEntry(updated, "  \"debug_port\": \"" + escapeJson(fakeIn) + "\"");
             }
 
             if (!updated.equals(text)) {
                 Files.write(configPath, updated.getBytes(StandardCharsets.UTF_8), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                log("[INFO] Updated monitor_config.json: debug_enabled=" + enabled + (applyPort ? ", debug_port=" + fakeIn : ""));
+                log("[INFO] Updated monitor_config.local.json: debug_enabled=" + enabled + (applyPort ? ", debug_port=" + fakeIn : ""));
             } else {
-                log("[INFO] monitor_config.json already had requested debug settings.");
+                log("[INFO] monitor_config.local.json already had requested debug settings.");
             }
             return true;
         } catch (Exception ex) {
-            log("[WARN] Could not update monitor_config.json debug settings: " + ex.getMessage());
+            log("[WARN] Could not update monitor_config.local.json debug settings: " + ex.getMessage());
             return false;
         }
     }
@@ -1912,7 +2023,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "8.12").trim();
+                String version = properties.getProperty("app.version", "9.0 beta").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -1920,7 +2031,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "8.12";
+        return "9.0 beta";
     }
 
     private boolean runningAsRoot() {

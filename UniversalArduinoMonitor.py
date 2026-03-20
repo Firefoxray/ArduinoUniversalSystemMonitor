@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Universal Linux Arduino system monitor sender v8.11.
+"""Universal Linux Arduino system monitor sender v9.0 beta.
 
 Originally built on Fedora for an Arduino desktop monitor, but intended to run
 across Linux desktops in general.
@@ -30,7 +30,9 @@ import serial
 from serial import SerialException
 from serial.tools import list_ports
 
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("monitor_config.default.json")
 CONFIG_PATH = Path(__file__).with_name("monitor_config.json")
+LOCAL_CONFIG_PATH = Path(__file__).with_name("monitor_config.local.json")
 WIFI_LOCAL_CONFIG_PATH = Path(__file__).with_name("R4_WIFI35").joinpath("wifi_config.local.h")
 WIFI_DEFAULT_CONFIG_PATH = Path(__file__).with_name("R4_WIFI35").joinpath("wifi_config.h")
 LOCK_PATH = Path("/tmp/universal_arduino_monitor.lock")
@@ -67,6 +69,13 @@ def release_single_instance_lock() -> None:
     _LOCK_HANDLE = None
 
 
+def load_json_config(path: Path) -> Dict[str, object]:
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return raw if isinstance(raw, dict) else {}
+
+
 def load_config() -> Dict[str, object]:
     defaults: Dict[str, object] = {
         "arduino_port": "AUTO",
@@ -87,13 +96,11 @@ def load_config() -> Dict[str, object]:
         "wifi_discovery_refresh": 30,
         "wifi_discovery_magic": "UAM_DISCOVER",
     }
-    try:
-        if CONFIG_PATH.exists():
-            raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                defaults.update(raw)
-    except Exception as exc:
-        print(f"Config load warning ({CONFIG_PATH}): {exc}")
+    for path in (DEFAULT_CONFIG_PATH, CONFIG_PATH, LOCAL_CONFIG_PATH):
+        try:
+            defaults.update(load_json_config(path))
+        except Exception as exc:
+            print(f"Config load warning ({path}): {exc}")
     return defaults
 
 
@@ -1214,7 +1221,7 @@ def main() -> None:
         return
 
     static = get_cached_static()
-    print("Running Universal Arduino Monitor 8.11 for Linux")
+    print("Running Universal Arduino Monitor 9.0 beta for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
     print(f"Active network interface: {static['iface']}")
     print(f"OS: {static['os_name']}")
