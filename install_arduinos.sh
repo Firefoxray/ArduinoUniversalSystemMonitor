@@ -5,7 +5,8 @@ SERVICE_NAME="arduino-monitor.service"
 RESTART_DELAY=2
 
 R3_FQBN="arduino:avr:uno"
-R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-auto}"
+R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-28}"
+R3_SCREEN_SIZE_WAS_SET="${UNO_R3_SCREEN_SIZE+x}"
 R3_SKETCH_28="R3_MonitorScreen28"
 R3_SKETCH_35="R3_MonitorScreen35"
 R3_SKETCH=""
@@ -149,26 +150,11 @@ select_uno_r3_sketch() {
             R3_SKETCH="$R3_SKETCH_35"
             ;;
         auto|"")
-            echo
-            echo "Arduino UNO R3 display size selection required."
-            echo "IMPORTANT: ONLY ONE UNO R3 SHOULD BE CONNECTED WHEN CHOOSING THE SCREEN SIZE."
-            echo "UNPLUG ANY OTHER UNO R3 BEFORE YOU CONTINUE."
-            echo 'USB detection can identify the Uno board, but it cannot see whether the attached TFT shield is 2.8" or 3.5".'
-            echo "Choose the screen so the correct sketch is flashed:"
-            echo '  1) 2.8" TFT shield  -> ' "$R3_SKETCH_28"
-            echo '  2) 3.5" TFT shield  -> ' "$R3_SKETCH_35"
-            while true; do
-                read -r -p "Select Uno R3 screen size for the ONE connected board [1-2]: " choice
-                case "$choice" in
-                    1) R3_SKETCH="$R3_SKETCH_28"; break ;;
-                    2) R3_SKETCH="$R3_SKETCH_35"; break ;;
-                    *) echo "Please enter 1 or 2." ;;
-                esac
-            done
+            R3_SKETCH="$R3_SKETCH_28"
             ;;
         *)
             echo "Invalid UNO_R3_SCREEN_SIZE value: $R3_SCREEN_SIZE"
-            echo "Use 28, 35, or auto."
+            echo "Use 28 or 35."
             exit 1
             ;;
     esac
@@ -192,34 +178,6 @@ count_uno_r3_boards() {
     printf '%s\n' "$count"
 }
 
-prompt_for_single_uno_r3() {
-    local uno_count="$1"
-
-    echo
-    echo "Detected $uno_count Arduino UNO R3 boards."
-    echo "Only one UNO R3 can be flashed at a time because the flasher must use a single R3 sketch choice."
-    echo "Arduino UNO R4 boards can stay connected and will still be flashed in the same run."
-
-    while true; do
-        echo
-        echo "Please unplug extra UNO R3 boards so only the one you want to flash remains connected."
-        read -r -p "Press Enter after only one UNO R3 is still plugged in (or Ctrl+C to cancel): "
-        detect_boards
-        uno_count="$(count_uno_r3_boards)"
-
-        if [[ "$uno_count" -le 1 ]]; then
-            break
-        fi
-
-        echo "Still detected $uno_count Arduino UNO R3 boards. Only one UNO R3 may remain connected."
-    done
-
-    if [[ "$uno_count" -eq 1 ]]; then
-        echo "Confirmed: exactly one Arduino UNO R3 remains connected."
-    else
-        echo "No Arduino UNO R3 remains connected. Continuing with any supported non-R3 boards still attached."
-    fi
-}
 
 stop_service_before_flash() {
     echo "[1/4] Stopping monitor service before flashing..."
@@ -363,14 +321,27 @@ detect_boards
 
 UNO_R3_BOARD_COUNT="$(count_uno_r3_boards)"
 if [[ "$UNO_R3_BOARD_COUNT" -gt 1 ]]; then
+    if [[ -z "$R3_SCREEN_SIZE_WAS_SET" ]]; then
+        echo
+        echo "Detected $UNO_R3_BOARD_COUNT Arduino UNO R3 boards."
+        echo 'USB detection cannot tell whether each connected R3 uses the 2.8" or 3.5" TFT shield.'
+        echo "Choose which sketch to use for the connected UNO R3 boards in this flashing run:"
+        echo '  1) 2.8" TFT shield  -> ' "$R3_SKETCH_28"
+        echo '  2) 3.5" TFT shield  -> ' "$R3_SKETCH_35"
+        while true; do
+            read -r -p "Select Uno R3 screen size for the detected R3 board(s) [1-2]: " choice
+            case "$choice" in
+                1) R3_SCREEN_SIZE="28"; break ;;
+                2) R3_SCREEN_SIZE="35"; break ;;
+                *) echo "Please enter 1 or 2." ;;
+            esac
+        done
+    fi
     select_uno_r3_sketch
-    prompt_for_single_uno_r3 "$UNO_R3_BOARD_COUNT"
 elif [[ "$UNO_R3_BOARD_COUNT" -eq 1 ]]; then
-    if [[ "${R3_SCREEN_SIZE,,}" == "auto" || -z "${R3_SCREEN_SIZE}" ]]; then
-        R3_SKETCH="$R3_SKETCH_28"
+    select_uno_r3_sketch
+    if [[ -z "$R3_SCREEN_SIZE_WAS_SET" ]]; then
         echo "Single Arduino UNO R3 detected; defaulting to $R3_SKETCH."
-    else
-        select_uno_r3_sketch
     fi
 fi
 
