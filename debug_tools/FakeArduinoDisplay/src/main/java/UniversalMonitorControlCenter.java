@@ -49,6 +49,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton updateButton = new JButton("Update from GitHub");
     private final JButton flashButton = new JButton("Flash Arduino with Included Program");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
+    private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
 
     private final JButton serviceOnButton = new JButton("Service On");
     private final JButton serviceOffButton = new JButton("Service Off");
@@ -185,6 +186,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         appActions.add(updateButton);
         appActions.add(flashButton);
         appActions.add(customFlashButton);
+        appActions.add(wifiCredentialsButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         appActions.add(customSketchIndicator);
@@ -265,6 +267,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
         customFlashButton.addActionListener(e -> uploadCustomSketch());
+        wifiCredentialsButton.addActionListener(e -> promptForWifiCredentials());
         clearSavedPasswordButton.addActionListener(e -> clearSavedSudoPassword(true));
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
@@ -719,6 +722,73 @@ public class UniversalMonitorControlCenter extends JFrame {
                     refreshTransportModeStatus(false);
                     SwingUtilities.invokeLater(() -> setActionButtons(true));
                 });
+    }
+
+    private void promptForWifiCredentials() {
+        JTextField ssidField = new JTextField(24);
+        JPasswordField passwordField = new JPasswordField(24);
+
+        JPanel panel = new JPanel(new GridLayout(0, 1, 0, 8));
+        panel.add(new JLabel("Wi-Fi SSID"));
+        panel.add(ssidField);
+        panel.add(new JLabel("Wi-Fi Password"));
+        panel.add(passwordField);
+
+        int result = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "Set R4 Wi-Fi Credentials",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+
+        if (result != JOptionPane.OK_OPTION) {
+            log("[INFO] Wi-Fi credential update canceled.");
+            return;
+        }
+
+        String ssid = ssidField.getText() == null ? "" : ssidField.getText().trim();
+        String password = new String(passwordField.getPassword());
+        if (ssid.isEmpty()) {
+            log("[WARN] Wi-Fi credentials not saved: SSID is required.");
+            return;
+        }
+
+        List<Path> targets = List.of(
+                repoPath().resolve("R4_WIFI35/wifi_config.h"),
+                repoPath().resolve("R4_WIFI/R4_WIFI35/wifi_config.h")
+        );
+
+        String header = "#pragma once\n\n"
+                + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
+                + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n";
+
+        int savedCount = 0;
+        for (Path target : targets) {
+            try {
+                if (target.getParent() != null) {
+                    Files.createDirectories(target.getParent());
+                }
+                Files.writeString(
+                        target,
+                        header,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE
+                );
+                savedCount++;
+                log("[INFO] Saved Wi-Fi credentials template to " + target);
+            } catch (IOException ex) {
+                log("[WARN] Failed to write Wi-Fi credentials to " + target + ": " + ex.getMessage());
+            }
+        }
+
+        if (savedCount > 0) {
+            log("[INFO] Wi-Fi credentials saved for the R4 Wi-Fi sketch. Reflash the board to apply them.");
+        } else {
+            log("[ERROR] Wi-Fi credentials were not saved to any sketch folder.");
+        }
     }
 
     private boolean updateDebugConfig(boolean enabled, String fakeIn, boolean applyPort) {
@@ -1389,7 +1459,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "8.8").trim();
+                String version = properties.getProperty("app.version", "8.9").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -1397,11 +1467,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "8.8";
+        return "8.9";
     }
 
     private boolean runningAsRoot() {
         return "root".equals(System.getProperty("user.name"));
+    }
+
+    private String escapeCppString(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 
     private void setActionButtons(boolean enabled) {
@@ -1411,6 +1487,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
             customFlashButton.setEnabled(enabled);
+            wifiCredentialsButton.setEnabled(enabled);
             clearSavedPasswordButton.setEnabled(enabled);
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
