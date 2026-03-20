@@ -961,20 +961,22 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        int updatedCount = 0;
+        boolean savedMonitorConfig = false;
         boolean syncedWifiHeader = false;
         Path configPath = monitorLocalConfigPath();
         try {
             String text = ensureWritableLocalMonitorConfig();
             String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
             updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
+            updated = upsertBooleanConfigValue(updated, "wifi_enabled", true);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                log("[INFO] Saved machine-local monitor port settings to " + configPath + ".");
+                log("[INFO] Saved machine-local monitor settings to " + configPath
+                        + " (arduino_port=" + arduinoPort + ", wifi_enabled=true, wifi_port=" + wifiPort + ").");
             } else {
-                log("[INFO] Machine-local monitor port settings already matched in " + configPath + ".");
+                log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains enabled).");
             }
-            updatedCount++;
+            savedMonitorConfig = true;
         } catch (Exception ex) {
             log("[WARN] Failed to save machine-local monitor settings to " + configPath + ": " + ex.getMessage());
         }
@@ -982,14 +984,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         syncedWifiHeader = syncWifiPortIntoLocalHeader(wifiPort);
         refreshWifiCredentialsIndicator(false);
 
-        if (updatedCount > 0) {
-            if (syncedWifiHeader) {
-                log("[INFO] Synced the same Wi-Fi TCP port into wifi_config.local.h so the next flash uses the matching port.");
-            }
-            restartMonitorServiceForSettingsChange();
-        } else if (syncedWifiHeader) {
-            log("[INFO] Synced wifi_config.local.h to the requested Wi-Fi TCP port even though monitor_config.local.json was already up to date.");
+        if (!savedMonitorConfig) {
+            return;
         }
+
+        setTransportIndicator("WIFI", new Color(24, 170, 24));
+        if (syncedWifiHeader) {
+            log("[INFO] Synced the same Wi-Fi TCP port into wifi_config.local.h so the flashed sketch uses the matching port immediately.");
+        }
+        log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort + " applies right away.");
+        reflashWifiBoardsAndRestartMonitor(wifiPort);
     }
 
     private boolean updateBooleanConfig(String key, boolean enabled) {
@@ -1105,6 +1109,14 @@ public class UniversalMonitorControlCenter extends JFrame {
                 : appendConfigEntry(text, "  \"" + key + "\": " + value);
     }
 
+    private String upsertBooleanConfigValue(String text, String key, boolean value) {
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*(true|false)";
+        String replacement = "\"" + key + "\": " + (value ? "true" : "false");
+        return text.matches("(?s).*" + pattern + ".*")
+                ? text.replaceAll(pattern, replacement)
+                : appendConfigEntry(text, "  \"" + key + "\": " + (value ? "true" : "false"));
+    }
+
     private String appendConfigEntry(String text, String newEntry) {
         int closingBrace = text.lastIndexOf('}');
         if (closingBrace < 0) {
@@ -1180,6 +1192,46 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void restartMonitorServiceForSettingsChange() {
         log("[INFO] Restarting the monitor service so the new Arduino/Wi-Fi port settings apply now.");
         cycleServiceForTransportChange();
+    }
+
+    private void reflashWifiBoardsAndRestartMonitor(int wifiPort) {
+        List<DetectedBoard> wifiBoards = detectConnectedBoards().stream()
+                .filter(board -> "arduino:renesas_uno:unor4wifi".equals(board.fqbn))
+                .toList();
+        if (wifiBoards.isEmpty()) {
+            log("[WARN] No Arduino UNO R4 WiFi boards were detected, so TCP port " + wifiPort
+                    + " was only saved into monitor_config.local.json and wifi_config.local.h.");
+            restartMonitorServiceForSettingsChange();
+            return;
+        }
+
+        String sketchPath = repoPath().resolve("R4_WIFI35").toString();
+        StringBuilder command = new StringBuilder("cd ")
+                .append(escape(repoPath().toString()))
+                .append(" && arduino-cli compile --fqbn arduino:renesas_uno:unor4wifi ")
+                .append(escape(sketchPath));
+        for (DetectedBoard board : wifiBoards) {
+            command.append(" && sleep 2")
+                    .append(" && arduino-cli upload -p ")
+                    .append(escape(board.port))
+                    .append(" --fqbn ")
+                    .append(escape(board.fqbn))
+                    .append(" ")
+                    .append(escape(sketchPath));
+        }
+        command.append(" && sleep 2");
+
+        String boardSummary = wifiBoards.stream()
+                .map(board -> board.port)
+                .collect(java.util.stream.Collectors.joining(", "));
+        runCommand(command.toString(), repoPath().toFile(),
+                "Reflash UNO R4 WiFi monitor sketch on " + boardSummary,
+                true, true,
+                () -> {
+                    log("[INFO] Reflash completed for TCP port " + wifiPort + ". Restarting the Python monitor service.");
+                    restartMonitorServiceForSettingsChange();
+                    refreshMonitorPortChoices(false);
+                });
     }
 
     private void refreshWifiCredentialsIndicator(boolean verbose) {
