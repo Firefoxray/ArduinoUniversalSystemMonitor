@@ -30,7 +30,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
-    private final JCheckBox rememberPasswordToggle = new JCheckBox("Remember in gitignored file");
+    private final JCheckBox rememberPasswordToggle = new JCheckBox("Remember Password");
     private final JButton clearSavedPasswordButton = new JButton("Clear Saved Password");
 
     private final JTextField fakeInField = new JTextField("/tmp/fakearduino_in", 22);
@@ -103,7 +103,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         repoField.setText(detectRepoRoot().toString());
         sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
-        rememberPasswordToggle.setToolTipText("Stores the sudo password in " + SUDO_PASSWORD_FILE + " inside the repo so Git will ignore it.");
+        rememberPasswordToggle.setToolTipText("Stores the sudo password in the local " + SUDO_PASSWORD_FILE + " file inside the repo. Git ignores that file so it stays on this machine.");
         clearSavedPasswordButton.setToolTipText("Deletes the saved sudo password file from this repo.");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
