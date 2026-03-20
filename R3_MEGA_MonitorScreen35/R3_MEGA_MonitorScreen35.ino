@@ -13,6 +13,8 @@
 #define MAGENTA DIYables_TFT::colorRGB(255, 0, 255)
 #define GRAY    DIYables_TFT::colorRGB(60, 60, 60)
 
+// Shared DIYables 3.5" shield calibration used on the working UNO R4 build.
+// The Mega sketch uses the same shield pin layout through the DIYables shield library.
 #define LEFT_X 851
 #define RIGHT_X 543
 #define TOP_Y 921
@@ -40,7 +42,7 @@ bool dataDirty = false;
 unsigned long lastTouchTime = 0;
 unsigned long lastTouchPoll = 0;
 unsigned long lastScreenUpdate = 0;
-const unsigned long touchDebounceMs = 260;
+const unsigned long touchDebounceMs = 350;
 const unsigned long touchPollMs = 45;
 const unsigned long minRedrawIntervalMs = 120;
 

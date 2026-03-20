@@ -158,38 +158,45 @@ upload_with_retry() {
     local board_name="$4"
     local cli_path
     local upload_output
+    local attempt
 
     cli_path="$(command -v arduino-cli)"
 
-    if upload_output="$($cli_path upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
-        printf '%s
-' "$upload_output"
-        return 0
-    fi
+    for attempt in 1 2; do
+        if [[ $attempt -gt 1 ]]; then
+            echo "Retrying upload for $board_name on $port after a short delay..."
+            sleep 3
+        fi
 
-    printf '%s
-' "$upload_output"
-
-    if grep -Eqi '(permission denied|cannot perform port reset|no device found on tty|access is denied)' <<< "$upload_output"; then
-        echo "Upload hit a serial-port access/reset problem on $port."
-        echo "Retrying upload with sudo so Fedora can perform the 1200-bps touch reset cleanly..."
-
-        sleep 2
-
-        if upload_output="$(run_cli_with_user_env "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+        if upload_output="$($cli_path upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
             printf '%s
 ' "$upload_output"
-            echo "Upload succeeded after sudo retry for $board_name on $port."
             return 0
         fi
 
         printf '%s
 ' "$upload_output"
-        echo "Upload still failed on $port after sudo retry."
-        return 1
-    fi
 
-    echo "Upload failed on $port."
+        if grep -Eqi '(permission denied|cannot perform port reset|no device found on tty|access is denied)' <<< "$upload_output"; then
+            echo "Upload hit a serial-port access/reset problem on $port."
+            echo "Retrying upload with sudo so Fedora can perform the reset cleanly..."
+
+            sleep 2
+
+            if upload_output="$(run_cli_with_user_env "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+                printf '%s
+' "$upload_output"
+                echo "Upload succeeded after sudo retry for $board_name on $port."
+                return 0
+            fi
+
+            printf '%s
+' "$upload_output"
+            echo "Upload still failed on $port after sudo retry."
+        fi
+    done
+
+    echo "Upload failed on $port after 2 attempt(s)."
     return 1
 }
 

@@ -12,9 +12,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 
@@ -23,9 +26,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = loadAppVersion();
+    private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
+    private final JCheckBox rememberPasswordToggle = new JCheckBox("Remember in gitignored file");
+    private final JButton clearSavedPasswordButton = new JButton("Clear Saved Password");
 
     private final JTextField fakeInField = new JTextField("/tmp/fakearduino_in", 22);
     private final JTextField fakeOutField = new JTextField("/tmp/fakearduino_out", 22);
@@ -40,7 +46,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton installButton = new JButton("Install on Linux");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update from GitHub");
-    private final JButton flashButton = new JButton("Flash Arduino");
+    private final JButton flashButton = new JButton("Flash Arduino with Included Program");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
 
     private final JButton serviceOnButton = new JButton("Service On");
@@ -97,6 +103,8 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         repoField.setText(detectRepoRoot().toString());
         sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
+        rememberPasswordToggle.setToolTipText("Stores the sudo password in " + SUDO_PASSWORD_FILE + " inside the repo so Git will ignore it.");
+        clearSavedPasswordButton.setToolTipText("Deletes the saved sudo password file from this repo.");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
         topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
@@ -117,6 +125,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         updatePortButtons();
         setServiceIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
+        loadSavedSudoPassword();
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
@@ -144,6 +153,9 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         panel.add(new JLabel("sudo password:"));
         panel.add(sudoPasswordField);
+        rememberPasswordToggle.setFocusable(false);
+        panel.add(rememberPasswordToggle);
+        panel.add(clearSavedPasswordButton);
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
         panel.add(Box.createHorizontalStrut(12));
         panel.add(versionLabel);
@@ -233,6 +245,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
         customFlashButton.addActionListener(e -> uploadCustomSketch());
+        clearSavedPasswordButton.addActionListener(e -> clearSavedSudoPassword(true));
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -852,6 +865,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         String command = "cd " + escape(repoPath().toString())
                 + " && arduino-cli compile --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString())
+                + " && sleep 2"
                 + " && arduino-cli upload -p " + escape(target.port) + " --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString());
         runCommand(command, repoPath().toFile(), "Upload custom sketch to " + target.port, true, true);
     }
@@ -1034,8 +1048,17 @@ public class UniversalMonitorControlCenter extends JFrame {
     private String resolveSudoPassword(boolean allowPrompt) {
         String fromField = new String(sudoPasswordField.getPassword());
         if (!fromField.trim().isEmpty()) {
+            persistSudoPasswordIfRequested(fromField);
             return fromField;
         }
+
+        String saved = readSavedSudoPassword();
+        if (saved != null && !saved.isBlank()) {
+            sudoPasswordField.setText(saved);
+            rememberPasswordToggle.setSelected(true);
+            return saved;
+        }
+
         if (!allowPrompt) {
             return null;
         }
@@ -1052,9 +1075,89 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (result == JOptionPane.OK_OPTION) {
             String value = new String(passwordField.getPassword());
             sudoPasswordField.setText(value);
+            persistSudoPasswordIfRequested(value);
             return value;
         }
         return null;
+    }
+
+    private void loadSavedSudoPassword() {
+        String saved = readSavedSudoPassword();
+        if (saved == null || saved.isBlank()) {
+            return;
+        }
+        sudoPasswordField.setText(saved);
+        rememberPasswordToggle.setSelected(true);
+        log("[INFO] Loaded sudo password from " + passwordFilePath());
+    }
+
+    private String readSavedSudoPassword() {
+        Path path = passwordFilePath();
+        if (!Files.exists(path)) {
+            return null;
+        }
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8).trim();
+        } catch (IOException ex) {
+            log("[WARN] Failed to read saved sudo password file: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private void persistSudoPasswordIfRequested(String password) {
+        if (!rememberPasswordToggle.isSelected()) {
+            return;
+        }
+        if (password == null || password.isBlank()) {
+            return;
+        }
+
+        Path path = passwordFilePath();
+        try {
+            Files.writeString(
+                    path,
+                    password + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE
+            );
+            restrictPasswordFilePermissions(path);
+        } catch (IOException ex) {
+            log("[WARN] Failed to save sudo password file: " + ex.getMessage());
+        }
+    }
+
+    private void clearSavedSudoPassword(boolean clearField) {
+        Path path = passwordFilePath();
+        try {
+            Files.deleteIfExists(path);
+            rememberPasswordToggle.setSelected(false);
+            if (clearField) {
+                sudoPasswordField.setText("");
+            }
+            log("[INFO] Removed saved sudo password file: " + path);
+        } catch (IOException ex) {
+            log("[WARN] Failed to remove saved sudo password file: " + ex.getMessage());
+        }
+    }
+
+    private void restrictPasswordFilePermissions(Path path) {
+        try {
+            Set<PosixFilePermission> permissions = EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE
+            );
+            Files.setPosixFilePermissions(path, permissions);
+        } catch (UnsupportedOperationException ignored) {
+            // Ignore on non-POSIX filesystems.
+        } catch (IOException ex) {
+            log("[WARN] Failed to tighten password file permissions: " + ex.getMessage());
+        }
+    }
+
+    private Path passwordFilePath() {
+        return repoPath().resolve(SUDO_PASSWORD_FILE);
     }
 
     private static final class DetectedBoard {
@@ -1101,6 +1204,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
             customFlashButton.setEnabled(enabled);
+            clearSavedPasswordButton.setEnabled(enabled);
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
             serviceRestartButton.setEnabled(enabled);
