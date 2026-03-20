@@ -181,6 +181,8 @@ WIFI_HOST = str(os.environ.get("ARDUINO_MONITOR_WIFI_HOST") or CONFIG.get("wifi_
 WIFI_PORT = to_int(os.environ.get("ARDUINO_MONITOR_WIFI_PORT", CONFIG.get("wifi_port")), 5000)
 PREFER_USB = to_bool(os.environ.get("ARDUINO_MONITOR_PREFER_USB", CONFIG.get("prefer_usb")), True)
 WIFI_RETRY_DELAY = max(2, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_RETRY_DELAY", CONFIG.get("wifi_retry_delay")), 5))
+WIFI_QUICK_RETRY_DELAY = max(0.5, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_QUICK_RETRY_DELAY"), 1.0))
+WIFI_QUICK_RETRY_WINDOW = max(5.0, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_QUICK_RETRY_WINDOW"), 20.0))
 WIFI_AUTO_DISCOVERY = to_bool(os.environ.get("ARDUINO_MONITOR_WIFI_AUTO_DISCOVERY", CONFIG.get("wifi_auto_discovery")), True)
 WIFI_DISCOVERY_PORT = max(1, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_PORT", CONFIG.get("wifi_discovery_port")), 5001))
 WIFI_DISCOVERY_TIMEOUT = max(0.2, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_TIMEOUT", CONFIG.get("wifi_discovery_timeout")), 1.2))
@@ -611,6 +613,14 @@ def describe_active_transports(arduino_serials: Dict[str, serial.Serial], wifi_s
     if wifi_sock is not None:
         parts.append("WIFI")
     return "+".join(parts) if parts else "NONE"
+
+
+def current_wifi_retry_delay(start_ts: float, last_success_ts: float, now: float) -> float:
+    if last_success_ts <= 0.0 and (now - start_ts) >= 3.0 and (now - start_ts) <= WIFI_QUICK_RETRY_WINDOW:
+        return min(WIFI_RETRY_DELAY, WIFI_QUICK_RETRY_DELAY)
+    if last_success_ts > 0.0 and (now - last_success_ts) <= WIFI_QUICK_RETRY_WINDOW:
+        return min(WIFI_RETRY_DELAY, WIFI_QUICK_RETRY_DELAY)
+    return WIFI_RETRY_DELAY
 
 
 def should_prefer_usb_transport(arduino_serials: Dict[str, serial.Serial]) -> bool:
@@ -1210,9 +1220,11 @@ def main() -> None:
     wifi_sock: Optional[socket.socket] = None
     debug_ser: Optional[serial.Serial] = connect_optional_serial(DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror") if DEBUG_MIRROR_ENABLED else None
 
+    monitor_start = time.time()
     last_send = 0.0
     last_discovery_attempt = 0.0
     last_wifi_attempt = 0.0
+    last_wifi_success = 0.0
     last_wifi_error_log = 0.0
     wifi_error_suppressed = False
     no_transport_logged = False
@@ -1247,7 +1259,8 @@ def main() -> None:
                         wifi_host_active = ""
                         wifi_name_active = None
 
-                if WIFI_ENABLED and not usb_preferred and wifi_sock is None and (now - last_wifi_attempt) >= WIFI_RETRY_DELAY:
+                wifi_retry_delay = current_wifi_retry_delay(monitor_start, last_wifi_success, now)
+                if WIFI_ENABLED and not usb_preferred and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
                     last_wifi_attempt = now
                     wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_name = resolve_wifi_endpoint(
                         wifi_host_active,
@@ -1265,6 +1278,7 @@ def main() -> None:
                     )
                     if candidate is not None:
                         wifi_sock = candidate
+                        last_wifi_success = now
                         wifi_error_suppressed = False
                         last_wifi_error_log = 0.0
                     else:
