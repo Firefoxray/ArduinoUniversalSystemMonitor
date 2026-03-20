@@ -47,6 +47,7 @@ unsigned long lastUsbActivityMs = 0;
 const unsigned long wifiRetryIntervalMs = 8000;
 const unsigned long usbPriorityHoldMs = 15000;
 bool usbSessionActive = false;
+bool wifiConfigured = false;
 
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
@@ -100,6 +101,19 @@ String procName[PROCESS_ROWS];
 String procCpu[PROCESS_ROWS];
 String procRam[PROCESS_ROWS];
 String storageLine[STORAGE_LINES];
+
+
+bool wifiCredentialsProvided() {
+  String configuredSsid = String(ssid);
+  configuredSsid.trim();
+  String configuredPass = String(pass);
+  configuredPass.trim();
+
+  if (configuredSsid.length() == 0) return false;
+  if (configuredSsid == "YOUR_WIFI_SSID") return false;
+  if (configuredPass == "YOUR_WIFI_PASSWORD") return false;
+  return true;
+}
 
 void clearArea(int x, int y, int w, int h) {
   tft.fillRect(x, y, w, h, BLACK);
@@ -700,6 +714,10 @@ void resumeWiFiAfterUsb() {
 }
 
 void ensureWiFi() {
+  if (!wifiConfigured) {
+    return;
+  }
+
   if (usbTransportActive()) {
     suspendWiFiForUsb();
     return;
@@ -796,16 +814,21 @@ void setup() {
   tft.setRotation(3); //1 for charger left, 3 for charger right
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
 
-  Serial.println("BOOT: starting WiFi...");
-  WiFi.begin(ssid, pass);
+  wifiConfigured = wifiCredentialsProvided();
+  if (wifiConfigured) {
+    Serial.println("BOOT: starting WiFi...");
+    WiFi.begin(ssid, pass);
 
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
-    delay(500);
-    Serial.print(".");
+    unsigned long wifiStart = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
+      delay(500);
+      Serial.print(".");
+    }
+  } else {
+    Serial.println("BOOT: WiFi credentials not set. Waiting for USB or future WiFi setup.");
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (wifiConfigured && WiFi.status() == WL_CONNECTED) {
     Serial.println("\nBOOT: WiFi connected, waiting for valid IP...");
     startNetworkServices();
     Serial.println("BOOT: WiFi ready");
@@ -819,7 +842,11 @@ void setup() {
     Serial.println(DISCOVERY_PORT);
   } else {
     refreshArduinoWifiIp();
-    Serial.println("\nBOOT: WiFi connection failed. USB mode is still available.");
+    if (wifiConfigured) {
+      Serial.println("\nBOOT: WiFi connection failed. USB mode is still available.");
+    } else {
+      Serial.println("BOOT: USB mode is active until WiFi credentials are provided.");
+    }
   }
 
   for (int i = 0; i < GRAPH_POINTS; i++) {
