@@ -1208,7 +1208,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        List<DetectedBoard> wifiBoards = detectConnectedBoards(true).stream()
+        List<DetectedBoard> wifiBoards = detectConnectedBoards().stream()
                 .filter(board -> "arduino:renesas_uno:unor4wifi".equals(board.fqbn))
                 .toList();
         if (wifiBoards.isEmpty()) {
@@ -1868,6 +1868,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private List<DetectedBoard> detectConnectedBoardsOnce(String arduinoCli) {
         List<DetectedBoard> boards = new ArrayList<>();
+        String arduinoCli = ensureArduinoCliAvailable("detect connected Arduino boards");
+        if (arduinoCli == null) {
+            return boards;
+        }
         try {
             Process process = new ProcessBuilder("bash", "-lc", escape(arduinoCli) + " board list | tail -n +2")
                     .directory(repoPath().toFile())
