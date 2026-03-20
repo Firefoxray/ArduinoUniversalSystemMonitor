@@ -379,6 +379,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private static final Color BEZEL = new Color(25, 29, 38);
         private static final Color BEZEL_EDGE = new Color(74, 82, 98);
         private static final Color SCREEN_SHADOW = new Color(0, 0, 0, 100);
+        private static final String MONO = Font.MONOSPACED;
 
         private ParsedPacket packet = new ParsedPacket();
         private int pageIndex = 0;
@@ -481,20 +482,22 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private void drawHeader(Graphics2D g2, String title, int w, int m) {
             g2.setColor(CYAN);
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 30));
-            g2.drawString(title, m + 8, m + 28);
+            g2.setFont(fitFont(g2, title, Font.BOLD, 22, 15, w - (m + 8) * 2));
+            g2.drawString(title, m + 8, m + 24);
             g2.setColor(PANEL_LINE);
-            g2.drawLine(m, m + 42, w - m, m + 42);
+            g2.drawLine(m, m + 40, w - m, m + 40);
         }
 
         private void drawFooter(Graphics2D g2, int w, int h) {
             g2.setColor(WHITE);
-            g2.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
-            g2.drawString("Tap to switch " + (pageIndex + 1) + "/7", 16, h - 12);
+            g2.setFont(new Font(MONO, Font.PLAIN, 9));
+            g2.drawString("Tap to switch " + (pageIndex + 1) + "/7", 14, h - 10);
             String pageText = pageNames[pageIndex];
             int pageTextWidth = g2.getFontMetrics().stringWidth(pageText);
-            g2.drawString(pageText, (w - pageTextWidth) / 2, h - 12);
-            g2.drawString("[click preview to switch]", w - 156, h - 12);
+            g2.drawString(pageText, (w - pageTextWidth) / 2, h - 10);
+            String helpText = "[click preview to switch]";
+            int helpWidth = g2.getFontMetrics().stringWidth(helpText);
+            g2.drawString(helpText, w - helpWidth - 14, h - 10);
         }
 
         private void drawBar(Graphics2D g2, int x, int y, int bw, int bh, int percent, Color fill) {
@@ -506,24 +509,37 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawLabelValue(Graphics2D g2, String label, String value, int x, int y, Color valueColor) {
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 15));
+            g2.setFont(new Font(MONO, Font.BOLD, 13));
             g2.setColor(WHITE);
             g2.drawString(label, x, y);
             g2.setColor(valueColor);
-            g2.drawString(value, x + 84, y);
+            g2.setFont(fitFont(g2, value, Font.BOLD, 13, 9, 250));
+            g2.drawString(value, x + 72, y);
+        }
+
+        private Font fitFont(Graphics2D g2, String text, int style, int preferredSize, int minSize, int maxWidth) {
+            int size = preferredSize;
+            while (size > minSize) {
+                Font candidate = new Font(MONO, style, size);
+                if (g2.getFontMetrics(candidate).stringWidth(text) <= maxWidth) {
+                    return candidate;
+                }
+                size--;
+            }
+            return new Font(MONO, style, minSize);
         }
 
         private void drawHome(Graphics2D g2, int w, int h, int m) {
             drawHeader(g2, packet.get("HEADER", "Ray Co. Universal System Monitor"), w, m);
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 18));
+            g2.setFont(new Font(MONO, Font.BOLD, 15));
 
             int labelX = 16;
-            int barX = 145;
-            int pctX = w - 68;
+            int barX = 106;
+            int pctX = w - 54;
             int startY = 60;
-            int row = 34;
-            int barW = 220;
-            int barH = 16;
+            int row = 28;
+            int barW = 272;
+            int barH = 14;
 
             String[] labels = {"CPU", "RAM", "D0", "D1"};
             int[] vals = {
@@ -545,28 +561,28 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             int infoY = 184;
             drawLabelValue(g2, "Freq", packet.get("FREQ", packet.get("CPUFREQ", "0 MHz")), 16, infoY, ORANGE);
-            drawLabelValue(g2, "RAM", packet.get("RAMGB", packet.get("RAMTEXT", "--")), 16, infoY + 26, CYAN);
-            drawLabelValue(g2, "Up", packet.get("UPTIME", packet.get("UP", "0m")), 16, infoY + 52, WHITE);
-            drawLabelValue(g2, "OS", packet.get("OS", "Linux"), 16, infoY + 78, CYAN);
-            drawLabelValue(g2, "Host", packet.get("HOST", "fedora"), 16, infoY + 104, LIME);
+            drawLabelValue(g2, "RAM", packet.get("RAMGB", packet.get("RAMTEXT", "--")), 16, infoY + 21, CYAN);
+            drawLabelValue(g2, "Up", packet.get("UPTIME", packet.get("UP", "0m")), 16, infoY + 42, WHITE);
+            drawLabelValue(g2, "OS", truncate(packet.get("OS", "Linux"), 28), 16, infoY + 63, CYAN);
+            drawLabelValue(g2, "Host", truncate(packet.get("HOST", "fedora"), 28), 16, infoY + 84, LIME);
             drawFooter(g2, w, h);
         }
 
         private void drawCpu(Graphics2D g2, int w, int h, int m) {
             drawHeader(g2, "CPU Threads", w, m);
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 18));
+            g2.setFont(new Font(MONO, Font.BOLD, 15));
             g2.setColor(WHITE);
-            g2.drawString("Total", 15, 60);
+            g2.drawString("Total", 15, 56);
             int total = packet.getInt("CPU", 0);
-            drawBar(g2, 145, 48, 220, 16, total, getHeatColor(total));
-            g2.drawString(total + "%", 380, 60);
+            drawBar(g2, 102, 44, 270, 14, total, getHeatColor(total));
+            g2.drawString(total + "%", 386, 56);
 
             int startX = 12;
             int startY = 82;
             int colW = 114;
-            int rowH = 44;
-            int barW = 102;
-            int barH = 10;
+            int rowH = 38;
+            int barW = 100;
+            int barH = 8;
 
             for (int i = 0; i < 16; i++) {
                 int row = i / 4;
@@ -575,34 +591,34 @@ public class JavaSerialFakeDisplay extends JFrame {
                 int y = startY + row * rowH;
                 int val = packet.getInt("C" + i, packet.getInt("CPU" + i, i % 5));
                 g2.setColor(WHITE);
-                g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 10));
+                g2.setFont(new Font(MONO, Font.BOLD, 9));
                 g2.drawString("C" + i, x, y);
                 g2.setColor(getHeatColor(val));
-                g2.drawString(val + "%", x + 78, y);
-                drawBar(g2, x, y + 12, barW, barH, val, LIME);
+                g2.drawString(val + "%", x + 72, y);
+                drawBar(g2, x, y + 10, barW, barH, val, LIME);
             }
 
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
             g2.setColor(ORANGE);
-            g2.drawString("Freq", 12, h - 54);
+            g2.drawString("Freq", 12, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("FREQ", packet.get("CPUFREQ", "800 MHz")), 72, h - 54);
+            g2.drawString(truncate(packet.get("FREQ", packet.get("CPUFREQ", "800 MHz")), 14), 58, h - 46);
             g2.setColor(CYAN);
-            g2.drawString("Temp", 260, h - 54);
+            g2.drawString("Temp", 268, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("TEMP", packet.get("CPUTEMP", "33.0C")), 322, h - 54);
+            g2.drawString(packet.get("TEMP", packet.get("CPUTEMP", "33.0C")), 320, h - 46);
             drawFooter(g2, w, h);
         }
 
         private void drawProcesses(Graphics2D g2, int w, int h, int m) {
             drawHeader(g2, "Processes", w, m);
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 10));
+            g2.setFont(new Font(MONO, Font.BOLD, 9));
             g2.setColor(WHITE);
-            g2.drawString("CPU", 280, 44);
-            g2.drawString("RAM", 380, 44);
+            g2.drawString("CPU", 318, 44);
+            g2.drawString("RAM", 400, 44);
 
             for (int i = 1; i <= 6; i++) {
-                int y = 65 + (i - 1) * 30;
+                int y = 64 + (i - 1) * 28;
                 String name = packet.get("P" + i, switch (i) {
                     case 1 -> "bluetoothd";
                     case 2 -> "conky";
@@ -632,36 +648,36 @@ public class JavaSerialFakeDisplay extends JFrame {
                     case 5 -> ORANGE;
                     default -> WHITE;
                 });
-                g2.drawString(truncate(name, 20), 28, y);
+                g2.drawString(truncate(name, 28), 24, y);
                 g2.setColor(YELLOW);
-                g2.drawString(cpu, 280, y);
+                g2.drawString(cpu, 318, y);
                 g2.setColor(CYAN);
-                g2.drawString(ram, 380, y);
+                g2.drawString(ram, 400, y);
             }
 
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
             g2.setColor(LIME);
-            g2.drawString("CPU", 12, h - 62);
+            g2.drawString("CPU", 12, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("CPU", "4") + "%", 70, h - 62);
+            g2.drawString(packet.get("CPU", "4") + "%", 54, h - 46);
             g2.setColor(CYAN);
-            g2.drawString("RAM", 155, h - 62);
+            g2.drawString("RAM", 130, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("RAM", "23") + "%", 214, h - 62);
+            g2.drawString(packet.get("RAM", "23") + "%", 172, h - 46);
             g2.setColor(YELLOW);
-            g2.drawString("GPU", 306, h - 62);
+            g2.drawString("GPU", 270, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("GPU", "0") + "%", 365, h - 62);
+            g2.drawString(packet.get("GPU", "0") + "%", 312, h - 46);
             drawFooter(g2, w, h);
         }
 
         private void drawNetwork(Graphics2D g2, int w, int h, int m) {
             drawHeader(g2, "Network", w, m);
-            int y = 120;
-            int row = 52;
+            int y = 66;
+            int row = 25;
             drawLabelValue(g2, "Host", packet.get("HOST", "fedora"), 42, y, CYAN);
-            drawLabelValue(g2, "OS", packet.get("OS", "Fedora Linux 43"), 42, y + row, YELLOW);
-            drawLabelValue(g2, "IP", packet.get("IP", "192.168.0.104"), 42, y + row * 2, WHITE);
+            drawLabelValue(g2, "OS", truncate(packet.get("OS", "Fedora Linux 43"), 28), 42, y + row, YELLOW);
+            drawLabelValue(g2, "IP", truncate(packet.get("IP", "192.168.0.104"), 28), 42, y + row * 2, WHITE);
             drawLabelValue(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "3 KB/s")), 42, y + row * 3, LIME);
             drawLabelValue(g2, "Up", packet.get("UPNET", packet.get("NETUP", "1 KB/s")), 42, y + row * 4, YELLOW);
             drawLabelValue(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "212.1 GB")), 42, y + row * 5, CYAN);
@@ -672,16 +688,16 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private void drawGpu(Graphics2D g2, int w, int h, int m) {
             drawHeader(g2, "GPU", w, m);
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 18));
+            g2.setFont(new Font(MONO, Font.BOLD, 15));
             g2.setColor(WHITE);
-            g2.drawString("GPU", 15, 60);
+            g2.drawString("GPU", 15, 56);
             int gpu = packet.getInt("GPU", 0);
-            drawBar(g2, 145, 48, 220, 16, gpu, getHeatColor(gpu));
-            g2.drawString(gpu + "%", 380, 60);
+            drawBar(g2, 102, 44, 270, 14, gpu, getHeatColor(gpu));
+            g2.drawString(gpu + "%", 386, 56);
 
-            int y = 88;
-            int row = 34;
-            drawLabelValue(g2, "Name", truncate(packet.get("GPUNAME", packet.get("NAME", "AMD RX 6600")), 30), 15, y, WHITE);
+            int y = 82;
+            int row = 26;
+            drawLabelValue(g2, "Name", truncate(packet.get("GPUNAME", packet.get("NAME", "AMD RX 6600")), 28), 15, y, WHITE);
             drawLabelValue(g2, "Temp", packet.get("GPUTEMP", packet.get("TEMP", "56.0C")), 15, y + row, CYAN);
             drawLabelValue(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "1936/8176M")), 15, y + row * 2, YELLOW);
             drawLabelValue(g2, "VRAM%", packet.get("VRAMPCT", packet.get("VRAM_PERCENT", "24%")), 15, y + row * 3, LIME);
@@ -691,7 +707,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private void drawStorage(Graphics2D g2, int w, int h, int m) {
             drawHeader(g2, "Storage Inventory", w, m);
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 10));
+            g2.setFont(new Font(MONO, Font.BOLD, 9));
             g2.setColor(WHITE);
 
             String[] lines = {
@@ -705,14 +721,15 @@ public class JavaSerialFakeDisplay extends JFrame {
             };
 
             for (int i = 0; i < lines.length; i++) {
-                g2.drawString(truncate(lines[i], 34), 12, 56 + i * 26);
+                g2.drawString(truncate(lines[i], 44), 12, 62 + i * 22);
             }
 
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
             g2.setColor(CYAN);
-            g2.drawString("Opt", 12, h - 52);
+            g2.drawString("Opt", 12, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("OPTICAL", packet.get("OPT", "Empty")), 62, h - 52);
+            g2.setFont(fitFont(g2, packet.get("OPTICAL", packet.get("OPT", "Empty")), Font.BOLD, 12, 9, 390));
+            g2.drawString(packet.get("OPTICAL", packet.get("OPT", "Empty")), 52, h - 46);
             drawFooter(g2, w, h);
         }
 
@@ -741,12 +758,12 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawHistoryLine(g2, gpuHistory, gx, gy, gw, gh, YELLOW);
             drawHistoryLine(g2, vramHistory, gx, gy, gw, gh, MAGENTA);
 
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 8));
+            g2.setFont(new Font(MONO, Font.BOLD, 8));
             g2.setColor(WHITE);
             g2.drawString("100", gx + gw + 10, gy + 8);
             g2.drawString("0", gx + gw + 24, gy + gh);
 
-            g2.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
             g2.setColor(LIME);
             g2.drawString("CPU", 20, 206);
             g2.setColor(WHITE);
