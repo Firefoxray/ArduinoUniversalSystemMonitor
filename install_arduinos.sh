@@ -5,9 +5,23 @@ SERVICE_NAME="arduino-monitor.service"
 RESTART_DELAY=2
 
 R3_FQBN="arduino:avr:uno"
-R3_SKETCH="R3_MonitorScreen28"
 R3_MEGA_FQBN="arduino:avr:mega"
-R3_MEGA_SKETCH="$R3_SKETCH"
+UNO_R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-28}"
+
+case "$UNO_R3_SCREEN_SIZE" in
+    28)
+        R3_SKETCH="R3_MonitorScreen28"
+        ;;
+    35)
+        R3_SKETCH="R3_MonitorScreen35"
+        ;;
+    *)
+        echo "Invalid UNO_R3_SCREEN_SIZE: $UNO_R3_SCREEN_SIZE (expected 28 or 35)" >&2
+        exit 1
+        ;;
+esac
+
+R3_MEGA_SKETCH="R3_MEGA_MonitorScreen35"
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
 R4_SKETCH="R4_WIFI35"
@@ -298,7 +312,8 @@ R3_MEGA_BOARD_COUNT="$(count_r3_and_mega_boards)"
 if [[ "$R3_MEGA_BOARD_COUNT" -gt 0 ]]; then
     echo
     echo "Detected $R3_MEGA_BOARD_COUNT Arduino UNO R3 / Mega board(s)."
-    echo "Using $R3_SKETCH for every UNO R3 and Arduino Mega flashing run."
+    echo "Arduino UNO R3 boards will use $R3_SKETCH based on UNO_R3_SCREEN_SIZE=$UNO_R3_SCREEN_SIZE."
+    echo "Arduino Mega boards will use $R3_MEGA_SKETCH."
 fi
 
 flash_boards
