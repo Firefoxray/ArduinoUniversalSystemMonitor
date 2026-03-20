@@ -7,6 +7,10 @@
 #include <WiFiS3.h>
 #include <WiFiUdp.h>
 
+#ifndef WIFI_TCP_PORT_VALUE
+#define WIFI_TCP_PORT_VALUE 5000
+#endif
+
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
 #define RED     DIYables_TFT::colorRGB(255, 0, 0)
@@ -28,7 +32,7 @@ DIYables_TFT_RM68140_Shield tft;
 char ssid[] = WIFI_SSID_VALUE;
 char pass[] = WIFI_PASS_VALUE;
 
-const uint16_t TCP_PORT = 5000;
+const uint16_t TCP_PORT = WIFI_TCP_PORT_VALUE;
 const uint16_t DISCOVERY_PORT = 5001;
 const char* DEVICE_NAME = "R4_WIFI35";
 const char* DISCOVERY_MAGIC = "UAM_DISCOVER";
