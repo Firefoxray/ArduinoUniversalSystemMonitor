@@ -215,7 +215,9 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 - Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
 - The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`, `DIYables TFT Touch Shield`), compiles each sketch once per board family, and flashes every supported connected board it detects.
 - The Java Control Center now also includes an `Upload Custom Sketch` action so you can compile/upload your own sketch folder or `.ino` file to a selected connected board from the GUI.
+- The Java Control Center can optionally remember your sudo password in a local `.control_center_sudo_password` file in the repo root; that file is ignored by Git so it stays local to your machine.
 - On Fedora and other distros that gate `/dev/ttyACM*` access more aggressively, the flasher now automatically retries the upload with `sudo` if the Arduino UNO R4 WiFi reset/upload step reports `Permission denied` or a failed 1200-bps touch reset, while preserving the original user's Arduino CLI home/config paths so installed board cores remain visible during the retry.
+- Built-in board flashing now also does a short automatic retry for transient upload failures before giving up on a board, which helps when several boards are connected at the same time.
 - The Linux installer now runs the service with `/usr/bin/python3` again and installs Python dependencies with `pip` instead of pointing systemd at a project `.venv`.
 - On Ubuntu / Linux Mint, the installer automatically uses `pip --break-system-packages` when available so the required Python packages can still be installed on PEP 668 managed systems.
 - Install flow order is: dependency setup -> Arduino flash prompt -> systemd service start.
