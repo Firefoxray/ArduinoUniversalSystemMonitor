@@ -179,12 +179,44 @@ count_uno_r3_boards() {
     local line=""
 
     for line in "${BOARD_LINES[@]}"; do
+        if grep -q "Arduino UNO R4 WiFi" <<< "$line"; then
+            continue
+        fi
         if grep -q "Arduino UNO" <<< "$line"; then
             count=$((count + 1))
         fi
     done
 
     printf '%s\n' "$count"
+}
+
+prompt_for_single_uno_r3() {
+    local uno_count="$1"
+
+    echo
+    echo "Detected $uno_count Arduino UNO R3 boards."
+    echo "Only one UNO R3 can be flashed at a time because the flasher must use a single R3 sketch choice."
+    echo "Arduino UNO R4 boards can stay connected and will still be flashed in the same run."
+
+    while true; do
+        echo
+        echo "Please unplug extra UNO R3 boards so only the one you want to flash remains connected."
+        read -r -p "Press Enter after only one UNO R3 is still plugged in (or Ctrl+C to cancel): "
+        detect_boards
+        uno_count="$(count_uno_r3_boards)"
+
+        if [[ "$uno_count" -le 1 ]]; then
+            break
+        fi
+
+        echo "Still detected $uno_count Arduino UNO R3 boards. Only one UNO R3 may remain connected."
+    done
+
+    if [[ "$uno_count" -eq 1 ]]; then
+        echo "Confirmed: exactly one Arduino UNO R3 remains connected."
+    else
+        echo "No Arduino UNO R3 remains connected. Continuing with any supported non-R3 boards still attached."
+    fi
 }
 
 stop_service_before_flash() {
@@ -330,6 +362,7 @@ detect_boards
 UNO_R3_BOARD_COUNT="$(count_uno_r3_boards)"
 if [[ "$UNO_R3_BOARD_COUNT" -gt 1 ]]; then
     select_uno_r3_sketch
+    prompt_for_single_uno_r3 "$UNO_R3_BOARD_COUNT"
 elif [[ "$UNO_R3_BOARD_COUNT" -eq 1 ]]; then
     if [[ "${R3_SCREEN_SIZE,,}" == "auto" || -z "${R3_SCREEN_SIZE}" ]]; then
         R3_SKETCH="$R3_SKETCH_28"
