@@ -75,7 +75,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextField wifiPortField = new JTextField(6);
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
-    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings");
+    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
     private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
 
@@ -134,7 +134,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from the default/shared/local monitor config files.");
-        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings into monitor_config.local.json, mirrors the Wi-Fi port into wifi_config.local.h, and restarts the monitor service.");
+        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings, mirrors the Wi-Fi port into wifi_config.local.h, stops the monitor service, flashes the R4 WiFi sketch, and starts the service again.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -334,12 +334,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(saveMonitorSettingsButton);
         monitorSettingsPanel.add(controlsRow);
 
-        JTextArea helper = new JTextArea("These settings are written into monitor_config.local.json and mirrored into R4_WIFI35/wifi_config.local.h so the flashed board and Python monitor stay on the same Wi-Fi port on this computer.");
-        helper.setEditable(false);
-        helper.setFocusable(false);
-        helper.setLineWrap(true);
-        helper.setWrapStyleWord(true);
-        helper.setOpaque(false);
+        JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
+                + "then stops the service, flashes the R4 WiFi sketch, and starts the monitor again.</html>");
+        helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
         monitorSettingsPanel.add(helper);
@@ -695,6 +692,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (!updateBooleanConfig("wifi_enabled", wifiEnabled)) {
             return;
         }
+        if (!updateBooleanConfig("prefer_usb", !wifiEnabled)) {
+            return;
+        }
 
         setTransportIndicator(
                 wifiEnabled ? "WIFI" : "USB ONLY",
@@ -718,13 +718,17 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             transportStatusMissingLogged = false;
             boolean enabled = readBooleanConfigValue(text, "wifi_enabled", true);
+            boolean preferUsb = readBooleanConfigValue(text, "prefer_usb", true);
             setTransportIndicator(
                     enabled ? "WIFI" : "USB ONLY",
                     enabled ? new Color(24, 170, 24) : new Color(191, 120, 24)
             );
 
             if (verbose || lastWifiEnabledState == null || lastWifiEnabledState != enabled) {
-                log("[INFO] Monitor transport is set to " + (enabled ? "Wi-Fi + USB fallback" : "USB only") + " in the merged monitor config.");
+                String mode = enabled
+                        ? (preferUsb ? "USB first with Wi-Fi fallback" : "Wi-Fi first with USB fallback")
+                        : "USB only";
+                log("[INFO] Monitor transport is set to " + mode + " in the merged monitor config.");
             }
             lastWifiEnabledState = enabled;
         } catch (Exception ex) {
@@ -969,12 +973,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
             updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
             updated = upsertBooleanConfigValue(updated, "wifi_enabled", true);
+            updated = upsertBooleanConfigValue(updated, "prefer_usb", false);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                 log("[INFO] Saved machine-local monitor settings to " + configPath
-                        + " (arduino_port=" + arduinoPort + ", wifi_enabled=true, wifi_port=" + wifiPort + ").");
+                        + " (arduino_port=" + arduinoPort + ", wifi_enabled=true, prefer_usb=false, wifi_port=" + wifiPort + ").");
             } else {
-                log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains enabled).");
+                log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains preferred over USB).");
             }
             savedMonitorConfig = true;
         } catch (Exception ex) {
@@ -1195,6 +1200,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void reflashWifiBoardsAndRestartMonitor(int wifiPort) {
+        String arduinoCli = ensureArduinoCliAvailable("reflash the UNO R4 WiFi monitor sketch");
+        if (arduinoCli == null) {
+            log("[WARN] Reflash skipped. TCP port " + wifiPort
+                    + " was still saved into monitor_config.local.json and wifi_config.local.h.");
+            restartMonitorServiceForSettingsChange();
+            return;
+        }
+
         List<DetectedBoard> wifiBoards = detectConnectedBoards().stream()
                 .filter(board -> "arduino:renesas_uno:unor4wifi".equals(board.fqbn))
                 .toList();
@@ -1206,20 +1219,32 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         String sketchPath = repoPath().resolve("R4_WIFI35").toString();
-        StringBuilder command = new StringBuilder("cd ")
+        StringBuilder command = new StringBuilder("systemctl stop ")
+                .append(SERVICE_NAME)
+                .append(" && sleep ")
+                .append(TRANSPORT_SWITCH_DELAY_SECONDS)
+                .append(" && cd ")
                 .append(escape(repoPath().toString()))
-                .append(" && arduino-cli compile --fqbn arduino:renesas_uno:unor4wifi ")
+                .append(" && ")
+                .append(escape(arduinoCli))
+                .append(" compile --fqbn arduino:renesas_uno:unor4wifi ")
                 .append(escape(sketchPath));
         for (DetectedBoard board : wifiBoards) {
             command.append(" && sleep 2")
-                    .append(" && arduino-cli upload -p ")
+                    .append(" && ")
+                    .append(escape(arduinoCli))
+                    .append(" upload -p ")
                     .append(escape(board.port))
                     .append(" --fqbn ")
                     .append(escape(board.fqbn))
                     .append(" ")
                     .append(escape(sketchPath));
         }
-        command.append(" && sleep 2");
+        command.append(" && sleep 2")
+                .append(" ; flash_status=$?")
+                .append(" ; systemctl start ")
+                .append(SERVICE_NAME)
+                .append(" ; exit $flash_status");
 
         String boardSummary = wifiBoards.stream()
                 .map(board -> board.port)
@@ -1228,9 +1253,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "Reflash UNO R4 WiFi monitor sketch on " + boardSummary,
                 true, true,
                 () -> {
-                    log("[INFO] Reflash completed for TCP port " + wifiPort + ". Restarting the Python monitor service.");
-                    restartMonitorServiceForSettingsChange();
+                    log("[INFO] Reflash completed for TCP port " + wifiPort + ". The Python monitor service was restarted after flashing.");
+                    refreshServiceStatus(false);
+                    refreshTransportModeStatus(false);
                     refreshMonitorPortChoices(false);
+                    SwingUtilities.invokeLater(() -> setActionButtons(true));
                 });
     }
 
@@ -1756,10 +1783,17 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
+        String arduinoCli = ensureArduinoCliAvailable("upload a custom Arduino sketch");
+        if (arduinoCli == null) {
+            return;
+        }
+
         String command = "cd " + escape(repoPath().toString())
-                + " && arduino-cli compile --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString())
+                + " && " + escape(arduinoCli) + " compile --fqbn "
+                + escape(target.fqbn) + " " + escape(sketchPath.toString())
                 + " && sleep 2"
-                + " && arduino-cli upload -p " + escape(target.port) + " --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString());
+                + " && " + escape(arduinoCli) + " upload -p "
+                + escape(target.port) + " --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString());
         runCommand(command, repoPath().toFile(), "Upload custom sketch to " + target.port, true, true);
     }
 
@@ -1806,8 +1840,12 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private List<DetectedBoard> detectConnectedBoards() {
         List<DetectedBoard> boards = new ArrayList<>();
+        String arduinoCli = ensureArduinoCliAvailable("detect connected Arduino boards");
+        if (arduinoCli == null) {
+            return boards;
+        }
         try {
-            Process process = new ProcessBuilder("bash", "-lc", "arduino-cli board list | tail -n +2")
+            Process process = new ProcessBuilder("bash", "-lc", escape(arduinoCli) + " board list | tail -n +2")
                     .directory(repoPath().toFile())
                     .redirectErrorStream(true)
                     .start();
@@ -1837,6 +1875,62 @@ public class UniversalMonitorControlCenter extends JFrame {
             log("[WARN] Failed to detect connected boards for custom upload: " + ex.getMessage());
         }
         return boards;
+    }
+
+    private String ensureArduinoCliAvailable(String reason) {
+        Path[] candidates = new Path[] {
+                Paths.get(System.getProperty("user.home"), ".local", "bin", "arduino-cli")
+        };
+
+        for (Path candidate : candidates) {
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return candidate.toAbsolutePath().normalize().toString();
+            }
+        }
+
+        try {
+            Process whichProcess = new ProcessBuilder("bash", "-lc", "command -v arduino-cli")
+                    .directory(repoPath().toFile())
+                    .redirectErrorStream(true)
+                    .start();
+            String output;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(whichProcess.getInputStream(), StandardCharsets.UTF_8))) {
+                output = reader.readLine();
+            }
+            int code = whichProcess.waitFor();
+            if (code == 0 && output != null && !output.trim().isEmpty()) {
+                return output.trim();
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed to inspect arduino-cli availability: " + ex.getMessage());
+        }
+
+        log("[INFO] arduino-cli was not found. Installing it to ~/.local/bin so Control Center can " + reason + ".");
+        try {
+            Process installProcess = new ProcessBuilder("bash", "-lc",
+                    "mkdir -p \"$HOME/.local/bin\" && curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=\"$HOME/.local/bin\" sh")
+                    .directory(repoPath().toFile())
+                    .redirectErrorStream(true)
+                    .start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(installProcess.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log("[arduino-cli install] " + line);
+                }
+            }
+            int code = installProcess.waitFor();
+            Path installedCli = Paths.get(System.getProperty("user.home"), ".local", "bin", "arduino-cli");
+            if (code == 0 && Files.isRegularFile(installedCli) && Files.isExecutable(installedCli)) {
+                log("[INFO] Installed arduino-cli to " + installedCli + ".");
+                return installedCli.toAbsolutePath().normalize().toString();
+            }
+            log("[WARN] arduino-cli installation exited with code " + code + ".");
+        } catch (Exception ex) {
+            log("[WARN] Failed to install arduino-cli automatically: " + ex.getMessage());
+        }
+
+        log("[ERROR] arduino-cli is unavailable, so Control Center could not " + reason + ".");
+        return null;
     }
 
     private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt) {
