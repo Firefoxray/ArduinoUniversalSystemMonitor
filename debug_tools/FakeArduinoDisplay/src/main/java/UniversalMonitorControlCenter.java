@@ -27,6 +27,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = loadAppVersion();
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
+    private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -48,6 +49,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton updateButton = new JButton("Update from GitHub");
     private final JButton flashButton = new JButton("Flash Arduino with Included Program");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
+    private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
 
     private final JButton serviceOnButton = new JButton("Service On");
     private final JButton serviceOffButton = new JButton("Service Off");
@@ -57,9 +59,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton debugOnButton = new JButton("Enable Debug Mode");
     private final JButton debugOffButton = new JButton("Disable Debug Mode");
     private final JButton debugRefreshButton = new JButton("Refresh Debug Status");
+    private final JButton wifiModeOnButton = new JButton("Enable Wi-Fi Mode");
+    private final JButton wifiModeOffButton = new JButton("Use USB Only");
+    private final JButton wifiModeRefreshButton = new JButton("Refresh Transport");
 
     private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
+    private final JLabel transportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
@@ -86,7 +92,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private volatile boolean previewReading;
     private Thread previewReaderThread;
     private Boolean lastDebugEnabledState;
+    private Boolean lastWifiEnabledState;
     private boolean debugStatusMissingLogged;
+    private boolean transportStatusMissingLogged;
     private Path selectedCustomSketchPath;
 
 
@@ -130,11 +138,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
             refreshDebugStatus(false);
+            refreshTransportModeStatus(false);
         });
         serviceTimer.setRepeats(true);
         serviceTimer.start();
         refreshServiceStatus(false);
         refreshDebugStatus(false);
+        refreshTransportModeStatus(false);
     }
 
     private JPanel buildRepoPanel() {
@@ -167,7 +177,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildActionPanel() {
-        JPanel panel = new JPanel(new GridLayout(4, 1, 10, 10));
+        JPanel panel = new JPanel(new GridLayout(5, 1, 10, 10));
 
         JPanel appActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
         appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
@@ -176,6 +186,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         appActions.add(updateButton);
         appActions.add(flashButton);
         appActions.add(customFlashButton);
+        appActions.add(wifiCredentialsButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         appActions.add(customSketchIndicator);
@@ -201,6 +212,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugPanel.add(new JLabel("Indicator:"));
         debugPanel.add(debugIndicator);
 
+        JPanel transportPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        transportPanel.setBorder(BorderFactory.createTitledBorder("Monitor Transport Mode"));
+        transportIndicator.setOpaque(true);
+        transportIndicator.setPreferredSize(new Dimension(120, 30));
+        transportPanel.add(wifiModeOnButton);
+        transportPanel.add(wifiModeOffButton);
+        transportPanel.add(wifiModeRefreshButton);
+        transportPanel.add(new JLabel("Indicator:"));
+        transportPanel.add(transportIndicator);
+
         JPanel fakePorts = new JPanel(new FlowLayout(FlowLayout.LEFT));
         fakePorts.setBorder(BorderFactory.createTitledBorder("Virtual Serial Ports + Preview Feed"));
         fakePorts.add(new JLabel("Input:"));
@@ -215,6 +236,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(appActions);
         panel.add(servicePanel);
         panel.add(debugPanel);
+        panel.add(transportPanel);
         panel.add(fakePorts);
         return panel;
     }
@@ -245,6 +267,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
         customFlashButton.addActionListener(e -> uploadCustomSketch());
+        wifiCredentialsButton.addActionListener(e -> promptForWifiCredentials());
         clearSavedPasswordButton.addActionListener(e -> clearSavedSudoPassword(true));
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
@@ -255,6 +278,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugOnButton.addActionListener(e -> setDebugMode(true));
         debugOffButton.addActionListener(e -> setDebugMode(false));
         debugRefreshButton.addActionListener(e -> refreshDebugStatus(true));
+        wifiModeOnButton.addActionListener(e -> setTransportMode(true));
+        wifiModeOffButton.addActionListener(e -> setTransportMode(false));
+        wifiModeRefreshButton.addActionListener(e -> refreshTransportModeStatus(true));
 
         startFakePortsButton.addActionListener(e -> startFakePorts());
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
@@ -575,6 +601,194 @@ public class UniversalMonitorControlCenter extends JFrame {
             setDebugIndicator("UNKNOWN", Color.GRAY);
             lastDebugEnabledState = null;
             log("[WARN] Failed to refresh debug status: " + ex.getMessage());
+        }
+    }
+
+    private void setTransportMode(boolean wifiEnabled) {
+        if (!updateBooleanConfig("wifi_enabled", wifiEnabled)) {
+            return;
+        }
+
+        setTransportIndicator(
+                wifiEnabled ? "WIFI" : "USB ONLY",
+                wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24)
+        );
+        log("[INFO] Cycling " + SERVICE_NAME + " so the Arduino monitor can switch transports cleanly.");
+        cycleServiceForTransportChange();
+    }
+
+    private void refreshTransportModeStatus(boolean verbose) {
+        Path configPath = repoPath().resolve("monitor_config.json");
+        if (!Files.exists(configPath)) {
+            setTransportIndicator("UNKNOWN", Color.GRAY);
+            lastWifiEnabledState = null;
+            if (verbose || !transportStatusMissingLogged) {
+                log("[WARN] Cannot refresh transport mode: monitor_config.json not found at " + configPath);
+                transportStatusMissingLogged = true;
+            }
+            return;
+        }
+
+        transportStatusMissingLogged = false;
+
+        try {
+            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            boolean enabled = readBooleanConfigValue(text, "wifi_enabled", true);
+            setTransportIndicator(
+                    enabled ? "WIFI" : "USB ONLY",
+                    enabled ? new Color(24, 170, 24) : new Color(191, 120, 24)
+            );
+
+            if (verbose || lastWifiEnabledState == null || lastWifiEnabledState != enabled) {
+                log("[INFO] Monitor transport is set to " + (enabled ? "Wi-Fi + USB fallback" : "USB only") + " in monitor_config.json");
+            }
+            lastWifiEnabledState = enabled;
+        } catch (Exception ex) {
+            setTransportIndicator("UNKNOWN", Color.GRAY);
+            lastWifiEnabledState = null;
+            log("[WARN] Failed to refresh transport mode: " + ex.getMessage());
+        }
+    }
+
+    private boolean updateBooleanConfig(String key, boolean enabled) {
+        Path configPath = repoPath().resolve("monitor_config.json");
+        if (!Files.exists(configPath)) {
+            log("[WARN] monitor_config.json not found at " + configPath);
+            return false;
+        }
+
+        try {
+            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            String pattern = "\\\"" + key + "\\\"\\s*:\\s*(true|false)";
+            String replacement = "\"" + key + "\": " + (enabled ? "true" : "false");
+            String updated = text.matches("(?s).*" + pattern + ".*")
+                    ? text.replaceAll(pattern, replacement)
+                    : appendConfigEntry(text, "  \"" + key + "\": " + (enabled ? "true" : "false"));
+
+            if (!updated.equals(text)) {
+                Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                log("[INFO] Updated monitor_config.json: " + key + "=" + enabled);
+            } else {
+                log("[INFO] monitor_config.json already had " + key + "=" + enabled + ".");
+            }
+            return true;
+        } catch (Exception ex) {
+            log("[WARN] Could not update monitor_config.json entry " + key + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private boolean readBooleanConfigValue(String text, String key, boolean defaultValue) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return defaultValue;
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return defaultValue;
+        }
+
+        String tail = text.substring(colonIndex + 1).trim();
+        if (tail.startsWith("true")) {
+            return true;
+        }
+        if (tail.startsWith("false")) {
+            return false;
+        }
+        return defaultValue;
+    }
+
+    private String appendConfigEntry(String text, String newEntry) {
+        int closingBrace = text.lastIndexOf('}');
+        if (closingBrace < 0) {
+            return text;
+        }
+
+        String before = text.substring(0, closingBrace).stripTrailing();
+        String suffix = before.endsWith("{") ? "\n" : ",\n";
+        return before + suffix + newEntry + "\n}\n";
+    }
+
+    private void cycleServiceForTransportChange() {
+        String command = "systemctl stop " + SERVICE_NAME
+                + " && sleep " + TRANSPORT_SWITCH_DELAY_SECONDS
+                + " && systemctl start " + SERVICE_NAME;
+        runCommand(command, repoPath().toFile(),
+                "Apply transport change (stop/wait/start)",
+                true, true,
+                () -> {
+                    refreshServiceStatus(false);
+                    refreshTransportModeStatus(false);
+                    SwingUtilities.invokeLater(() -> setActionButtons(true));
+                });
+    }
+
+    private void promptForWifiCredentials() {
+        JTextField ssidField = new JTextField(24);
+        JPasswordField passwordField = new JPasswordField(24);
+
+        JPanel panel = new JPanel(new GridLayout(0, 1, 0, 8));
+        panel.add(new JLabel("Wi-Fi SSID"));
+        panel.add(ssidField);
+        panel.add(new JLabel("Wi-Fi Password"));
+        panel.add(passwordField);
+
+        int result = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "Set R4 Wi-Fi Credentials",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+
+        if (result != JOptionPane.OK_OPTION) {
+            log("[INFO] Wi-Fi credential update canceled.");
+            return;
+        }
+
+        String ssid = ssidField.getText() == null ? "" : ssidField.getText().trim();
+        String password = new String(passwordField.getPassword());
+        if (ssid.isEmpty()) {
+            log("[WARN] Wi-Fi credentials not saved: SSID is required.");
+            return;
+        }
+
+        List<Path> targets = List.of(
+                repoPath().resolve("R4_WIFI35/wifi_config.local.h"),
+                repoPath().resolve("R4_WIFI/R4_WIFI35/wifi_config.local.h")
+        );
+
+        String header = "#pragma once\n\n"
+                + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
+                + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n";
+
+        int savedCount = 0;
+        for (Path target : targets) {
+            try {
+                if (target.getParent() != null) {
+                    Files.createDirectories(target.getParent());
+                }
+                Files.writeString(
+                        target,
+                        header,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE
+                );
+                savedCount++;
+                log("[INFO] Saved local Wi-Fi credentials file to " + target);
+            } catch (IOException ex) {
+                log("[WARN] Failed to write Wi-Fi credentials to " + target + ": " + ex.getMessage());
+            }
+        }
+
+        if (savedCount > 0) {
+            log("[INFO] Wi-Fi credentials saved for the R4 Wi-Fi sketch. Reflash the board to apply them.");
+            log("[INFO] Credentials were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
+        } else {
+            log("[ERROR] Wi-Fi credentials were not saved to any sketch folder.");
         }
     }
 
@@ -1246,7 +1460,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "8.6").trim();
+                String version = properties.getProperty("app.version", "8.11").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -1254,11 +1468,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "8.6";
+        return "8.11";
     }
 
     private boolean runningAsRoot() {
         return "root".equals(System.getProperty("user.name"));
+    }
+
+    private String escapeCppString(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 
     private void setActionButtons(boolean enabled) {
@@ -1268,6 +1488,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
             customFlashButton.setEnabled(enabled);
+            wifiCredentialsButton.setEnabled(enabled);
             clearSavedPasswordButton.setEnabled(enabled);
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
@@ -1276,6 +1497,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             debugOnButton.setEnabled(enabled);
             debugOffButton.setEnabled(enabled);
             debugRefreshButton.setEnabled(enabled);
+            wifiModeOnButton.setEnabled(enabled);
+            wifiModeOffButton.setEnabled(enabled);
+            wifiModeRefreshButton.setEnabled(enabled);
         });
     }
 
@@ -1286,6 +1510,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             stopFakePortsButton.setEnabled(running);
         });
         updatePreviewButtons();
+    }
+
+    private void setTransportIndicator(String text, Color color) {
+        SwingUtilities.invokeLater(() -> {
+            transportIndicator.setText(text);
+            transportIndicator.setBackground(color);
+            transportIndicator.setForeground(Color.WHITE);
+        });
     }
 
     private void updatePreviewButtons() {

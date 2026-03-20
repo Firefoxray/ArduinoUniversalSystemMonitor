@@ -41,8 +41,11 @@ String usbLine = "";
 String wifiLine = "";
 String linkType = "NONE";
 String arduinoWifiIp = "--";
+bool wifiSuspendedForUsb = false;
 unsigned long lastWifiRetryMs = 0;
+unsigned long lastUsbActivityMs = 0;
 const unsigned long wifiRetryIntervalMs = 8000;
+const unsigned long usbPriorityHoldMs = 15000;
 
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
@@ -234,7 +237,7 @@ void drawHeader(const char* title, int page) {
 
   tft.setTextSize(1);
   tft.setTextColor(wifiStateColor());
-  tft.setCursor(12, 25);
+  tft.setCursor(295, 18);
   tft.print(wifiStateText());
 
   String pageStr = String(page) + "/" + String(TOTAL_PAGES);
@@ -301,10 +304,10 @@ void updateHome() {
   drawLabelBar(148, "Disk1", disk1Pct, ORANGE);
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
   drawInfoLine(210, "RAM", fitText(ramUsageStr, 18), CYAN, 95);
-  drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
-  drawInfoLine(262, "OS", fitText(prettyOS(osName), 32), CYAN, 95);
-  drawInfoLine(288, "Host", fitText(hostName, 18), GREEN, 95);
-  drawInfoLine(288, "Link", fitText(linkType, 8), YELLOW, 330);
+  drawInfoLine(236, "Host", fitText(hostName, 24), GREEN, 95);
+  drawInfoLine(262, "Up",   fitText(uptimeStr, 18), WHITE, 95);
+  drawInfoLine(262, "Link", fitText(linkType, 8), YELLOW, 330);
+  drawInfoLine(288, "OS", fitText(prettyOS(osName), 28), CYAN, 95);
 }
 
 void drawThreadCell(int x, int y, int idx, int pct) {
@@ -638,7 +641,42 @@ void parseIncomingChar(char c, String &buffer, const char* source) {
   }
 }
 
+bool usbTransportActive() {
+  return Serial || (millis() - lastUsbActivityMs) < usbPriorityHoldMs;
+}
+
+void suspendWiFiForUsb() {
+  refreshArduinoWifiIp();
+  if (wifiClient) {
+    wifiClient.stop();
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    server.end();
+    discoveryUdp.stop();
+    WiFi.disconnect();
+    refreshArduinoWifiIp();
+  }
+
+  wifiSuspendedForUsb = true;
+}
+
+void resumeWiFiAfterUsb() {
+  if (!wifiSuspendedForUsb) {
+    return;
+  }
+  wifiSuspendedForUsb = false;
+  lastWifiRetryMs = 0;
+}
+
 void ensureWiFi() {
+  if (usbTransportActive()) {
+    suspendWiFiForUsb();
+    return;
+  }
+
+  resumeWiFiAfterUsb();
+
   if (WiFi.status() == WL_CONNECTED) {
     return;
   }
@@ -675,12 +713,18 @@ void ensureWiFi() {
 
 void handleUsbInput() {
   while (Serial.available()) {
+    lastUsbActivityMs = millis();
     parseIncomingChar((char)Serial.read(), usbLine, "USB");
   }
 }
 
 void handleWifiInput() {
   ensureWiFi();
+
+  if (usbTransportActive()) {
+    return;
+  }
+
   handleDiscoveryRequests();
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -721,30 +765,36 @@ void setup() {
   tft.setRotation(3); //1 for charger left, 3 for charger right
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
 
-  Serial.println("BOOT: starting WiFi...");
-  WiFi.begin(ssid, pass);
-
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nBOOT: WiFi connected, waiting for valid IP...");
-    startNetworkServices();
-    Serial.println("BOOT: WiFi ready");
-    Serial.print("IP: ");
-    Serial.println(arduinoWifiIp);
-    Serial.print("Signal strength (RSSI): ");
-    Serial.println(WiFi.RSSI());
-    Serial.print("TCP server started on port ");
-    Serial.println(TCP_PORT);
-    Serial.print("Discovery UDP port: ");
-    Serial.println(DISCOVERY_PORT);
-  } else {
+  if (usbTransportActive()) {
+    wifiSuspendedForUsb = true;
     refreshArduinoWifiIp();
-    Serial.println("\nBOOT: WiFi connection failed. USB mode is still available.");
+    Serial.println("BOOT: USB host detected, delaying WiFi until USB is idle.");
+  } else {
+    Serial.println("BOOT: starting WiFi...");
+    WiFi.begin(ssid, pass);
+
+    unsigned long wifiStart = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
+      delay(500);
+      Serial.print(".");
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nBOOT: WiFi connected, waiting for valid IP...");
+      startNetworkServices();
+      Serial.println("BOOT: WiFi ready");
+      Serial.print("IP: ");
+      Serial.println(arduinoWifiIp);
+      Serial.print("Signal strength (RSSI): ");
+      Serial.println(WiFi.RSSI());
+      Serial.print("TCP server started on port ");
+      Serial.println(TCP_PORT);
+      Serial.print("Discovery UDP port: ");
+      Serial.println(DISCOVERY_PORT);
+    } else {
+      refreshArduinoWifiIp();
+      Serial.println("\nBOOT: WiFi connection failed. USB mode is still available.");
+    }
   }
 
   for (int i = 0; i < GRAPH_POINTS; i++) {
