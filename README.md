@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.7  
+**Version:** 8.8  
 **Last Modified:** March 20, 2026  
 
 ---
@@ -113,6 +113,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.5  - Refined the Control Center layout/theme, added custom-sketch selection status, cleaned 3.5" RAM/OS labels, normalized Fedora OS naming, and improved Mega touchscreen page switching
 8.6  - Removed the README release-notes section, updated project/control-center version metadata to 8.6, and refreshed the README modified date
 8.7  - Switched the default Linux monitor/config to the new R4 Wi-Fi build, added USB-only/Wi-Fi mode controls, and made the R4 Wi-Fi sketch the default flasher target
+8.8  - Made USB take priority over Wi-Fi for the R4 monitor path, cleaned up the R4 header/home layout, and reduced duplicate USB+Wi-Fi updates
 ```
 
 ---
