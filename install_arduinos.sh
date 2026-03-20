@@ -5,13 +5,9 @@ SERVICE_NAME="arduino-monitor.service"
 RESTART_DELAY=2
 
 R3_FQBN="arduino:avr:uno"
-R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-28}"
-R3_SCREEN_SIZE_WAS_SET="${UNO_R3_SCREEN_SIZE+x}"
-R3_SKETCH_28="R3_MonitorScreen28"
-R3_SKETCH_35="R3_MonitorScreen35"
-R3_SKETCH=""
+R3_SKETCH="R3_MonitorScreen28"
 R3_MEGA_FQBN="arduino:avr:mega"
-R3_MEGA_SKETCH="R3_MEGA_MonitorScreen35"
+R3_MEGA_SKETCH="$R3_SKETCH"
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
 R4_SKETCH="R4_MonitorScreen35"
@@ -141,28 +137,7 @@ ensure_libraries() {
 }
 
 
-select_uno_r3_sketch() {
-    case "${R3_SCREEN_SIZE,,}" in
-        2.8|28|28inch|28"|28-in|28in|28-inch)
-            R3_SKETCH="$R3_SKETCH_28"
-            ;;
-        3.5|35|35inch|35"|35-in|35in|35-inch)
-            R3_SKETCH="$R3_SKETCH_35"
-            ;;
-        auto|"")
-            R3_SKETCH="$R3_SKETCH_28"
-            ;;
-        *)
-            echo "Invalid UNO_R3_SCREEN_SIZE value: $R3_SCREEN_SIZE"
-            echo "Use 28 or 35."
-            exit 1
-            ;;
-    esac
-
-    echo "UNO R3 sketch selection: $R3_SKETCH"
-}
-
-count_uno_r3_boards() {
+count_r3_and_mega_boards() {
     local count=0
     local line=""
 
@@ -170,7 +145,7 @@ count_uno_r3_boards() {
         if grep -q "Arduino UNO R4 WiFi" <<< "$line"; then
             continue
         fi
-        if grep -q "Arduino UNO" <<< "$line"; then
+        if grep -Eq "Arduino UNO|Arduino Mega|Mega 2560" <<< "$line"; then
             count=$((count + 1))
         fi
     done
@@ -319,29 +294,11 @@ ensure_arduino_cores
 ensure_libraries
 detect_boards
 
-UNO_R3_BOARD_COUNT="$(count_uno_r3_boards)"
-if [[ "$UNO_R3_BOARD_COUNT" -gt 1 ]]; then
-    if [[ -z "$R3_SCREEN_SIZE_WAS_SET" ]]; then
-        echo
-        echo "Detected $UNO_R3_BOARD_COUNT Arduino UNO R3 boards."
-        echo 'USB detection cannot tell whether each connected R3 uses the 2.8" or 3.5" TFT shield.'
-        echo "Choose which sketch to use for the connected UNO R3 boards in this flashing run:"
-        echo '  1) 2.8" TFT shield  -> ' "$R3_SKETCH_28"
-        echo '  2) 3.5" TFT shield  -> ' "$R3_SKETCH_35"
-        while true; do
-            read -r -p "Select Uno R3 screen size for the detected R3 board(s) [1-2]: " choice
-            case "$choice" in
-                1) R3_SCREEN_SIZE="28"; break ;;
-                2) R3_SCREEN_SIZE="35"; break ;;
-                *) echo "Please enter 1 or 2." ;;
-            esac
-        done
-    fi
-    select_uno_r3_sketch
-elif [[ "$UNO_R3_BOARD_COUNT" -eq 1 ]]; then
-    R3_SCREEN_SIZE="28"
-    select_uno_r3_sketch
-    echo "Single Arduino UNO R3 detected; forcing default to $R3_SKETCH."
+R3_MEGA_BOARD_COUNT="$(count_r3_and_mega_boards)"
+if [[ "$R3_MEGA_BOARD_COUNT" -gt 0 ]]; then
+    echo
+    echo "Detected $R3_MEGA_BOARD_COUNT Arduino UNO R3 / Mega board(s)."
+    echo "Using $R3_SKETCH for every UNO R3 and Arduino Mega flashing run."
 fi
 
 flash_boards
