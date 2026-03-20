@@ -696,7 +696,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int row = 25;
             drawLabelValue(g2, "Host", packet.get("HOST", "fedora"), 42, y, CYAN);
             drawLabelValue(g2, "OS", truncate(packet.get("OS", "Fedora Linux 43"), 28), 42, y + row, YELLOW);
-            drawLabelValue(g2, "IP", truncate(packet.get("IP", "192.168.0.104"), 28), 42, y + row * 2, WHITE);
+            drawLabelValue(g2, "IP", truncate(packet.get("IP", "192.168.0.104") + ":" + packet.get("TCPPORT", "5000"), 28), 42, y + row * 2, WHITE);
             drawLabelValue(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "3 KB/s")), 42, y + row * 3, LIME);
             drawLabelValue(g2, "Up", packet.get("UPNET", packet.get("NETUP", "1 KB/s")), 42, y + row * 4, YELLOW);
             drawLabelValue(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "212.1 GB")), 42, y + row * 5, CYAN);
