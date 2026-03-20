@@ -339,10 +339,9 @@ if [[ "$UNO_R3_BOARD_COUNT" -gt 1 ]]; then
     fi
     select_uno_r3_sketch
 elif [[ "$UNO_R3_BOARD_COUNT" -eq 1 ]]; then
+    R3_SCREEN_SIZE="28"
     select_uno_r3_sketch
-    if [[ -z "$R3_SCREEN_SIZE_WAS_SET" ]]; then
-        echo "Single Arduino UNO R3 detected; defaulting to $R3_SKETCH."
-    fi
+    echo "Single Arduino UNO R3 detected; forcing default to $R3_SKETCH."
 fi
 
 flash_boards
