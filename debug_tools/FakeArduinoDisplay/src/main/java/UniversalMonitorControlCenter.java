@@ -28,6 +28,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String APP_VERSION = loadAppVersion();
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
+    private static final String DEFAULT_WIFI_PORT = "5000";
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -133,7 +134,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from monitor_config.json.");
-        saveMonitorSettingsButton.setToolTipText("Saves the selected serial/TCP port settings into monitor_config.json.");
+        saveMonitorSettingsButton.setToolTipText("Saves the selected serial/TCP port settings into monitor_config.json, mirrors the Wi-Fi port into wifi_config.local.h, and restarts the monitor service.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -333,7 +334,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(saveMonitorSettingsButton);
         monitorSettingsPanel.add(controlsRow);
 
-        JTextArea helper = new JTextArea("These settings are written to monitor_config.json for the real Arduino monitor, not the preview ports.");
+        JTextArea helper = new JTextArea("These settings are written into monitor_config.json and mirrored into R4_WIFI35/wifi_config.local.h so the flashed board and Python monitor stay on the same Wi-Fi port.");
         helper.setEditable(false);
         helper.setFocusable(false);
         helper.setLineWrap(true);
@@ -795,6 +796,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             String text = Files.readString(configPath, StandardCharsets.UTF_8);
             String arduinoPort = readStringConfigValue(text, "arduino_port", "AUTO");
             int wifiPort = readIntConfigValue(text, "wifi_port", 5000);
+            wifiPort = resolveSharedWifiPort(wifiPort);
             arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
             wifiPortField.setText(String.valueOf(wifiPort));
             if (verbose) {
@@ -836,6 +838,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         configPaths.add(repoPath().resolve("monitor_config.json"));
 
         int updatedCount = 0;
+        boolean syncedWifiHeader = false;
         for (Path configPath : configPaths) {
             if (!Files.exists(configPath)) {
                 log("[WARN] Cannot save monitor settings: missing " + configPath);
@@ -857,8 +860,16 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         }
 
+        syncedWifiHeader = syncWifiPortIntoLocalHeader(wifiPort);
+        refreshWifiCredentialsIndicator(false);
+
         if (updatedCount > 0) {
-            log("[INFO] Restart the monitor service if you want the new port settings to apply immediately.");
+            if (syncedWifiHeader) {
+                log("[INFO] Synced the same Wi-Fi TCP port into wifi_config.local.h so the next flash uses the matching port.");
+            }
+            restartMonitorServiceForSettingsChange();
+        } else if (syncedWifiHeader) {
+            log("[INFO] Synced wifi_config.local.h to the requested Wi-Fi TCP port even though monitor_config.json was already up to date.");
         }
     }
 
@@ -991,6 +1002,72 @@ public class UniversalMonitorControlCenter extends JFrame {
         return before + suffix + newEntry + "\n}\n";
     }
 
+    private Path wifiLocalConfigPath() {
+        return repoPath().resolve("R4_WIFI35/wifi_config.local.h");
+    }
+
+    private Path wifiDefaultConfigPath() {
+        return repoPath().resolve("R4_WIFI35/wifi_config.h");
+    }
+
+    private int resolveSharedWifiPort(int monitorConfigPort) {
+        String savedTcpPort = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", "");
+        if (savedTcpPort.isEmpty()) {
+            savedTcpPort = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT);
+        }
+        try {
+            int parsed = Integer.parseInt(savedTcpPort.trim());
+            if (parsed >= 1 && parsed <= 65535) {
+                return parsed;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return monitorConfigPort;
+    }
+
+    private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort) {
+        Path target = wifiLocalConfigPath();
+        String header = "#pragma once\n\n"
+                + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
+                + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n"
+                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n";
+        try {
+            if (target.getParent() != null) {
+                Files.createDirectories(target.getParent());
+            }
+            Files.writeString(
+                    target,
+                    header,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE
+            );
+            log("[INFO] Saved shared Wi-Fi settings to " + target);
+            return true;
+        } catch (IOException ex) {
+            log("[WARN] Failed to write Wi-Fi settings to " + target + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private boolean syncWifiPortIntoLocalHeader(int tcpPort) {
+        String ssid = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_SSID_VALUE", "");
+        if (ssid.isEmpty()) {
+            ssid = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_SSID_VALUE", "");
+        }
+        String password = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_PASS_VALUE", "");
+        if (password.isEmpty()) {
+            password = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "");
+        }
+        return saveWifiHeaderSettings(ssid, password, tcpPort);
+    }
+
+    private void restartMonitorServiceForSettingsChange() {
+        log("[INFO] Restarting the monitor service so the new Arduino/Wi-Fi port settings apply now.");
+        cycleServiceForTransportChange();
+    }
+
     private void refreshWifiCredentialsIndicator(boolean verbose) {
         List<Path> targets = List.of(
                 repoPath().resolve("R4_WIFI35/wifi_config.local.h")
@@ -1061,8 +1138,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void promptForWifiCredentials() {
-        Path localConfigPath = repoPath().resolve("R4_WIFI35/wifi_config.local.h");
-        Path defaultConfigPath = repoPath().resolve("R4_WIFI35/wifi_config.h");
+        Path localConfigPath = wifiLocalConfigPath();
+        Path defaultConfigPath = wifiDefaultConfigPath();
 
         JTextField ssidField = new JTextField(24);
         JPasswordField passwordField = new JPasswordField(24);
@@ -1130,40 +1207,33 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        List<Path> targets = List.of(
-                repoPath().resolve("R4_WIFI35/wifi_config.local.h")
-        );
-
-        String header = "#pragma once\n\n"
-                + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
-                + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n"
-                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n";
-
-        int savedCount = 0;
-        for (Path target : targets) {
+        boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort);
+        Path configPath = repoPath().resolve("monitor_config.json");
+        boolean savedMonitorConfig = false;
+        if (Files.exists(configPath)) {
             try {
-                if (target.getParent() != null) {
-                    Files.createDirectories(target.getParent());
+                String text = Files.readString(configPath, StandardCharsets.UTF_8);
+                String updated = upsertNumberConfigValue(text, "wifi_port", tcpPort);
+                if (!updated.equals(text)) {
+                    Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                    log("[INFO] Synced monitor_config.json to Wi-Fi TCP port " + tcpPort + ".");
+                } else {
+                    log("[INFO] monitor_config.json already matched Wi-Fi TCP port " + tcpPort + ".");
                 }
-                Files.writeString(
-                        target,
-                        header,
-                        StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE
-                );
-                savedCount++;
-                log("[INFO] Saved local Wi-Fi credentials file to " + target);
+                savedMonitorConfig = true;
             } catch (IOException ex) {
-                log("[WARN] Failed to write Wi-Fi credentials to " + target + ": " + ex.getMessage());
+                log("[WARN] Failed to sync monitor_config.json Wi-Fi port: " + ex.getMessage());
             }
         }
 
-        if (savedCount > 0) {
+        if (savedHeader) {
+            wifiPortField.setText(String.valueOf(tcpPort));
             refreshWifiCredentialsIndicator(false);
             log("[INFO] Wi-Fi settings saved for the R4 Wi-Fi sketch (TCP port " + tcpPort + "). Reflash the board to apply them.");
             log("[INFO] Settings were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
+            if (savedMonitorConfig) {
+                restartMonitorServiceForSettingsChange();
+            }
         } else {
             refreshWifiCredentialsIndicator(false);
             log("[ERROR] Wi-Fi settings were not saved to any sketch folder.");
