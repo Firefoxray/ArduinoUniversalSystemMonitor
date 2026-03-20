@@ -1839,6 +1839,34 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private List<DetectedBoard> detectConnectedBoards() {
+        return detectConnectedBoards(false);
+    }
+
+    private List<DetectedBoard> detectConnectedBoards(boolean waitForR4Wifi) {
+        List<DetectedBoard> boards = new ArrayList<>();
+        String arduinoCli = ensureArduinoCliAvailable("detect connected Arduino boards");
+        if (arduinoCli == null) {
+            return boards;
+        }
+        int attempts = waitForR4Wifi ? 4 : 1;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            boards = detectConnectedBoardsOnce(arduinoCli);
+            boolean hasR4Wifi = boards.stream().anyMatch(board -> "arduino:renesas_uno:unor4wifi".equals(board.fqbn));
+            if (!waitForR4Wifi || hasR4Wifi || attempt == attempts) {
+                return boards;
+            }
+            log("[INFO] Waiting for the UNO R4 WiFi board to reappear after reset (" + attempt + "/" + attempts + ")...");
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return boards;
+            }
+        }
+        return boards;
+    }
+
+    private List<DetectedBoard> detectConnectedBoardsOnce(String arduinoCli) {
         List<DetectedBoard> boards = new ArrayList<>();
         String arduinoCli = ensureArduinoCliAvailable("detect connected Arduino boards");
         if (arduinoCli == null) {
@@ -1861,11 +1889,15 @@ public class UniversalMonitorControlCenter extends JFrame {
                     if (port.isEmpty()) {
                         continue;
                     }
-                    if (trimmed.contains("Arduino UNO R4 WiFi")) {
+                    String normalized = trimmed.toLowerCase(Locale.ROOT);
+                    if (normalized.contains("arduino:renesas_uno:unor4wifi")
+                            || normalized.contains("arduino uno r4 wifi")
+                            || normalized.contains("uno r4 wifi")
+                            || normalized.contains("uno r4")) {
                         boards.add(new DetectedBoard(port, "Arduino UNO R4 WiFi", "arduino:renesas_uno:unor4wifi"));
-                    } else if (trimmed.contains("Mega 2560") || trimmed.contains("Arduino Mega")) {
+                    } else if (normalized.contains("mega 2560") || normalized.contains("arduino mega")) {
                         boards.add(new DetectedBoard(port, "Arduino Mega 2560", "arduino:avr:mega"));
-                    } else if (trimmed.contains("Arduino UNO")) {
+                    } else if (normalized.contains("arduino uno")) {
                         boards.add(new DetectedBoard(port, "Arduino UNO R3", "arduino:avr:uno"));
                     }
                 }
