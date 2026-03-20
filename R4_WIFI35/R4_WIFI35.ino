@@ -273,6 +273,36 @@ void drawInfoLine(int y, const char* label, String value, uint16_t color, int va
   tft.print(value);
 }
 
+void drawDualInfoLine(
+  int y,
+  const char* leftLabel,
+  String leftValue,
+  uint16_t leftColor,
+  int leftValueX,
+  const char* rightLabel,
+  String rightValue,
+  uint16_t rightColor,
+  int rightLabelX,
+  int rightValueX
+) {
+  clearArea(0, y, SCREEN_W, 24);
+  tft.setTextSize(2);
+
+  tft.setTextColor(WHITE);
+  tft.setCursor(15, y);
+  tft.print(leftLabel);
+  tft.setTextColor(leftColor);
+  tft.setCursor(leftValueX, y);
+  tft.print(leftValue);
+
+  tft.setTextColor(WHITE);
+  tft.setCursor(rightLabelX, y);
+  tft.print(rightLabel);
+  tft.setTextColor(rightColor);
+  tft.setCursor(rightValueX, y);
+  tft.print(rightValue);
+}
+
 void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal) {
   cpuVal = constrain(cpuVal, 0, 100);
   ramVal = constrain(ramVal, 0, 100);
@@ -306,8 +336,7 @@ void updateHome() {
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
   drawInfoLine(210, "RAM", fitText(ramUsageStr, 18), CYAN, 95);
   drawInfoLine(236, "Host", fitText(hostName, 24), GREEN, 95);
-  drawInfoLine(262, "Up",   fitText(uptimeStr, 18), WHITE, 95);
-  drawInfoLine(262, "Link", fitText(linkType, 8), YELLOW, 330);
+  drawDualInfoLine(262, "Up", fitText(uptimeStr, 18), WHITE, 95, "Link", fitText(linkType, 8), YELLOW, 245, 330);
   drawInfoLine(288, "OS", fitText(prettyOS(osName), 28), CYAN, 95);
 }
 
