@@ -5,7 +5,10 @@ SERVICE_NAME="arduino-monitor.service"
 RESTART_DELAY=2
 
 R3_FQBN="arduino:avr:uno"
-R3_SKETCH="R3_MonitorScreen28"
+R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-auto}"
+R3_SKETCH_28="R3_MonitorScreen28"
+R3_SKETCH_35="R3_MonitorScreen35"
+R3_SKETCH=""
 R3_MEGA_FQBN="arduino:avr:mega"
 R3_MEGA_SKETCH="R3_MEGA_MonitorScreen35"
 
@@ -134,6 +137,41 @@ ensure_libraries() {
         echo "Error installing $install_name."
         exit 1
     done
+}
+
+
+select_uno_r3_sketch() {
+    case "${R3_SCREEN_SIZE,,}" in
+        2.8|28|28inch|28"|28-in|28in|28-inch)
+            R3_SKETCH="$R3_SKETCH_28"
+            ;;
+        3.5|35|35inch|35"|35-in|35in|35-inch)
+            R3_SKETCH="$R3_SKETCH_35"
+            ;;
+        auto|"")
+            echo
+            echo "Arduino UNO R3 display size selection required."
+            echo 'USB detection can identify the Uno board, but it cannot see whether the attached TFT shield is 2.8" or 3.5".'
+            echo "Choose the screen so the correct sketch is flashed:"
+            echo '  1) 2.8" TFT shield  -> ' "$R3_SKETCH_28"
+            echo '  2) 3.5" TFT shield  -> ' "$R3_SKETCH_35"
+            while true; do
+                read -r -p "Select Uno R3 screen size [1-2]: " choice
+                case "$choice" in
+                    1) R3_SKETCH="$R3_SKETCH_28"; break ;;
+                    2) R3_SKETCH="$R3_SKETCH_35"; break ;;
+                    *) echo "Please enter 1 or 2." ;;
+                esac
+            done
+            ;;
+        *)
+            echo "Invalid UNO_R3_SCREEN_SIZE value: $R3_SCREEN_SIZE"
+            echo "Use 28, 35, or auto."
+            exit 1
+            ;;
+    esac
+
+    echo "UNO R3 sketch selection: $R3_SKETCH"
 }
 
 stop_service_before_flash() {
@@ -275,4 +313,9 @@ stop_service_before_flash
 ensure_arduino_cores
 ensure_libraries
 detect_boards
+
+if printf '%s\n' "${BOARD_LINES[@]}" | grep -q "Arduino UNO"; then
+    select_uno_r3_sketch
+fi
+
 flash_boards
