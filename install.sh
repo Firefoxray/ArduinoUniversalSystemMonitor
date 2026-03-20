@@ -20,6 +20,8 @@ PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$DEFAULT_PROJECT_DIR}" "${BAS
 REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
 SCRIPT_NAME="UniversalArduinoMonitor.py"
 CONFIG_NAME="monitor_config.json"
+DEFAULT_CONFIG_NAME="monitor_config.default.json"
+LOCAL_CONFIG_NAME="monitor_config.local.json"
 SERVICE_NAME="arduino-monitor.service"
 PYTHON_BIN="/usr/bin/python3"
 PIP_FLAGS=()
@@ -154,11 +156,11 @@ fix_serial_permissions() {
 }
 
 ensure_config() {
-    echo "[5/8] Ensuring config file exists..."
+    echo "[5/8] Ensuring config files exist..."
 
-    if [ ! -f "$PROJECT_DIR/$CONFIG_NAME" ]; then
-        echo "Creating default $CONFIG_NAME..."
-        cat > "$PROJECT_DIR/$CONFIG_NAME" <<'JSON'
+    if [ ! -f "$PROJECT_DIR/$DEFAULT_CONFIG_NAME" ]; then
+        echo "Creating $DEFAULT_CONFIG_NAME..."
+        cat > "$PROJECT_DIR/$DEFAULT_CONFIG_NAME" <<'JSON'
 {
   "arduino_port": "AUTO",
   "baud": 115200,
@@ -180,6 +182,16 @@ ensure_config() {
   "wifi_discovery_magic": "UAM_DISCOVER"
 }
 JSON
+    fi
+
+    if [ ! -f "$PROJECT_DIR/$CONFIG_NAME" ]; then
+        echo "Copying $DEFAULT_CONFIG_NAME to $CONFIG_NAME..."
+        cp "$PROJECT_DIR/$DEFAULT_CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
+    fi
+
+    if [ ! -f "$PROJECT_DIR/$LOCAL_CONFIG_NAME" ]; then
+        echo "Creating machine-local override file $LOCAL_CONFIG_NAME..."
+        cp "$PROJECT_DIR/$CONFIG_NAME" "$PROJECT_DIR/$LOCAL_CONFIG_NAME"
     fi
 
     chmod +x "$PROJECT_DIR/$SCRIPT_NAME" 2>/dev/null || true
