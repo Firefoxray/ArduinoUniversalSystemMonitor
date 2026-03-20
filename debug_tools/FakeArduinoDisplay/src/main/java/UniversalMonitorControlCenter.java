@@ -695,6 +695,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (!updateBooleanConfig("wifi_enabled", wifiEnabled)) {
             return;
         }
+        if (!updateBooleanConfig("prefer_usb", !wifiEnabled)) {
+            return;
+        }
 
         setTransportIndicator(
                 wifiEnabled ? "WIFI" : "USB ONLY",
@@ -718,13 +721,17 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             transportStatusMissingLogged = false;
             boolean enabled = readBooleanConfigValue(text, "wifi_enabled", true);
+            boolean preferUsb = readBooleanConfigValue(text, "prefer_usb", true);
             setTransportIndicator(
                     enabled ? "WIFI" : "USB ONLY",
                     enabled ? new Color(24, 170, 24) : new Color(191, 120, 24)
             );
 
             if (verbose || lastWifiEnabledState == null || lastWifiEnabledState != enabled) {
-                log("[INFO] Monitor transport is set to " + (enabled ? "Wi-Fi + USB fallback" : "USB only") + " in the merged monitor config.");
+                String mode = enabled
+                        ? (preferUsb ? "USB first with Wi-Fi fallback" : "Wi-Fi first with USB fallback")
+                        : "USB only";
+                log("[INFO] Monitor transport is set to " + mode + " in the merged monitor config.");
             }
             lastWifiEnabledState = enabled;
         } catch (Exception ex) {
@@ -969,12 +976,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
             updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
             updated = upsertBooleanConfigValue(updated, "wifi_enabled", true);
+            updated = upsertBooleanConfigValue(updated, "prefer_usb", false);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                 log("[INFO] Saved machine-local monitor settings to " + configPath
-                        + " (arduino_port=" + arduinoPort + ", wifi_enabled=true, wifi_port=" + wifiPort + ").");
+                        + " (arduino_port=" + arduinoPort + ", wifi_enabled=true, prefer_usb=false, wifi_port=" + wifiPort + ").");
             } else {
-                log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains enabled).");
+                log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains preferred over USB).");
             }
             savedMonitorConfig = true;
         } catch (Exception ex) {
