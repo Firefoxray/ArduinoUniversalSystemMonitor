@@ -455,10 +455,15 @@ void updateProc() {
 
 void updateNet() {
   refreshArduinoWifiIp();
+  String arduinoIpWithPort = arduinoWifiIp;
+  if (arduinoWifiIp != "--") {
+    arduinoIpWithPort += ":" + String(TCP_PORT);
+  }
+
   drawInfoLine(48,  "Host", fitText(hostName, 24), CYAN, 95);
   drawInfoLine(74,  "OS", fitText(prettyOS(osName), 32), ORANGE, 95);
   drawInfoLine(100, "PC IP", fitText(ipAddr, 18), WHITE, 95);
-  drawInfoLine(126, "A IP", fitText(arduinoWifiIp, 18), YELLOW, 95);
+  drawInfoLine(126, "A IP", fitText(arduinoIpWithPort, 18), YELLOW, 95);
   drawInfoLine(152, "WiFi", wifiStateText(), wifiStateColor(), 95);
   drawInfoLine(178, "Down", fitText(downStr, 18), GREEN, 105);
   drawInfoLine(204, "Up", fitText(upStr, 18), YELLOW, 105);
