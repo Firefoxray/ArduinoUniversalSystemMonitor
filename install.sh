@@ -166,7 +166,18 @@ ensure_config() {
   "debug_port": "/tmp/fakearduino_in",
   "root_mount": "/",
   "secondary_mount": "/mnt/linux_storage",
-  "send_interval": 2.0
+  "send_interval": 2.0,
+  "arduino_ports": [],
+  "wifi_enabled": true,
+  "wifi_host": "",
+  "wifi_port": 5000,
+  "prefer_usb": true,
+  "wifi_retry_delay": 5,
+  "wifi_auto_discovery": true,
+  "wifi_discovery_port": 5001,
+  "wifi_discovery_timeout": 1.2,
+  "wifi_discovery_refresh": 30,
+  "wifi_discovery_magic": "UAM_DISCOVER"
 }
 JSON
     fi
