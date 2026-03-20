@@ -251,6 +251,9 @@ def get_os_name() -> str:
     def normalize_os_name(value: str) -> str:
         cleaned = re.sub(r"\s*\([^)]*\)", "", value).strip()
         if cleaned.lower().startswith("fedora linux"):
+            match = re.search(r"fedora linux\s+(\d+)", cleaned, re.IGNORECASE)
+            if match:
+                return f"Fedora Linux {match.group(1)}"
             return "Fedora Linux"
         return cleaned or "Linux"
 
