@@ -1868,7 +1868,6 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private List<DetectedBoard> detectConnectedBoardsOnce(String arduinoCli) {
         List<DetectedBoard> boards = new ArrayList<>();
-        String arduinoCli = ensureArduinoCliAvailable("detect connected Arduino boards");
         if (arduinoCli == null) {
             return boards;
         }
