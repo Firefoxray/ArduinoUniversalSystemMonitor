@@ -334,7 +334,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (unoR3Count <= 1) {
             if (unoR3Count == 1) {
-                log("[INFO] One Arduino UNO R3 detected; defaulting to the 2.8\" TFT sketch.");
+                log("[INFO] Exactly one Arduino UNO R3 detected; forcing the default 2.8\" TFT sketch.");
                 return "28";
             }
             return null;
@@ -343,9 +343,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         String[] options = {"2.8\" TFT shield", "3.5\" TFT shield"};
         int choice = JOptionPane.showOptionDialog(
                 this,
-                "ONLY use 1 Arduino UNO R3 when flashing.\n"
-                        + "UNPLUG every other UNO R3 before choosing the screen size.\n\n"
-                        + "Choose the TFT shield size for the single connected R3 board.",
+                "Two Arduino UNO R3 boards were detected.\n"
+                        + "Choose which sketch to use for this flashing run.\n\n"
+                        + "If you need different R3 shield sizes flashed separately, unplug one R3 and rerun the flasher.",
                 "Select UNO R3 TFT Size",
                 JOptionPane.DEFAULT_OPTION,
                 JOptionPane.QUESTION_MESSAGE,
@@ -355,11 +355,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         );
 
         if (choice == 0) {
-            log("[INFO] Control Center selected the 2.8\" TFT sketch for connected Arduino UNO R3 boards.");
+            log("[INFO] Control Center selected the 2.8\" TFT sketch for the detected Arduino UNO R3 boards.");
             return "28";
         }
         if (choice == 1) {
-            log("[INFO] Control Center selected the 3.5\" TFT sketch for connected Arduino UNO R3 boards.");
+            log("[INFO] Control Center selected the 3.5\" TFT sketch for the detected Arduino UNO R3 boards.");
             return "35";
         }
 

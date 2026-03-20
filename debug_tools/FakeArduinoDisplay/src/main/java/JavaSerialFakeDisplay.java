@@ -628,13 +628,16 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private void drawProcesses(Graphics2D g2, int w, int h, int m) {
             int headerBottom = drawHeader(g2, "Processes", w, m);
+            int columnHeaderY = headerBottom + 16;
+            int firstRowY = headerBottom + 36;
+            int rowHeight = 24;
             g2.setFont(new Font(MONO, Font.BOLD, 9));
             g2.setColor(WHITE);
-            g2.drawString("CPU", 318, headerBottom + 4);
-            g2.drawString("RAM", 400, headerBottom + 4);
+            g2.drawString("CPU", 318, columnHeaderY);
+            g2.drawString("RAM", 400, columnHeaderY);
 
             for (int i = 1; i <= 6; i++) {
-                int y = headerBottom + 24 + (i - 1) * 24;
+                int y = firstRowY + (i - 1) * rowHeight;
                 String name = packet.get("P" + i, switch (i) {
                     case 1 -> "bluetoothd";
                     case 2 -> "conky";
@@ -704,15 +707,16 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private void drawGpu(Graphics2D g2, int w, int h, int m) {
             int headerBottom = drawHeader(g2, "GPU", w, m);
+            int gaugeBaselineY = headerBottom + 28;
             g2.setFont(new Font(MONO, Font.BOLD, 15));
             g2.setColor(WHITE);
-            g2.drawString("GPU", 15, headerBottom + 20);
+            g2.drawString("GPU", 15, gaugeBaselineY);
             int gpu = packet.getInt("GPU", 0);
-            drawBar(g2, 102, headerBottom + 8, 270, 10, gpu, getHeatColor(gpu));
-            g2.drawString(gpu + "%", 386, headerBottom + 20);
+            drawBar(g2, 102, gaugeBaselineY - 12, 270, 10, gpu, getHeatColor(gpu));
+            g2.drawString(gpu + "%", 386, gaugeBaselineY);
 
-            int y = headerBottom + 34;
-            int row = 26;
+            int y = headerBottom + 48;
+            int row = 24;
             drawLabelValue(g2, "Name", truncate(packet.get("GPUNAME", packet.get("NAME", "AMD RX 6600")), 28), 15, y, WHITE);
             drawLabelValue(g2, "Temp", packet.get("GPUTEMP", packet.get("TEMP", "56.0C")), 15, y + row, CYAN);
             drawLabelValue(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "1936/8176M")), 15, y + row * 2, YELLOW);
