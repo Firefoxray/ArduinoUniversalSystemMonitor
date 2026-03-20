@@ -75,7 +75,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextField wifiPortField = new JTextField(6);
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
-    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings");
+    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
     private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
 
@@ -134,7 +134,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from the default/shared/local monitor config files.");
-        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings into monitor_config.local.json, mirrors the Wi-Fi port into wifi_config.local.h, and restarts the monitor service.");
+        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings, mirrors the Wi-Fi port into wifi_config.local.h, stops the monitor service, flashes the R4 WiFi sketch, and starts the service again.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -334,12 +334,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(saveMonitorSettingsButton);
         monitorSettingsPanel.add(controlsRow);
 
-        JTextArea helper = new JTextArea("These settings are written into monitor_config.local.json and mirrored into R4_WIFI35/wifi_config.local.h so the flashed board and Python monitor stay on the same Wi-Fi port on this computer.");
-        helper.setEditable(false);
-        helper.setFocusable(false);
-        helper.setLineWrap(true);
-        helper.setWrapStyleWord(true);
-        helper.setOpaque(false);
+        JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
+                + "then stops the service, flashes the R4 WiFi sketch, and starts the monitor again.</html>");
+        helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
         monitorSettingsPanel.add(helper);
@@ -1222,7 +1219,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         String sketchPath = repoPath().resolve("R4_WIFI35").toString();
-        StringBuilder command = new StringBuilder("cd ")
+        StringBuilder command = new StringBuilder("systemctl stop ")
+                .append(SERVICE_NAME)
+                .append(" && sleep ")
+                .append(TRANSPORT_SWITCH_DELAY_SECONDS)
+                .append(" && cd ")
                 .append(escape(repoPath().toString()))
                 .append(" && ")
                 .append(escape(arduinoCli))
@@ -1239,7 +1240,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                     .append(" ")
                     .append(escape(sketchPath));
         }
-        command.append(" && sleep 2");
+        command.append(" && sleep 2")
+                .append(" ; flash_status=$?")
+                .append(" ; systemctl start ")
+                .append(SERVICE_NAME)
+                .append(" ; exit $flash_status");
 
         String boardSummary = wifiBoards.stream()
                 .map(board -> board.port)
@@ -1248,9 +1253,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "Reflash UNO R4 WiFi monitor sketch on " + boardSummary,
                 true, true,
                 () -> {
-                    log("[INFO] Reflash completed for TCP port " + wifiPort + ". Restarting the Python monitor service.");
-                    restartMonitorServiceForSettingsChange();
+                    log("[INFO] Reflash completed for TCP port " + wifiPort + ". The Python monitor service was restarted after flashing.");
+                    refreshServiceStatus(false);
+                    refreshTransportModeStatus(false);
                     refreshMonitorPortChoices(false);
+                    SwingUtilities.invokeLater(() -> setActionButtons(true));
                 });
     }
 
