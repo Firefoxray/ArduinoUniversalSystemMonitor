@@ -174,6 +174,19 @@ select_uno_r3_sketch() {
     echo "UNO R3 sketch selection: $R3_SKETCH"
 }
 
+count_uno_r3_boards() {
+    local count=0
+    local line=""
+
+    for line in "${BOARD_LINES[@]}"; do
+        if grep -q "Arduino UNO" <<< "$line"; then
+            count=$((count + 1))
+        fi
+    done
+
+    printf '%s\n' "$count"
+}
+
 stop_service_before_flash() {
     echo "[1/4] Stopping monitor service before flashing..."
     sudo systemctl stop "$SERVICE_NAME" || true
@@ -314,8 +327,16 @@ ensure_arduino_cores
 ensure_libraries
 detect_boards
 
-if printf '%s\n' "${BOARD_LINES[@]}" | grep -q "Arduino UNO"; then
+UNO_R3_BOARD_COUNT="$(count_uno_r3_boards)"
+if [[ "$UNO_R3_BOARD_COUNT" -gt 1 ]]; then
     select_uno_r3_sketch
+elif [[ "$UNO_R3_BOARD_COUNT" -eq 1 ]]; then
+    if [[ "${R3_SCREEN_SIZE,,}" == "auto" || -z "${R3_SCREEN_SIZE}" ]]; then
+        R3_SKETCH="$R3_SKETCH_28"
+        echo "Single Arduino UNO R3 detected; defaulting to $R3_SKETCH."
+    else
+        select_uno_r3_sketch
+    fi
 fi
 
 flash_boards
