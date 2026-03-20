@@ -18,6 +18,11 @@
 #define TOP_Y 921
 #define BOT_Y 196
 
+#define TOUCH_MIN_Z 80
+#define TOUCH_MAX_Z 1000
+#define TOUCH_RAW_MIN 80
+#define TOUCH_RAW_MAX 980
+
 DIYables_TFT_RM68140_Shield tft;
 
 const int SCREEN_W = 480;
@@ -316,8 +321,16 @@ static void handleTouch() {
   if (millis() - lastTouchPoll < touchPollMs) return;
   lastTouchPoll = millis();
 
-  int x, y;
-  bool pressed = tft.getTouch(x, y);
+  int rawX, rawY, rawZ;
+  tft.readTouchRaw(rawX, rawY, rawZ);
+  bool pressed = false;
+  if (rawZ >= TOUCH_MIN_Z && rawZ <= TOUCH_MAX_Z) {
+    if (rawX >= TOUCH_RAW_MIN && rawX <= TOUCH_RAW_MAX &&
+        rawY >= TOUCH_RAW_MIN && rawY <= TOUCH_RAW_MAX) {
+      pressed = true;
+    }
+  }
+
   if (pressed && !touchHeld && millis() - lastTouchTime > touchDebounceMs) {
     touchHeld = true;
     lastTouchTime = millis();
