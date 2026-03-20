@@ -469,6 +469,7 @@ void setup() {
 
   tft.begin(id);
   tft.setRotation(1);
+  tft.invertDisplay(false);
   tft.fillScreen(BLACK);
 
   for (uint8_t i = 0; i < GRAPH_POINTS; i++) {

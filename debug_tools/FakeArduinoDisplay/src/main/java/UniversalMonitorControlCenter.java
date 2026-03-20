@@ -343,7 +343,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         String[] options = {"2.8\" TFT shield", "3.5\" TFT shield"};
         int choice = JOptionPane.showOptionDialog(
                 this,
-                "Multiple Arduino UNO R3 boards are connected.\nChoose the TFT shield size to flash on all connected R3 boards.",
+                "ONLY use 1 Arduino UNO R3 when flashing.\n"
+                        + "UNPLUG every other UNO R3 before choosing the screen size.\n\n"
+                        + "Choose the TFT shield size for the single connected R3 board.",
                 "Select UNO R3 TFT Size",
                 JOptionPane.DEFAULT_OPTION,
                 JOptionPane.QUESTION_MESSAGE,

@@ -151,12 +151,14 @@ select_uno_r3_sketch() {
         auto|"")
             echo
             echo "Arduino UNO R3 display size selection required."
+            echo "IMPORTANT: ONLY ONE UNO R3 SHOULD BE CONNECTED WHEN CHOOSING THE SCREEN SIZE."
+            echo "UNPLUG ANY OTHER UNO R3 BEFORE YOU CONTINUE."
             echo 'USB detection can identify the Uno board, but it cannot see whether the attached TFT shield is 2.8" or 3.5".'
             echo "Choose the screen so the correct sketch is flashed:"
             echo '  1) 2.8" TFT shield  -> ' "$R3_SKETCH_28"
             echo '  2) 3.5" TFT shield  -> ' "$R3_SKETCH_35"
             while true; do
-                read -r -p "Select Uno R3 screen size [1-2]: " choice
+                read -r -p "Select Uno R3 screen size for the ONE connected board [1-2]: " choice
                 case "$choice" in
                     1) R3_SKETCH="$R3_SKETCH_28"; break ;;
                     2) R3_SKETCH="$R3_SKETCH_35"; break ;;
