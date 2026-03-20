@@ -68,6 +68,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel transportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
+    private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
@@ -113,6 +114,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
         rememberPasswordToggle.setToolTipText("Stores the sudo password in the local " + SUDO_PASSWORD_FILE + " file inside the repo. Git ignores that file so it stays on this machine.");
         clearSavedPasswordButton.setToolTipText("Deletes the saved sudo password file from this repo.");
+        flashButton.setToolTipText("Builds and uploads the repo's included monitor sketch for the detected board.");
+        customFlashButton.setToolTipText("Lets you choose a local .ino or sketch folder and upload that custom sketch.");
+        wifiCredentialsButton.setToolTipText("Saves the SSID and password into the local R4 Wi-Fi sketch config before flashing.");
+        debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
+        wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
+        startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
+        connectPreviewButton.setToolTipText("Connects the built-in preview window to the fake output serial port.");
+        unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto every detected Arduino UNO R3. R4 boards are not affected.");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
         topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
@@ -172,6 +181,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(Box.createHorizontalStrut(18));
         lightModeToggle.setFocusable(false);
         panel.add(lightModeToggle);
+        panel.add(Box.createHorizontalStrut(18));
+        panel.add(new JLabel("UNO R3 mode:"));
+        unoR3ScreenSizeSelector.setSelectedIndex(0);
+        panel.add(unoR3ScreenSizeSelector);
 
         return panel;
     }
@@ -186,10 +199,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         appActions.add(updateButton);
         appActions.add(flashButton);
         appActions.add(customFlashButton);
-        appActions.add(wifiCredentialsButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         appActions.add(customSketchIndicator);
+        appActions.add(wifiCredentialsButton);
 
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
@@ -353,44 +366,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String resolveUnoR3ScreenSizeForControlCenter() {
-        List<DetectedBoard> boards = detectConnectedBoards();
-        long unoR3Count = boards.stream()
-                .filter(board -> "arduino:avr:uno".equals(board.fqbn))
-                .count();
-
-        if (unoR3Count <= 1) {
-            if (unoR3Count == 1) {
-                log("[INFO] Exactly one Arduino UNO R3 detected; forcing the default 2.8\" TFT sketch.");
-                return "28";
-            }
-            return null;
-        }
-
-        String[] options = {"2.8\" TFT shield", "3.5\" TFT shield"};
-        int choice = JOptionPane.showOptionDialog(
-                this,
-                "Two Arduino UNO R3 boards were detected.\n"
-                        + "Choose which sketch to use for this flashing run.\n\n"
-                        + "If you need different R3 shield sizes flashed separately, unplug one R3 and rerun the flasher.",
-                "Select UNO R3 TFT Size",
-                JOptionPane.DEFAULT_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                options,
-                options[0]
-        );
-
-        if (choice == 0) {
-            log("[INFO] Control Center selected the 2.8\" TFT sketch for the detected Arduino UNO R3 boards.");
-            return "28";
-        }
-        if (choice == 1) {
-            log("[INFO] Control Center selected the 3.5\" TFT sketch for the detected Arduino UNO R3 boards.");
-            return "35";
-        }
-
-        log("[INFO] Arduino flashing canceled before upload because no UNO R3 TFT size was selected.");
-        return "";
+        Object selected = unoR3ScreenSizeSelector.getSelectedItem();
+        String choice = selected == null ? "2.8\" mode" : selected.toString();
+        String unoScreenSize = choice.startsWith("3.5") ? "35" : "28";
+        log("[INFO] Control Center will flash Arduino UNO R3 boards with the "
+                + ("35".equals(unoScreenSize) ? "3.5\"" : "2.8\"")
+                + " TFT sketch. R4 boards are unchanged.");
+        return unoScreenSize;
     }
 
     private void runServiceCommand(String action) {

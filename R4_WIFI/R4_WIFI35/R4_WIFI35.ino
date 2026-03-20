@@ -304,7 +304,7 @@ void updateHome() {
   drawInfoLine(236, "Up",   fitText(uptimeStr, 18), WHITE, 95);
   drawInfoLine(262, "OS", fitText(prettyOS(osName), 32), CYAN, 95);
   drawInfoLine(288, "Host", fitText(hostName, 18), GREEN, 95);
-  drawInfoLine(288, "Link", fitText(linkType, 8), YELLOW, 330);
+  drawInfoLine(314, "Link", fitText(linkType, 8), YELLOW, 95);
 }
 
 void drawThreadCell(int x, int y, int idx, int pct) {
