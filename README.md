@@ -54,8 +54,7 @@ ArduinoUniversalSystemMonitor/
 ├── R3_MonitorScreen28/              # Arduino UNO R3 2.8" TFT sketch
 ├── R3_MonitorScreen35/              # Placeholder for future Arduino UNO R3 3.5" TFT sketch
 ├── R3_MEGA_MonitorScreen35/         # Arduino Mega 2560 R3 3.5" TFT sketch
-├── R4_MonitorScreen35/              # Legacy USB-only Arduino UNO R4 WiFi 3.5" TFT sketch
-├── R4_WIFI35/                       # Default Arduino UNO R4 WiFi USB + Wi-Fi 3.5" TFT sketch
+├── R4_WIFI35/                       # Canonical Arduino UNO R4 WiFi USB + Wi-Fi 3.5" TFT sketch
 ├── backups/                         # Backup copies of the previous desktop monitor/config
 ├── debug_tools/FakeArduinoDisplay/         # Java fake display + Control Center
 ├── legacy/Windows/                         # Older Windows-side monitor files
@@ -118,6 +117,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.10  - Cleaned up .gitignore for tracked Wi-Fi templates and added a Control Center warning not to commit real Wi-Fi credentials
 8.11  - Switched real R4 Wi-Fi credentials to git-ignored wifi_config.local.h files so test pushes do not include passwords
 8.12  - Added Control Center UNO R3 mode selection, moved the visible display toggles into the action area, and added monitor connection port settings directly in the Control Center
+8.13  - Removed duplicate nested R4 Wi-Fi monitor/sketch copies so the repo now uses one root Python monitor, one root monitor_config.json, and one canonical R4_WIFI35 sketch folder
 ```
 
 ---

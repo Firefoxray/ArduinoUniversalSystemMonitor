@@ -46,6 +46,7 @@ unsigned long lastWifiRetryMs = 0;
 unsigned long lastUsbActivityMs = 0;
 const unsigned long wifiRetryIntervalMs = 8000;
 const unsigned long usbPriorityHoldMs = 15000;
+bool usbSessionActive = false;
 
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
@@ -642,7 +643,7 @@ void parseIncomingChar(char c, String &buffer, const char* source) {
 }
 
 bool usbTransportActive() {
-  return Serial || (millis() - lastUsbActivityMs) < usbPriorityHoldMs;
+  return usbSessionActive && (millis() - lastUsbActivityMs) < usbPriorityHoldMs;
 }
 
 void suspendWiFiForUsb() {
@@ -713,6 +714,7 @@ void ensureWiFi() {
 
 void handleUsbInput() {
   while (Serial.available()) {
+    usbSessionActive = true;
     lastUsbActivityMs = millis();
     parseIncomingChar((char)Serial.read(), usbLine, "USB");
   }
@@ -765,36 +767,30 @@ void setup() {
   tft.setRotation(3); //1 for charger left, 3 for charger right
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
 
-  if (usbTransportActive()) {
-    wifiSuspendedForUsb = true;
-    refreshArduinoWifiIp();
-    Serial.println("BOOT: USB host detected, delaying WiFi until USB is idle.");
+  Serial.println("BOOT: starting WiFi...");
+  WiFi.begin(ssid, pass);
+
+  unsigned long wifiStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nBOOT: WiFi connected, waiting for valid IP...");
+    startNetworkServices();
+    Serial.println("BOOT: WiFi ready");
+    Serial.print("IP: ");
+    Serial.println(arduinoWifiIp);
+    Serial.print("Signal strength (RSSI): ");
+    Serial.println(WiFi.RSSI());
+    Serial.print("TCP server started on port ");
+    Serial.println(TCP_PORT);
+    Serial.print("Discovery UDP port: ");
+    Serial.println(DISCOVERY_PORT);
   } else {
-    Serial.println("BOOT: starting WiFi...");
-    WiFi.begin(ssid, pass);
-
-    unsigned long wifiStart = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
-      delay(500);
-      Serial.print(".");
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("\nBOOT: WiFi connected, waiting for valid IP...");
-      startNetworkServices();
-      Serial.println("BOOT: WiFi ready");
-      Serial.print("IP: ");
-      Serial.println(arduinoWifiIp);
-      Serial.print("Signal strength (RSSI): ");
-      Serial.println(WiFi.RSSI());
-      Serial.print("TCP server started on port ");
-      Serial.println(TCP_PORT);
-      Serial.print("Discovery UDP port: ");
-      Serial.println(DISCOVERY_PORT);
-    } else {
-      refreshArduinoWifiIp();
-      Serial.println("\nBOOT: WiFi connection failed. USB mode is still available.");
-    }
+    refreshArduinoWifiIp();
+    Serial.println("\nBOOT: WiFi connection failed. USB mode is still available.");
   }
 
   for (int i = 0; i < GRAPH_POINTS; i++) {

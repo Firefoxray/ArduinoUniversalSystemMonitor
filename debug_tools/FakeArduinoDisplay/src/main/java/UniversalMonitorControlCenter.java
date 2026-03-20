@@ -834,10 +834,6 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         List<Path> configPaths = new ArrayList<>();
         configPaths.add(repoPath().resolve("monitor_config.json"));
-        Path wifiConfigPath = repoPath().resolve("R4_WIFI/monitor_config.json");
-        if (Files.exists(wifiConfigPath)) {
-            configPaths.add(wifiConfigPath);
-        }
 
         int updatedCount = 0;
         for (Path configPath : configPaths) {
@@ -997,8 +993,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void refreshWifiCredentialsIndicator(boolean verbose) {
         List<Path> targets = List.of(
-                repoPath().resolve("R4_WIFI35/wifi_config.local.h"),
-                repoPath().resolve("R4_WIFI/R4_WIFI35/wifi_config.local.h")
+                repoPath().resolve("R4_WIFI35/wifi_config.local.h")
         );
 
         boolean saved = false;
@@ -1072,8 +1067,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         List<Path> targets = List.of(
-                repoPath().resolve("R4_WIFI35/wifi_config.local.h"),
-                repoPath().resolve("R4_WIFI/R4_WIFI35/wifi_config.local.h")
+                repoPath().resolve("R4_WIFI35/wifi_config.local.h")
         );
 
         String header = "#pragma once\n\n"
