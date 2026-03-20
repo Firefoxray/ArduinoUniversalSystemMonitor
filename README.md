@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 8.6  
+**Version:** 8.11  
 **Last Modified:** March 20, 2026  
 
 ---
@@ -54,7 +54,9 @@ ArduinoUniversalSystemMonitor/
 ├── R3_MonitorScreen28/              # Arduino UNO R3 2.8" TFT sketch
 ├── R3_MonitorScreen35/              # Placeholder for future Arduino UNO R3 3.5" TFT sketch
 ├── R3_MEGA_MonitorScreen35/         # Arduino Mega 2560 R3 3.5" TFT sketch
-├── R4_MonitorScreen35/              # Arduino UNO R4 WiFi 3.5" TFT sketch
+├── R4_MonitorScreen35/              # Legacy USB-only Arduino UNO R4 WiFi 3.5" TFT sketch
+├── R4_WIFI35/                       # Default Arduino UNO R4 WiFi USB + Wi-Fi 3.5" TFT sketch
+├── backups/                         # Backup copies of the previous desktop monitor/config
 ├── debug_tools/FakeArduinoDisplay/         # Java fake display + Control Center
 ├── legacy/Windows/                         # Older Windows-side monitor files
 └── screenshots/                            # README/device preview images
@@ -110,6 +112,11 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.4  - Made Control Center updates rebuild/relaunch the Java app and added visible in-app version display
 8.5  - Refined the Control Center layout/theme, added custom-sketch selection status, cleaned 3.5" RAM/OS labels, normalized Fedora OS naming, and improved Mega touchscreen page switching
 8.6  - Removed the README release-notes section, updated project/control-center version metadata to 8.6, and refreshed the README modified date
+8.7  - Switched the default Linux monitor/config to the new R4 Wi-Fi build, added USB-only/Wi-Fi mode controls, and made the R4 Wi-Fi sketch the default flasher target
+8.8  - Made USB take priority over Wi-Fi for the R4 monitor path, cleaned up the R4 header/home layout, and reduced duplicate USB+Wi-Fi updates
+8.9  - Added committed Wi-Fi config templates and a Control Center button for saving R4 Wi-Fi credentials into wifi_config.h before flashing
+8.10  - Cleaned up .gitignore for tracked Wi-Fi templates and added a Control Center warning not to commit real Wi-Fi credentials
+8.11  - Switched real R4 Wi-Fi credentials to git-ignored wifi_config.local.h files so test pushes do not include passwords
 ```
 
 ---

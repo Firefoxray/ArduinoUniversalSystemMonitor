@@ -10,7 +10,7 @@ R3_MEGA_FQBN="arduino:avr:mega"
 R3_MEGA_SKETCH="$R3_SKETCH"
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
-R4_SKETCH="R4_MonitorScreen35"
+R4_SKETCH="R4_WIFI35"
 
 REQUIRED_LIBS=(
     "MCUFRIEND_kbv|MCUFRIEND_kbv|MCUFRIEND_kbv.h"

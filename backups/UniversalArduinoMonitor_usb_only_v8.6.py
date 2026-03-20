@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Universal Linux Arduino system monitor sender v8.11.
+"""Universal Linux Arduino system monitor sender v7.3.
 
 Originally built on Fedora for an Arduino desktop monitor, but intended to run
 across Linux desktops in general.
@@ -21,7 +21,6 @@ import shutil
 import socket
 import subprocess
 import time
-import fcntl
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -31,38 +30,6 @@ from serial import SerialException
 from serial.tools import list_ports
 
 CONFIG_PATH = Path(__file__).with_name("monitor_config.json")
-LOCK_PATH = Path("/tmp/universal_arduino_monitor.lock")
-_LOCK_HANDLE = None
-
-
-
-def acquire_single_instance_lock() -> bool:
-    global _LOCK_HANDLE
-    try:
-        _LOCK_HANDLE = open(LOCK_PATH, "w")
-        fcntl.flock(_LOCK_HANDLE.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _LOCK_HANDLE.write(str(os.getpid()))
-        _LOCK_HANDLE.flush()
-        return True
-    except OSError:
-        try:
-            if _LOCK_HANDLE is not None:
-                _LOCK_HANDLE.close()
-        except Exception:
-            pass
-        _LOCK_HANDLE = None
-        return False
-
-
-def release_single_instance_lock() -> None:
-    global _LOCK_HANDLE
-    try:
-        if _LOCK_HANDLE is not None:
-            fcntl.flock(_LOCK_HANDLE.fileno(), fcntl.LOCK_UN)
-            _LOCK_HANDLE.close()
-    except Exception:
-        pass
-    _LOCK_HANDLE = None
 
 
 def load_config() -> Dict[str, object]:
@@ -74,16 +41,6 @@ def load_config() -> Dict[str, object]:
         "root_mount": "/",
         "secondary_mount": "/mnt/linux_storage",
         "send_interval": 1.0,
-        "wifi_enabled": True,
-        "wifi_host": "192.168.1.50",
-        "wifi_port": 5000,
-        "prefer_usb": True,
-        "wifi_retry_delay": 5,
-        "wifi_auto_discovery": True,
-        "wifi_discovery_port": 5001,
-        "wifi_discovery_timeout": 1.2,
-        "wifi_discovery_refresh": 30,
-        "wifi_discovery_magic": "UAM_DISCOVER",
     }
     try:
         if CONFIG_PATH.exists():
@@ -175,17 +132,6 @@ CPU_THREADS_TO_SEND = 16
 DEBUG_MIRROR_PORT = str(os.environ.get("ARDUINO_MONITOR_DEBUG_PORT") or CONFIG.get("debug_port") or "").strip()
 DEBUG_MIRROR_BAUD = to_int(os.environ.get("ARDUINO_MONITOR_DEBUG_BAUD"), BAUD)
 DEBUG_MIRROR_ENABLED = to_bool(CONFIG.get("debug_enabled"), False) and bool(DEBUG_MIRROR_PORT)
-
-WIFI_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_WIFI_ENABLED", CONFIG.get("wifi_enabled")), True)
-WIFI_HOST = str(os.environ.get("ARDUINO_MONITOR_WIFI_HOST") or CONFIG.get("wifi_host") or "").strip()
-WIFI_PORT = to_int(os.environ.get("ARDUINO_MONITOR_WIFI_PORT", CONFIG.get("wifi_port")), 5000)
-PREFER_USB = to_bool(os.environ.get("ARDUINO_MONITOR_PREFER_USB", CONFIG.get("prefer_usb")), True)
-WIFI_RETRY_DELAY = max(2, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_RETRY_DELAY", CONFIG.get("wifi_retry_delay")), 5))
-WIFI_AUTO_DISCOVERY = to_bool(os.environ.get("ARDUINO_MONITOR_WIFI_AUTO_DISCOVERY", CONFIG.get("wifi_auto_discovery")), True)
-WIFI_DISCOVERY_PORT = max(1, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_PORT", CONFIG.get("wifi_discovery_port")), 5001))
-WIFI_DISCOVERY_TIMEOUT = max(0.2, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_TIMEOUT", CONFIG.get("wifi_discovery_timeout")), 1.2))
-WIFI_DISCOVERY_REFRESH = max(5.0, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_REFRESH", CONFIG.get("wifi_discovery_refresh")), 30.0))
-WIFI_DISCOVERY_MAGIC = str(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_MAGIC") or CONFIG.get("wifi_discovery_magic") or "UAM_DISCOVER").strip()
 
 _gpu_cache = {"ts": 0.0, "data": None}
 _proc_cache = {"ts": 0.0, "data": None}
@@ -400,21 +346,7 @@ def connect_arduino_port(port: str) -> Optional[serial.Serial]:
             pass
         print(f"Connected to Arduino on {port}")
         return ser
-
     except (SerialException, OSError) as exc:
-        err = str(exc)
-
-        # Ignore common "normal" cases
-        if any(x in err for x in [
-            "Device or resource busy",
-            "Permission denied",
-            "FileNotFoundError"
-        ]):
-            # Silent skip (or you can uncomment debug line below)
-            # print(f"[SKIP] {port} busy or unavailable")
-            return None
-
-        # Only print REAL unexpected errors
         print(f"Failed to open {port}: {exc}")
         return None
 
@@ -477,141 +409,6 @@ def write_optional_serial(current: Optional[serial.Serial], payload: str, path: 
         except Exception:
             pass
         return None
-
-
-
-def connect_wifi_socket(host: str, port: int, quiet: bool = False, device_name: Optional[str] = None) -> Optional[socket.socket]:
-    if not WIFI_ENABLED or not host:
-        return None
-    target_label = f"{host}:{port}"
-    if device_name:
-        target_label = f"{device_name} @ {target_label}"
-    try:
-        if not quiet:
-            print(f"Trying Wi-Fi monitor at {target_label}...")
-        sock = socket.create_connection((host, port), timeout=3.0)
-        sock.settimeout(2.0)
-        print(f"Connected to Arduino over Wi-Fi at {target_label}")
-        return sock
-    except OSError as exc:
-        if not quiet:
-            print(f"Wi-Fi unavailable at {target_label}: {exc}")
-        return None
-
-
-def close_socket(sock: Optional[socket.socket]) -> None:
-    if sock is None:
-        return
-    try:
-        sock.close()
-    except Exception:
-        pass
-
-
-
-def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Optional[Tuple[str, int, str]]:
-    text = (message or "").strip()
-    parts = text.split("|")
-    if len(parts) < 3 or parts[0] != "UAM_HERE":
-        return None
-    host = parts[1].strip() or addr[0]
-    try:
-        port = int(parts[2].strip())
-    except Exception:
-        return None
-    name = parts[3].strip() if len(parts) > 3 and parts[3].strip() else host
-    return host, port, name
-
-
-def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[Tuple[str, int, str]]:
-    if not WIFI_ENABLED or not WIFI_AUTO_DISCOVERY:
-        return None
-    wait_time = WIFI_DISCOVERY_TIMEOUT if timeout is None else max(0.2, float(timeout))
-    sock: Optional[socket.socket] = None
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.settimeout(wait_time)
-        sock.bind(("", 0))
-        sock.sendto(WIFI_DISCOVERY_MAGIC.encode("utf-8"), ("255.255.255.255", WIFI_DISCOVERY_PORT))
-        deadline = time.time() + wait_time
-        while time.time() < deadline:
-            try:
-                data, addr = sock.recvfrom(512)
-            except socket.timeout:
-                break
-            parsed = parse_discovery_response(data.decode("utf-8", errors="ignore"), addr)
-            if parsed is not None:
-                return parsed
-    except OSError:
-        return None
-    finally:
-        try:
-            if sock is not None:
-                sock.close()
-        except Exception:
-            pass
-    return None
-
-
-def resolve_wifi_endpoint(cached_host: str, cached_port: int, last_discovery_ts: float) -> Tuple[str, int, float, Optional[str]]:
-    host = cached_host
-    port = cached_port if cached_port > 0 else WIFI_PORT
-    discovered_name: Optional[str] = None
-    should_refresh = WIFI_AUTO_DISCOVERY and (
-        not host or (time.time() - last_discovery_ts) >= WIFI_DISCOVERY_REFRESH
-    )
-    if should_refresh:
-        found = discover_wifi_monitor()
-        if found is not None:
-            host, port, discovered_name = found
-            last_discovery_ts = time.time()
-    if not host:
-        host = WIFI_HOST
-        port = WIFI_PORT
-    return host, port, last_discovery_ts, discovered_name
-
-
-def send_to_usb_devices(payload: str, arduino_serials: Dict[str, serial.Serial]) -> Dict[str, serial.Serial]:
-    disconnected_ports: List[str] = []
-    for port, ser in list(arduino_serials.items()):
-        try:
-            ser.write(payload.encode("utf-8"))
-        except (SerialException, OSError) as exc:
-            print(f"Arduino disconnected or serial write failed on {port}: {exc}")
-            try:
-                ser.close()
-            except Exception:
-                pass
-            disconnected_ports.append(port)
-    for port in disconnected_ports:
-        arduino_serials.pop(port, None)
-    return arduino_serials
-
-
-def send_to_wifi_device(payload: str, wifi_sock: Optional[socket.socket]) -> Optional[socket.socket]:
-    if wifi_sock is None:
-        return None
-    try:
-        wifi_sock.sendall(payload.encode("utf-8"))
-        return wifi_sock
-    except OSError as exc:
-        print(f"Wi-Fi send failed: {exc}")
-        close_socket(wifi_sock)
-        return None
-
-
-def describe_active_transports(arduino_serials: Dict[str, serial.Serial], wifi_sock: Optional[socket.socket]) -> str:
-    parts: List[str] = []
-    if arduino_serials:
-        parts.append("USB")
-    if wifi_sock is not None:
-        parts.append("WIFI")
-    return "+".join(parts) if parts else "NONE"
-
-
-def should_prefer_usb_transport(arduino_serials: Dict[str, serial.Serial]) -> bool:
-    return PREFER_USB and bool(arduino_serials)
 
 
 def prime_process_cpu() -> None:
@@ -1168,27 +965,14 @@ def build_debug_payload(snapshot) -> str:
 
 
 def main() -> None:
-    if not acquire_single_instance_lock():
-        print("Another instance is already running.")
-        return
-
     static = get_cached_static()
-    print("Running Universal Arduino Monitor 8.11 for Linux")
+    print("Running Universal Arduino Monitor 7.3 for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
     print(f"Active network interface: {static['iface']}")
     print(f"OS: {static['os_name']}")
     print(f"Primary GPU vendor guess: {static['gpu_vendor']}")
     print(f"Primary disk mount: {ROOT_MOUNT}")
     print(f"Secondary disk mount: {static['secondary_mount']}")
-    print(f"Preferred transport: {'USB first, Wi-Fi fallback' if WIFI_ENABLED and PREFER_USB else ('USB + Wi-Fi simultaneous' if WIFI_ENABLED else 'USB only')}")
-    if WIFI_ENABLED:
-        if WIFI_AUTO_DISCOVERY:
-            fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
-            print(f"Wi-Fi target: auto-discovery on UDP {WIFI_DISCOVERY_PORT}{fallback}")
-        else:
-            print(f"Wi-Fi target: {WIFI_HOST}:{WIFI_PORT}")
-    else:
-        print("Wi-Fi transport disabled.")
     if DEBUG_MIRROR_ENABLED:
         print(f"Debug mirror enabled on: {DEBUG_MIRROR_PORT}")
     else:
@@ -1203,132 +987,84 @@ def main() -> None:
     last_net = net_stats.get(iface) or psutil.net_io_counters()
     last_time = time.time()
 
-    arduino_serials: Dict[str, serial.Serial] = {}
-    wifi_sock: Optional[socket.socket] = None
+    if DEBUG_MIRROR_ENABLED:
+        arduino_serials = connect_arduinos({})
+        if not arduino_serials:
+            print("No Arduino detected yet; continuing in debug mirror mode.")
+    else:
+        arduino_serials = connect_arduinos_blocking()
     debug_ser: Optional[serial.Serial] = connect_optional_serial(DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror") if DEBUG_MIRROR_ENABLED else None
-
     last_send = 0.0
     last_discovery_attempt = 0.0
-    last_wifi_attempt = 0.0
-    last_wifi_error_log = 0.0
-    wifi_error_suppressed = False
-    no_transport_logged = False
-    last_status = "NONE"
-    wifi_host_active = WIFI_HOST
-    wifi_port_active = WIFI_PORT
-    wifi_name_active: Optional[str] = None
-    last_wifi_discovery = 0.0
+
+    while True:
+        try:
+            now = time.time()
+            if now - last_send < SEND_INTERVAL:
+                time.sleep(IDLE_LOOP_SLEEP)
+                continue
+
+            snapshot, last_net, last_time = build_snapshot(last_net, last_time)
+            payload = build_arduino_payload(snapshot)
+
+            disconnected_ports: List[str] = []
+            for port, ser in list(arduino_serials.items()):
+                try:
+                    ser.write(payload.encode("utf-8"))
+                except (SerialException, OSError) as exc:
+                    print(f"Arduino disconnected or serial write failed on {port}: {exc}")
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
+                    disconnected_ports.append(port)
+
+            for port in disconnected_ports:
+                arduino_serials.pop(port, None)
+
+            if not arduino_serials:
+                if not DEBUG_MIRROR_ENABLED:
+                    print("No Arduino connections active. Reconnecting...")
+                    time.sleep(RETRY_DELAY)
+                    arduino_serials = connect_arduinos_blocking()
+                    last_discovery_attempt = time.time()
+                    continue
+                if (time.time() - last_discovery_attempt) >= RETRY_DELAY:
+                    print("No Arduino connections active. Debug mirror still running...")
+                    arduino_serials = connect_arduinos(arduino_serials)
+                    last_discovery_attempt = time.time()
+
+            if (time.time() - last_discovery_attempt) >= RETRY_DELAY:
+                arduino_serials = connect_arduinos(arduino_serials)
+                last_discovery_attempt = time.time()
+
+            if DEBUG_MIRROR_ENABLED:
+                debug_payload = build_debug_payload(snapshot)
+                debug_ser = write_optional_serial(debug_ser, debug_payload, DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror")
+
+            last_send = time.time()
+
+        except KeyboardInterrupt:
+            print("Exiting.")
+            break
+
+        except Exception as exc:
+            print(f"Loop error: {exc}")
+            time.sleep(1.0)
 
     try:
-        while True:
+        for ser in arduino_serials.values():
             try:
-                now = time.time()
-                if now - last_send < SEND_INTERVAL:
-                    time.sleep(IDLE_LOOP_SLEEP)
-                    continue
-
-                snapshot, last_net, last_time = build_snapshot(last_net, last_time)
-                payload = build_arduino_payload(snapshot)
-
-                if (now - last_discovery_attempt) >= RETRY_DELAY:
-                    last_discovery_attempt = now
-                    arduino_serials = connect_arduinos(arduino_serials)
-
-                usb_preferred = should_prefer_usb_transport(arduino_serials)
-
-                if usb_preferred and wifi_sock is not None:
-                    print("USB transport detected; closing Wi-Fi session until USB disconnects.")
-                    close_socket(wifi_sock)
-                    wifi_sock = None
-                    if WIFI_AUTO_DISCOVERY:
-                        wifi_host_active = ""
-                        wifi_name_active = None
-
-                if WIFI_ENABLED and not usb_preferred and wifi_sock is None and (now - last_wifi_attempt) >= WIFI_RETRY_DELAY:
-                    last_wifi_attempt = now
-                    wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_name = resolve_wifi_endpoint(
-                        wifi_host_active,
-                        wifi_port_active,
-                        last_wifi_discovery,
-                    )
-                    if discovered_name:
-                        wifi_name_active = discovered_name
-                    quiet_wifi = wifi_error_suppressed and (now - last_wifi_error_log) < 30.0
-                    candidate = connect_wifi_socket(
-                        wifi_host_active,
-                        wifi_port_active,
-                        quiet=quiet_wifi,
-                        device_name=wifi_name_active,
-                    )
-                    if candidate is not None:
-                        wifi_sock = candidate
-                        wifi_error_suppressed = False
-                        last_wifi_error_log = 0.0
-                    else:
-                        if WIFI_AUTO_DISCOVERY:
-                            wifi_host_active = ""
-                            wifi_port_active = WIFI_PORT
-                            wifi_name_active = None
-                        if not quiet_wifi:
-                            last_wifi_error_log = now
-                            wifi_error_suppressed = True
-
-                if arduino_serials:
-                    arduino_serials = send_to_usb_devices(payload, arduino_serials)
-
-                if not usb_preferred and wifi_sock is not None:
-                    wifi_sock = send_to_wifi_device(payload, wifi_sock)
-                    if wifi_sock is None:
-                        last_wifi_attempt = now
-                        if WIFI_AUTO_DISCOVERY:
-                            wifi_host_active = ""
-                            wifi_name_active = None
-
-                active_transport = describe_active_transports(arduino_serials, wifi_sock)
-                if active_transport != last_status:
-                    print(f"Active transport: {active_transport}")
-                    last_status = active_transport
-
-                if active_transport == "NONE":
-                    if not no_transport_logged:
-                        if DEBUG_MIRROR_ENABLED:
-                            print("No Arduino transport active. Debug mirror still running...")
-                        else:
-                            print("No Arduino transport active. Waiting for USB or Wi-Fi...")
-                        no_transport_logged = True
-                    time.sleep(1.0)
-                else:
-                    no_transport_logged = False
-
-                if DEBUG_MIRROR_ENABLED:
-                    debug_payload = build_debug_payload(snapshot)
-                    debug_ser = write_optional_serial(debug_ser, debug_payload, DEBUG_MIRROR_PORT, DEBUG_MIRROR_BAUD, "Debug mirror")
-
-                last_send = time.time()
-
-            except KeyboardInterrupt:
-                print("Exiting.")
-                break
-
-            except Exception as exc:
-                print(f"Loop error: {exc}")
-                time.sleep(1.0)
-    finally:
-        try:
-            for ser in arduino_serials.values():
-                try:
-                    ser.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        close_socket(wifi_sock)
-        try:
-            if debug_ser is not None:
-                debug_ser.close()
-        except Exception:
-            pass
-        release_single_instance_lock()
+                ser.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        if debug_ser is not None:
+            debug_ser.close()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
