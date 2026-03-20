@@ -69,11 +69,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
-    private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
-    private final JTextField wifiPortField = new JTextField(6);
-    private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
-    private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
-    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
@@ -127,11 +122,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
         connectPreviewButton.setToolTipText("Connects the built-in preview window to the fake output serial port.");
         unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto every detected Arduino UNO R3. R4 boards are not affected.");
-        arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
-        wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
-        refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
-        loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from monitor_config.json.");
-        saveMonitorSettingsButton.setToolTipText("Saves the selected serial/TCP port settings into monitor_config.json.");
 
         JPanel topPanel = new JPanel(new BorderLayout(10, 10));
         topPanel.add(buildRepoPanel(), BorderLayout.NORTH);
@@ -189,6 +179,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
         panel.add(Box.createHorizontalStrut(12));
         panel.add(versionLabel);
+        panel.add(Box.createHorizontalStrut(18));
+        lightModeToggle.setFocusable(false);
+        panel.add(lightModeToggle);
+        panel.add(Box.createHorizontalStrut(18));
+        panel.add(new JLabel("UNO R3 mode:"));
+        unoR3ScreenSizeSelector.setSelectedIndex(0);
+        panel.add(unoR3ScreenSizeSelector);
 
         return panel;
     }
@@ -198,27 +195,15 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel appActions = new JPanel(new BorderLayout(12, 0));
         appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
-
-        JPanel appActionButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        appActionButtons.add(installButton);
-        appActionButtons.add(uninstallButton);
-        appActionButtons.add(updateButton);
-        appActionButtons.add(flashButton);
-        appActionButtons.add(customFlashButton);
+        appActions.add(installButton);
+        appActions.add(uninstallButton);
+        appActions.add(updateButton);
+        appActions.add(flashButton);
+        appActions.add(customFlashButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        appActionButtons.add(customSketchIndicator);
-        appActionButtons.add(wifiCredentialsButton);
-
-        JPanel displayOptionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        lightModeToggle.setFocusable(false);
-        displayOptionsPanel.add(lightModeToggle);
-        displayOptionsPanel.add(new JLabel("UNO R3 mode:"));
-        unoR3ScreenSizeSelector.setSelectedIndex(0);
-        displayOptionsPanel.add(unoR3ScreenSizeSelector);
-
-        appActions.add(appActionButtons, BorderLayout.CENTER);
-        appActions.add(displayOptionsPanel, BorderLayout.EAST);
+        appActions.add(customSketchIndicator);
+        appActions.add(wifiCredentialsButton);
 
         JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
