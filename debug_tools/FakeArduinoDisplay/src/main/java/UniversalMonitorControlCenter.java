@@ -143,6 +143,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setServiceIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
         loadSavedSudoPassword();
+        refreshMonitorConnectionSettings(false);
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
@@ -190,9 +191,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildActionPanel() {
-        JPanel panel = new JPanel(new GridLayout(5, 1, 10, 10));
+        JPanel panel = new JPanel(new GridLayout(6, 1, 10, 10));
 
-        JPanel appActions = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel appActions = new JPanel(new BorderLayout(12, 0));
         appActions.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
         appActions.add(installButton);
         appActions.add(uninstallButton);
@@ -246,11 +247,25 @@ public class UniversalMonitorControlCenter extends JFrame {
         fakePorts.add(connectPreviewButton);
         fakePorts.add(disconnectPreviewButton);
 
+        JPanel monitorSettingsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Monitor Connection Settings"));
+        arduinoPortSelector.setEditable(true);
+        arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
+        monitorSettingsPanel.add(new JLabel("Arduino Port:"));
+        monitorSettingsPanel.add(arduinoPortSelector);
+        monitorSettingsPanel.add(refreshMonitorPortsButton);
+        monitorSettingsPanel.add(Box.createHorizontalStrut(12));
+        monitorSettingsPanel.add(new JLabel("Wi-Fi TCP Port:"));
+        monitorSettingsPanel.add(wifiPortField);
+        monitorSettingsPanel.add(loadMonitorSettingsButton);
+        monitorSettingsPanel.add(saveMonitorSettingsButton);
+
         panel.add(appActions);
         panel.add(servicePanel);
         panel.add(debugPanel);
         panel.add(transportPanel);
         panel.add(fakePorts);
+        panel.add(monitorSettingsPanel);
         return panel;
     }
 
@@ -299,6 +314,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
         connectPreviewButton.addActionListener(e -> connectPreviewPort());
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
+        refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
+        loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
+        saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
         lightModeToggle.addActionListener(e -> {
             darkMode = !lightModeToggle.isSelected();
             applyTheme();
@@ -310,6 +328,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             repoField.setText(chooser.getSelectedFile().getAbsolutePath());
+            refreshMonitorConnectionSettings(true);
         }
     }
 
@@ -632,6 +651,133 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private void refreshMonitorPortChoices(boolean verbose) {
+        List<String> ports = new ArrayList<>();
+        ports.add("AUTO");
+        for (DetectedBoard board : detectConnectedBoards()) {
+            if (!board.port.isBlank() && !ports.contains(board.port)) {
+                ports.add(board.port);
+            }
+        }
+        for (SerialPort port : SerialPort.getCommPorts()) {
+            String systemPort = port.getSystemPortName();
+            if (systemPort != null && !systemPort.isBlank() && !ports.contains(systemPort)) {
+                ports.add(systemPort);
+            }
+            String devicePath = port.getSystemPortPath();
+            if (devicePath != null && !devicePath.isBlank() && !ports.contains(devicePath)) {
+                ports.add(devicePath);
+            }
+        }
+
+        Object currentSelection = arduinoPortSelector.isEditable()
+                ? arduinoPortSelector.getEditor().getItem()
+                : arduinoPortSelector.getSelectedItem();
+        String selectedValue = currentSelection == null ? "AUTO" : currentSelection.toString().trim();
+
+        arduinoPortSelector.removeAllItems();
+        for (String port : ports) {
+            arduinoPortSelector.addItem(port);
+        }
+
+        if (selectedValue.isEmpty()) {
+            selectedValue = "AUTO";
+        }
+        arduinoPortSelector.setSelectedItem(selectedValue);
+
+        if (verbose) {
+            log("[INFO] Refreshed Arduino port list (" + Math.max(ports.size() - 1, 0) + " detected + AUTO).");
+        }
+    }
+
+    private void refreshMonitorConnectionSettings(boolean verbose) {
+        refreshMonitorPortChoices(false);
+
+        Path configPath = repoPath().resolve("monitor_config.json");
+        if (!Files.exists(configPath)) {
+            arduinoPortSelector.setSelectedItem("AUTO");
+            wifiPortField.setText("5000");
+            if (verbose) {
+                log("[WARN] Cannot load monitor settings: monitor_config.json not found at " + configPath);
+            }
+            return;
+        }
+
+        try {
+            String text = Files.readString(configPath, StandardCharsets.UTF_8);
+            String arduinoPort = readStringConfigValue(text, "arduino_port", "AUTO");
+            int wifiPort = readIntConfigValue(text, "wifi_port", 5000);
+            arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
+            wifiPortField.setText(String.valueOf(wifiPort));
+            if (verbose) {
+                log("[INFO] Loaded monitor connection settings from " + configPath.getFileName() + ".");
+            }
+        } catch (Exception ex) {
+            if (verbose) {
+                log("[WARN] Failed to load monitor connection settings: " + ex.getMessage());
+            }
+        }
+    }
+
+    private void saveMonitorConnectionSettings() {
+        String arduinoPort = "";
+        Object portValue = arduinoPortSelector.isEditable()
+                ? arduinoPortSelector.getEditor().getItem()
+                : arduinoPortSelector.getSelectedItem();
+        if (portValue != null) {
+            arduinoPort = portValue.toString().trim();
+        }
+        if (arduinoPort.isEmpty()) {
+            arduinoPort = "AUTO";
+        }
+
+        String wifiPortText = wifiPortField.getText() == null ? "" : wifiPortField.getText().trim();
+        int wifiPort;
+        try {
+            wifiPort = Integer.parseInt(wifiPortText);
+        } catch (NumberFormatException ex) {
+            log("[WARN] Wi-Fi TCP port must be a number.");
+            return;
+        }
+        if (wifiPort < 1 || wifiPort > 65535) {
+            log("[WARN] Wi-Fi TCP port must be between 1 and 65535.");
+            return;
+        }
+
+        List<Path> configPaths = new ArrayList<>();
+        configPaths.add(repoPath().resolve("monitor_config.json"));
+        Path wifiConfigPath = repoPath().resolve("R4_WIFI/monitor_config.json");
+        if (Files.exists(wifiConfigPath)) {
+            configPaths.add(wifiConfigPath);
+        }
+
+        int updatedCount = 0;
+        for (Path configPath : configPaths) {
+            if (!Files.exists(configPath)) {
+                log("[WARN] Cannot save monitor settings: missing " + configPath);
+                continue;
+            }
+            try {
+                String text = Files.readString(configPath, StandardCharsets.UTF_8);
+                String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
+                updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
+                if (!updated.equals(text)) {
+                    Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                    log("[INFO] Saved monitor port settings to " + configPath + ".");
+                } else {
+                    log("[INFO] Monitor port settings already matched in " + configPath + ".");
+                }
+                updatedCount++;
+            } catch (Exception ex) {
+                log("[WARN] Failed to save monitor settings to " + configPath + ": " + ex.getMessage());
+            }
+        }
+
+        if (updatedCount > 0) {
+            log("[INFO] Restart the monitor service if you want the new port settings to apply immediately.");
+        }
+    }
+
     private boolean updateBooleanConfig(String key, boolean enabled) {
         Path configPath = repoPath().resolve("monitor_config.json");
         if (!Files.exists(configPath)) {
@@ -679,6 +825,75 @@ public class UniversalMonitorControlCenter extends JFrame {
             return false;
         }
         return defaultValue;
+    }
+
+    private String readStringConfigValue(String text, String key, String defaultValue) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return defaultValue;
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return defaultValue;
+        }
+        int firstQuote = text.indexOf('"', colonIndex + 1);
+        if (firstQuote < 0) {
+            return defaultValue;
+        }
+        int secondQuote = text.indexOf('"', firstQuote + 1);
+        if (secondQuote < 0) {
+            return defaultValue;
+        }
+        return text.substring(firstQuote + 1, secondQuote);
+    }
+
+    private int readIntConfigValue(String text, String key, int defaultValue) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return defaultValue;
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return defaultValue;
+        }
+        String tail = text.substring(colonIndex + 1).trim();
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < tail.length(); i++) {
+            char ch = tail.charAt(i);
+            if (Character.isDigit(ch)) {
+                digits.append(ch);
+            } else if (digits.length() > 0) {
+                break;
+            } else if (!Character.isWhitespace(ch)) {
+                break;
+            }
+        }
+        if (digits.length() == 0) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(digits.toString());
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
+    private String upsertStringConfigValue(String text, String key, String value) {
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\\"[^\\\"]*\\\"";
+        String replacement = "\"" + key + "\": \"" + escapeJson(value) + "\"";
+        return text.matches("(?s).*" + pattern + ".*")
+                ? text.replaceAll(pattern, replacement)
+                : appendConfigEntry(text, "  \"" + key + "\": \"" + escapeJson(value) + "\"");
+    }
+
+    private String upsertNumberConfigValue(String text, String key, int value) {
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\d+";
+        String replacement = "\"" + key + "\": " + value;
+        return text.matches("(?s).*" + pattern + ".*")
+                ? text.replaceAll(pattern, replacement)
+                : appendConfigEntry(text, "  \"" + key + "\": " + value);
     }
 
     private String appendConfigEntry(String text, String newEntry) {
@@ -1442,7 +1657,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "8.11").trim();
+                String version = properties.getProperty("app.version", "8.12").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -1450,7 +1665,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "8.11";
+        return "8.12";
     }
 
     private boolean runningAsRoot() {
