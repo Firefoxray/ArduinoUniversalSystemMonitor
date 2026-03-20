@@ -1246,7 +1246,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "8.5").trim();
+                String version = properties.getProperty("app.version", "8.6").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -1254,7 +1254,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "8.5";
+        return "8.6";
     }
 
     private boolean runningAsRoot() {
