@@ -150,7 +150,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 - Added a custom-sketch status indicator beside **Upload Custom Sketch** so the selected file/folder name stays visible.
 - Updated the 3.5" Arduino home page label from **RAM GB** to **RAM**.
 - Normalized Fedora OS reporting to **Fedora Linux** so the OS text stays clean on both the OS and Network pages.
-- Tightened the Mega 2560 3.5" touchscreen press detection so page switching works reliably again.
+- Switched the Mega 2560 3.5" sketch over to the same DIYables touch stack used by the UNO R4 3.5" screen, removing the older MCUFRIEND/TouchScreen handling for that build.
 
 ## TODO
 
@@ -213,7 +213,7 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 `Would you like to install and flash your Arduino(s) now? [y/N]:`
 
 - Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
-- The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`), compiles each sketch once per board family, and flashes every supported connected board it detects.
+- The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`, `DIYables TFT Touch Shield`), compiles each sketch once per board family, and flashes every supported connected board it detects.
 - The Java Control Center now also includes an `Upload Custom Sketch` action so you can compile/upload your own sketch folder or `.ino` file to a selected connected board from the GUI.
 - On Fedora and other distros that gate `/dev/ttyACM*` access more aggressively, the flasher now automatically retries the upload with `sudo` if the Arduino UNO R4 WiFi reset/upload step reports `Permission denied` or a failed 1200-bps touch reset, while preserving the original user's Arduino CLI home/config paths so installed board cores remain visible during the retry.
 - The Linux installer now runs the service with `/usr/bin/python3` again and installs Python dependencies with `pip` instead of pointing systemd at a project `.venv`.

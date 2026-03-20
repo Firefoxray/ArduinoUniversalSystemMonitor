@@ -1,34 +1,24 @@
-#include <MCUFRIEND_kbv.h>
-#include <Adafruit_GFX.h>
-#include <TouchScreen.h>
+#include <DIYables_TFT_Touch_Shield.h>
 #include <string.h>
 #include <stdlib.h>
 
-MCUFRIEND_kbv tft;
+#define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
+#define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
+#define RED     DIYables_TFT::colorRGB(255, 0, 0)
+#define GREEN   DIYables_TFT::colorRGB(0, 255, 0)
+#define BLUE    DIYables_TFT::colorRGB(0, 120, 255)
+#define CYAN    DIYables_TFT::colorRGB(0, 255, 255)
+#define YELLOW  DIYables_TFT::colorRGB(255, 255, 0)
+#define ORANGE  DIYables_TFT::colorRGB(255, 165, 0)
+#define MAGENTA DIYables_TFT::colorRGB(255, 0, 255)
+#define GRAY    DIYables_TFT::colorRGB(60, 60, 60)
 
-#define BLACK   0x0000
-#define WHITE   0xFFFF
-#define RED     0xF800
-#define GREEN   0x07E0
-#define BLUE    0x051F
-#define CYAN    0x07FF
-#define YELLOW  0xFFE0
-#define ORANGE  0xFD20
-#define MAGENTA 0xF81F
-#define GRAY    0x8410
+#define LEFT_X 851
+#define RIGHT_X 543
+#define TOP_Y 921
+#define BOT_Y 196
 
-#define YP A1
-#define XM A2
-#define YM 7
-#define XP 6
-TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
-
-#define TS_MINX 120
-#define TS_MAXX 900
-#define TS_MINY 70
-#define TS_MAXY 920
-#define MINPRESSURE 120
-#define MAXPRESSURE 1000
+DIYables_TFT_RM68140_Shield tft;
 
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
@@ -296,27 +286,12 @@ static void updateCurrentPage() {
   else updateGraph();
 }
 
-static bool screenPressed() {
-  TSPoint p = ts.getPoint();
-  pinMode(XP, OUTPUT);
-  pinMode(YM, OUTPUT);
-  pinMode(XM, OUTPUT);
-  pinMode(YP, OUTPUT);
-  digitalWrite(XP, HIGH);
-  digitalWrite(YM, HIGH);
-  digitalWrite(XM, HIGH);
-  digitalWrite(YP, HIGH);
-
-  if (p.z < MINPRESSURE || p.z > MAXPRESSURE) return false;
-  if (p.x < TS_MINX - 80 || p.x > TS_MAXX + 80) return false;
-  if (p.y < TS_MINY - 80 || p.y > TS_MAXY + 80) return false;
-  return true;
-}
-
 static void handleTouch() {
   if (millis() - lastTouchPoll < touchPollMs) return;
   lastTouchPoll = millis();
-  bool pressed = screenPressed();
+
+  int x, y;
+  bool pressed = tft.getTouch(x, y);
   if (pressed && !touchHeld && millis() - lastTouchTime > touchDebounceMs) {
     touchHeld = true;
     lastTouchTime = millis();
@@ -398,10 +373,9 @@ static void feedIncomingChar(char c) {
 
 void setup() {
   Serial.begin(115200);
-  uint16_t id = tft.readID();
-  if (id == 0xD3D3 || id == 0x0000) id = 0x9486;
-  tft.begin(id);
+  tft.begin();
   tft.setRotation(1);
+  tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
   tft.fillScreen(BLACK);
 
   for (uint8_t i = 0; i < GRAPH_POINTS; i++) cpuHistory[i] = ramHistory[i] = gpuHistory[i] = vramHistory[i] = 0;
