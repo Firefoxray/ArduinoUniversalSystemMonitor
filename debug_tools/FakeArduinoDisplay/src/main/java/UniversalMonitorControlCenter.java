@@ -183,6 +183,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createTitledBorder("Project Location / Privileges"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel repoRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         repoRow.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -236,6 +237,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(buildRepoPanel());
         content.add(Box.createVerticalStrut(10));
         content.add(buildDisplayAndFlashPanel());
@@ -298,6 +300,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildDisplayAndFlashPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Display / Flash Settings"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         lightModeToggle.setFocusable(false);
         panel.add(lightModeToggle);
         panel.add(new JLabel("UNO R3 mode:"));
@@ -320,6 +323,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildAppManagementPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(installButton);
         panel.add(uninstallButton);
         panel.add(updateButton);
@@ -330,6 +334,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createTitledBorder("Preview / Virtual Serial Ports (test bench only)"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel portsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         portsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -353,6 +358,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel monitorSettingsPanel = new JPanel();
         monitorSettingsPanel.setLayout(new BoxLayout(monitorSettingsPanel, BoxLayout.Y_AXIS));
         monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Physical Arduino Monitor Connection Settings"));
+        monitorSettingsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel controlsRow = new JPanel();
         controlsRow.setLayout(new BoxLayout(controlsRow, BoxLayout.Y_AXIS));
