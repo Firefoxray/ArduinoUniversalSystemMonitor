@@ -40,6 +40,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String WIFI_MODE_MANUAL = "Manual / Fixed IP";
     private static final int DISPLAY_ROTATION_NORMAL = 1;
     private static final int DISPLAY_ROTATION_FLIPPED = 3;
+    private static final int FLASH_SERVICE_RESTART_DELAY_SECONDS = 2;
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -63,6 +64,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton flashButton = new JButton("Flash Arduino with Included Program");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
     private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
+    private final JButton killRunningTaskButton = new JButton("Kill Running Flash/Task");
 
     private final JButton serviceOnButton = new JButton("Service On");
     private final JButton serviceOffButton = new JButton("Service Off");
@@ -120,6 +122,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private boolean darkMode;
 
     private volatile Process fakePortsProcess;
+    private volatile Process activeCommandProcess;
     private volatile SerialPort previewPort;
     private volatile boolean previewReading;
     private Thread previewReaderThread;
@@ -169,6 +172,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         flashButton.setToolTipText("Builds and uploads the repo's included monitor sketch for the detected board.");
         customFlashButton.setToolTipText("Lets you choose a local .ino or sketch folder and upload that custom sketch.");
         wifiCredentialsButton.setToolTipText("Saves the SSID and password into the local R4 Wi-Fi sketch config before flashing.");
+        killRunningTaskButton.setToolTipText("Force-stops the currently running flash/task command if it gets stuck, then refreshes the UI.");
+        killRunningTaskButton.setEnabled(false);
         debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
         wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
         startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
@@ -400,6 +405,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         rowTwo.add(customSketchIndicator);
         rowTwo.add(wifiCredentialsButton);
+        rowTwo.add(killRunningTaskButton);
         wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         wifiCredentialsIndicator.setOpaque(true);
         wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
@@ -564,6 +570,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         customFlashButton.addActionListener(e -> uploadCustomSketch());
         wifiCredentialsButton.addActionListener(e -> promptForWifiCredentials());
         clearSavedPasswordButton.addActionListener(e -> clearSavedSudoPassword(true));
+        killRunningTaskButton.addActionListener(e -> killActiveCommand());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -640,7 +647,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (command == null) {
             return;
         }
-        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true);
+        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true, null, "arduino_install.sh".equals(scriptName));
     }
 
     private String buildRepoScriptCommand(String scriptName) {
@@ -1764,7 +1771,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                     refreshTransportModeStatus(false);
                     refreshMonitorPortChoices(false);
                     SwingUtilities.invokeLater(() -> setActionButtons(true));
-                });
+                }, true);
     }
 
     private void refreshWifiCredentialsIndicator(boolean verbose) {
@@ -2287,13 +2294,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        String command = "cd " + escape(repoPath().toString())
-                + " && " + escape(arduinoCli) + " compile --fqbn "
+        String flashWork = escape(arduinoCli) + " compile --fqbn "
                 + escape(target.fqbn) + " " + escape(sketchPath.toString())
                 + " && sleep 2"
                 + " && " + escape(arduinoCli) + " upload -p "
                 + escape(target.port) + " --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString());
-        runCommand(command, repoPath().toFile(), "Upload custom sketch to " + target.port, true, true);
+        String command = buildManagedFlashCommand(flashWork);
+        runCommand(command, repoPath().toFile(), "Upload custom sketch to " + target.port, true, true, null, true);
     }
 
     private Path chooseSketchPath() {
@@ -2408,18 +2415,15 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String ensureArduinoCliAvailable(String reason) {
-        Path[] candidates = new Path[] {
-                Paths.get(System.getProperty("user.home"), ".local", "bin", "arduino-cli")
-        };
+        Path localCli = Paths.get(System.getProperty("user.home"), ".local", "bin", "arduino-cli");
 
-        for (Path candidate : candidates) {
-            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
-                return candidate.toAbsolutePath().normalize().toString();
-            }
+        if (Files.isRegularFile(localCli) && Files.isExecutable(localCli)) {
+            log("[INFO] Reusing existing arduino-cli at " + localCli + " by adding ~/.local/bin to PATH for this run.");
+            return localCli.toAbsolutePath().normalize().toString();
         }
 
         try {
-            Process whichProcess = new ProcessBuilder("bash", "-lc", "command -v arduino-cli")
+            Process whichProcess = new ProcessBuilder("bash", "-lc", "export PATH=\"$HOME/.local/bin:$PATH\" && command -v arduino-cli")
                     .directory(repoPath().toFile())
                     .redirectErrorStream(true)
                     .start();
@@ -2437,8 +2441,16 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         log("[INFO] arduino-cli was not found. Installing it to ~/.local/bin so Control Center can " + reason + ".");
         try {
-            Process installProcess = new ProcessBuilder("bash", "-lc",
-                    "mkdir -p \"$HOME/.local/bin\" && curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=\"$HOME/.local/bin\" sh")
+            String installCommand = "tmpdir=$(mktemp -d)"
+                    + " && mkdir -p \"$HOME/.local/bin\""
+                    + " && curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=\"$tmpdir\" sh"
+                    + " && test -x \"$tmpdir/arduino-cli\""
+                    + " && install -m 755 \"$tmpdir/arduino-cli\" \"$HOME/.local/bin/arduino-cli.new\""
+                    + " && mv -f \"$HOME/.local/bin/arduino-cli.new\" \"$HOME/.local/bin/arduino-cli\""
+                    + " ; status=$?"
+                    + " ; rm -rf \"$tmpdir\""
+                    + " ; exit $status";
+            Process installProcess = new ProcessBuilder("bash", "-lc", installCommand)
                     .directory(repoPath().toFile())
                     .redirectErrorStream(true)
                     .start();
@@ -2449,10 +2461,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                 }
             }
             int code = installProcess.waitFor();
-            Path installedCli = Paths.get(System.getProperty("user.home"), ".local", "bin", "arduino-cli");
-            if (code == 0 && Files.isRegularFile(installedCli) && Files.isExecutable(installedCli)) {
-                log("[INFO] Installed arduino-cli to " + installedCli + ".");
-                return installedCli.toAbsolutePath().normalize().toString();
+            if (code == 0 && Files.isRegularFile(localCli) && Files.isExecutable(localCli)) {
+                log("[INFO] Installed arduino-cli to " + localCli + ".");
+                return localCli.toAbsolutePath().normalize().toString();
             }
             log("[WARN] arduino-cli installation exited with code " + code + ".");
         } catch (Exception ex) {
@@ -2464,10 +2475,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt) {
-        runCommand(shellCommand, workingDirectory, label, needsSudo, allowPrompt, null);
+        runCommand(shellCommand, workingDirectory, label, needsSudo, allowPrompt, null, false);
     }
 
     private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt, Runnable onSuccess) {
+        runCommand(shellCommand, workingDirectory, label, needsSudo, allowPrompt, onSuccess, false);
+    }
+
+    private void runCommand(String shellCommand, File workingDirectory, String label, boolean needsSudo, boolean allowPrompt, Runnable onSuccess, boolean isFlashOperation) {
         CommandSpec spec = buildShellCommand(shellCommand, needsSudo, allowPrompt);
         if (spec == null) {
             log("[WARN] " + label + " canceled (no sudo password). Running as root avoids this.");
@@ -2487,6 +2502,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                     pb.environment().put("SUDO_PASS", spec.sudoPassword);
                 }
                 Process process = pb.start();
+                activeCommandProcess = process;
+                updateKillRunningTaskButton();
 
                 BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
                 String line;
@@ -2507,6 +2524,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             } catch (Exception ex) {
                 log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
             } finally {
+                activeCommandProcess = null;
+                updateKillRunningTaskButton();
                 if (!(success && onSuccess != null)) {
                     setActionButtons(true);
                 }
@@ -2727,6 +2746,45 @@ public class UniversalMonitorControlCenter extends JFrame {
                 .replace("\"", "\\\"");
     }
 
+    private String buildManagedFlashCommand(String flashCommand) {
+        return "systemctl stop " + SERVICE_NAME
+                + " && cd " + escape(repoPath().toString())
+                + " && " + flashCommand
+                + " ; flash_status=$?"
+                + " ; sleep " + FLASH_SERVICE_RESTART_DELAY_SECONDS
+                + " ; systemctl start " + SERVICE_NAME
+                + " ; exit $flash_status";
+    }
+
+    private void killActiveCommand() {
+        Process process = activeCommandProcess;
+        if (process == null || !process.isAlive()) {
+            log("[INFO] No running flash/task process is active right now.");
+            updateKillRunningTaskButton();
+            return;
+        }
+
+        log("[WARN] Force-stopping the active command process on request.");
+        try {
+            process.descendants().forEach(handle -> {
+                try {
+                    handle.destroyForcibly();
+                } catch (Exception ignored) {
+                    // Best-effort cleanup for child processes.
+                }
+            });
+            process.destroyForcibly();
+            log("[INFO] Sent kill signal to the running flash/task process. If it stopped mid-flash, reconnect the board and retry.");
+        } catch (Exception ex) {
+            log("[ERROR] Failed to kill the active command process: " + ex.getMessage());
+        } finally {
+            activeCommandProcess = null;
+            SwingUtilities.invokeLater(() -> setActionButtons(true));
+            updateKillRunningTaskButton();
+            refreshServiceStatus(false);
+        }
+    }
+
     private void setActionButtons(boolean enabled) {
         SwingUtilities.invokeLater(() -> {
             desktopInstallButton.setEnabled(enabled);
@@ -2736,6 +2794,11 @@ public class UniversalMonitorControlCenter extends JFrame {
             customFlashButton.setEnabled(enabled);
             wifiCredentialsButton.setEnabled(enabled);
             clearSavedPasswordButton.setEnabled(enabled);
+            rememberPasswordToggle.setEnabled(enabled);
+            startFakePortsButton.setEnabled(enabled && (fakePortsProcess == null || !fakePortsProcess.isAlive()));
+            stopFakePortsButton.setEnabled(enabled && fakePortsProcess != null && fakePortsProcess.isAlive());
+            connectPreviewButton.setEnabled(enabled && previewPort == null);
+            disconnectPreviewButton.setEnabled(enabled && previewPort != null);
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
             serviceRestartButton.setEnabled(enabled);
@@ -2750,10 +2813,24 @@ public class UniversalMonitorControlCenter extends JFrame {
             r4RotationSelector.setEnabled(enabled);
             r3RotationSelector.setEnabled(enabled);
             megaRotationSelector.setEnabled(enabled);
+            arduinoPortSelector.setEnabled(enabled);
+            wifiConnectionModeSelector.setEnabled(enabled);
+            wifiPortField.setEnabled(enabled);
+            wifiHostField.setEnabled(enabled && WIFI_MODE_MANUAL.equals(String.valueOf(wifiConnectionModeSelector.getSelectedItem())));
+            wifiBoardNameField.setEnabled(enabled);
+            wifiTargetHostField.setEnabled(enabled);
+            wifiTargetHostnameField.setEnabled(enabled);
+            fakeInField.setEnabled(enabled);
+            fakeOutField.setEnabled(enabled);
             refreshMonitorPortsButton.setEnabled(enabled);
             loadMonitorSettingsButton.setEnabled(enabled);
             saveMonitorSettingsButton.setEnabled(enabled);
+            updateKillRunningTaskButton();
         });
+    }
+
+    private void updateKillRunningTaskButton() {
+        SwingUtilities.invokeLater(() -> killRunningTaskButton.setEnabled(activeCommandProcess != null && activeCommandProcess.isAlive()));
     }
 
     private void updatePortButtons() {
