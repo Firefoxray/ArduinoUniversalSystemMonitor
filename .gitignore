@@ -3,3 +3,7 @@
 R4_WIFI35/wifi_config.local.h
 monitor_config.local.json
 .control_center_wifi_settings.properties
+R4_WIFI35/display_config.local.h
+R3_MonitorScreen28/display_config.local.h
+R3_MonitorScreen35/display_config.local.h
+R3_MEGA_MonitorScreen35/display_config.local.h

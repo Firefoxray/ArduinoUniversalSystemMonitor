@@ -1,6 +1,15 @@
 #include <DIYables_TFT_Touch_Shield.h>
+#if __has_include("display_config.local.h")
+#include "display_config.local.h"
+#else
+#include "display_config.h"
+#endif
 #include <string.h>
 #include <stdlib.h>
+
+#ifndef DISPLAY_ROTATION_VALUE
+#define DISPLAY_ROTATION_VALUE 1
+#endif
 
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
@@ -376,7 +385,7 @@ static void feedIncomingChar(char c) {
 void setup() {
   Serial.begin(115200);
   tft.begin();
-  tft.setRotation(1);
+  tft.setRotation(DISPLAY_ROTATION_VALUE);
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
   tft.fillScreen(BLACK);
 

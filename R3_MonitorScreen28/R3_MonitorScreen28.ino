@@ -1,8 +1,17 @@
 #include <MCUFRIEND_kbv.h>
+#if __has_include("display_config.local.h")
+#include "display_config.local.h"
+#else
+#include "display_config.h"
+#endif
 #include <Adafruit_GFX.h>
 #include <TouchScreen.h>
 #include <string.h>
 #include <stdlib.h>
+
+#ifndef DISPLAY_ROTATION_VALUE
+#define DISPLAY_ROTATION_VALUE 1
+#endif
 
 MCUFRIEND_kbv tft;
 
@@ -468,7 +477,7 @@ void setup() {
   if (id == 0xD3D3 || id == 0xFFFF || id == 0x0000) id = 0x9341;
 
   tft.begin(id);
-  tft.setRotation(1);
+  tft.setRotation(DISPLAY_ROTATION_VALUE);
   tft.fillScreen(BLACK);
 
   for (uint8_t i = 0; i < GRAPH_POINTS; i++) {
