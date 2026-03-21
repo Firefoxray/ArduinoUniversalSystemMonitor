@@ -29,6 +29,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
     private static final String DEFAULT_WIFI_PORT = "5000";
+    private static final String DEFAULT_WIFI_DEVICE_NAME = "R4_WIFI35";
+    private static final String DEFAULT_PAIRED_LABEL = "Unassigned";
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -1189,12 +1191,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort) {
+    private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort,
+                                           String deviceName, String pairedLabel,
+                                           String pairedHostname, String pairedAssignment) {
         Path target = wifiLocalConfigPath();
         String header = "#pragma once\n\n"
                 + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
                 + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n"
-                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n";
+                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n"
+                + "#define WIFI_DEVICE_NAME_VALUE \"" + escapeCppString(deviceName) + "\"\n"
+                + "#define PAIRED_HOST_LABEL_VALUE \"" + escapeCppString(pairedLabel) + "\"\n"
+                + "#define PAIRED_HOSTNAME_VALUE \"" + escapeCppString(pairedHostname) + "\"\n"
+                + "#define PAIRED_BOARD_ASSIGNMENT_VALUE \"" + escapeCppString(pairedAssignment) + "\"\n";
         try {
             if (target.getParent() != null) {
                 Files.createDirectories(target.getParent());
@@ -1224,7 +1232,23 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (password.isEmpty()) {
             password = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "");
         }
-        return saveWifiHeaderSettings(ssid, password, tcpPort);
+        String deviceName = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_DEVICE_NAME_VALUE", "");
+        if (deviceName.isEmpty()) {
+            deviceName = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_DEVICE_NAME);
+        }
+        String pairedLabel = readWifiHeaderDefine(wifiLocalConfigPath(), "PAIRED_HOST_LABEL_VALUE", "");
+        if (pairedLabel.isEmpty()) {
+            pairedLabel = readWifiHeaderDefine(wifiDefaultConfigPath(), "PAIRED_HOST_LABEL_VALUE", DEFAULT_PAIRED_LABEL);
+        }
+        String pairedHostname = readWifiHeaderDefine(wifiLocalConfigPath(), "PAIRED_HOSTNAME_VALUE", "");
+        if (pairedHostname.isEmpty()) {
+            pairedHostname = readWifiHeaderDefine(wifiDefaultConfigPath(), "PAIRED_HOSTNAME_VALUE", "");
+        }
+        String pairedAssignment = readWifiHeaderDefine(wifiLocalConfigPath(), "PAIRED_BOARD_ASSIGNMENT_VALUE", "");
+        if (pairedAssignment.isEmpty()) {
+            pairedAssignment = readWifiHeaderDefine(wifiDefaultConfigPath(), "PAIRED_BOARD_ASSIGNMENT_VALUE", "");
+        }
+        return saveWifiHeaderSettings(ssid, password, tcpPort, deviceName, pairedLabel, pairedHostname, pairedAssignment);
     }
 
     private void restartMonitorServiceForSettingsChange() {
@@ -1257,12 +1281,27 @@ public class UniversalMonitorControlCenter extends JFrame {
                 .append(" && sleep ")
                 .append(TRANSPORT_SWITCH_DELAY_SECONDS)
                 .append(" && cd ")
-                .append(escape(repoPath().toString()))
-                .append(" && ")
-                .append(escape(arduinoCli))
-                .append(" compile --fqbn arduino:renesas_uno:unor4wifi ")
-                .append(escape(sketchPath));
+                .append(escape(repoPath().toString()));
+        WifiFlashMetadata lastMetadata = null;
         for (DetectedBoard board : wifiBoards) {
+            WifiFlashMetadata metadata = promptForWifiFlashMetadata(board);
+            if (metadata == null) {
+                log("[INFO] Reflash canceled before flashing " + board.port + ".");
+                refreshServiceStatus(false);
+                refreshTransportModeStatus(false);
+                refreshMonitorPortChoices(false);
+                return;
+            }
+            lastMetadata = metadata;
+            command.append(" && cat > ")
+                    .append(escape(wifiLocalConfigPath().toString()))
+                    .append(" <<'EOF'\n")
+                    .append(buildWifiHeaderText(metadata, wifiPort))
+                    .append("EOF\n");
+            command.append(" && ")
+                    .append(escape(arduinoCli))
+                    .append(" compile --fqbn arduino:renesas_uno:unor4wifi ")
+                    .append(escape(sketchPath));
             command.append(" && sleep 2")
                     .append(" && ")
                     .append(escape(arduinoCli))
@@ -1272,6 +1311,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                     .append(escape(board.fqbn))
                     .append(" ")
                     .append(escape(sketchPath));
+        }
+        if (lastMetadata != null && !saveWifiHeaderSettings(lastMetadata.ssid(), lastMetadata.password(), wifiPort,
+                lastMetadata.deviceName(), lastMetadata.pairedLabel(), lastMetadata.pairedHostname(), lastMetadata.pairedAssignment())) {
+            log("[ERROR] Reflash aborted because wifi_config.local.h could not be updated for the final selected board metadata.");
+            return;
         }
         command.append(" && sleep 2")
                 .append(" ; flash_status=$?")
@@ -1292,6 +1336,102 @@ public class UniversalMonitorControlCenter extends JFrame {
                     refreshMonitorPortChoices(false);
                     SwingUtilities.invokeLater(() -> setActionButtons(true));
                 });
+    }
+
+    private String buildWifiHeaderText(WifiFlashMetadata metadata, int tcpPort) {
+        return "#pragma once\n\n"
+                + "#define WIFI_SSID_VALUE \"" + escapeCppString(metadata.ssid()) + "\"\n"
+                + "#define WIFI_PASS_VALUE \"" + escapeCppString(metadata.password()) + "\"\n"
+                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n"
+                + "#define WIFI_DEVICE_NAME_VALUE \"" + escapeCppString(metadata.deviceName()) + "\"\n"
+                + "#define PAIRED_HOST_LABEL_VALUE \"" + escapeCppString(metadata.pairedLabel()) + "\"\n"
+                + "#define PAIRED_HOSTNAME_VALUE \"" + escapeCppString(metadata.pairedHostname()) + "\"\n"
+                + "#define PAIRED_BOARD_ASSIGNMENT_VALUE \"" + escapeCppString(metadata.pairedAssignment()) + "\"\n";
+    }
+
+    private WifiFlashMetadata promptForWifiFlashMetadata(DetectedBoard board) {
+        String savedSsid = firstNonBlank(
+                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_SSID_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_SSID_VALUE", "")
+        );
+        String savedPassword = firstNonBlank(
+                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_PASS_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "")
+        );
+        String savedDeviceName = firstNonBlank(
+                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_DEVICE_NAME_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_DEVICE_NAME),
+                DEFAULT_WIFI_DEVICE_NAME
+        );
+        String savedPairedLabel = firstNonBlank(
+                readWifiHeaderDefine(wifiLocalConfigPath(), "PAIRED_HOST_LABEL_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "PAIRED_HOST_LABEL_VALUE", DEFAULT_PAIRED_LABEL),
+                DEFAULT_PAIRED_LABEL
+        );
+        String savedPairedHost = firstNonBlank(
+                readWifiHeaderDefine(wifiLocalConfigPath(), "PAIRED_HOSTNAME_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "PAIRED_HOSTNAME_VALUE", ""),
+                ""
+        );
+        String savedAssignment = firstNonBlank(
+                readWifiHeaderDefine(wifiLocalConfigPath(), "PAIRED_BOARD_ASSIGNMENT_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "PAIRED_BOARD_ASSIGNMENT_VALUE", ""),
+                ""
+        );
+
+        JTextField ssidField = new JTextField(savedSsid, 24);
+        JPasswordField passwordField = new JPasswordField(savedPassword, 24);
+        JTextField deviceNameField = new JTextField(savedDeviceName, 24);
+        JTextField pairedLabelField = new JTextField(savedPairedLabel, 24);
+        JTextField pairedHostField = new JTextField(savedPairedHost, 24);
+        JTextField assignmentField = new JTextField(savedAssignment, 24);
+
+        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+        panel.add(new JLabel("Board / Port:"));
+        panel.add(new JLabel(board.toString()));
+        panel.add(new JLabel("Wi-Fi SSID:"));
+        panel.add(ssidField);
+        panel.add(new JLabel("Wi-Fi password:"));
+        panel.add(passwordField);
+        panel.add(new JLabel("Device name:"));
+        panel.add(deviceNameField);
+        panel.add(new JLabel("Paired label:"));
+        panel.add(pairedLabelField);
+        panel.add(new JLabel("Target hostname:"));
+        panel.add(pairedHostField);
+        panel.add(new JLabel("Board assignment:"));
+        panel.add(assignmentField);
+
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "UNO R4 WiFi Flash Metadata",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+        if (choice != JOptionPane.OK_OPTION) {
+            return null;
+        }
+
+        String ssid = ssidField.getText() == null ? "" : ssidField.getText().trim();
+        if (ssid.isEmpty()) {
+            log("[WARN] Flash canceled: Wi-Fi SSID is required for " + board.port + ".");
+            return null;
+        }
+
+        return new WifiFlashMetadata(
+                ssid,
+                new String(passwordField.getPassword()),
+                sanitizeWifiMetadata(deviceNameField.getText(), DEFAULT_WIFI_DEVICE_NAME),
+                sanitizeWifiMetadata(pairedLabelField.getText(), DEFAULT_PAIRED_LABEL),
+                sanitizeWifiMetadata(pairedHostField.getText(), ""),
+                sanitizeWifiMetadata(assignmentField.getText(), "")
+        );
+    }
+
+    private String sanitizeWifiMetadata(String value, String fallback) {
+        String cleaned = value == null ? "" : value.replace("|", "/").trim();
+        return cleaned.isEmpty() ? fallback : cleaned;
     }
 
     private void refreshWifiCredentialsIndicator(boolean verbose) {
@@ -1352,6 +1492,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     private record WifiPortResolution(int port, String source) {
     }
 
+    private record WifiFlashMetadata(
+            String ssid,
+            String password,
+            String deviceName,
+            String pairedLabel,
+            String pairedHostname,
+            String pairedAssignment
+    ) {
+    }
+
     private void cycleServiceForTransportChange() {
         String command = "systemctl stop " + SERVICE_NAME
                 + " && sleep " + TRANSPORT_SWITCH_DELAY_SECONDS
@@ -1373,6 +1523,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         JTextField ssidField = new JTextField(24);
         JPasswordField passwordField = new JPasswordField(24);
         JTextField tcpPortField = new JTextField(8);
+        JTextField deviceNameField = new JTextField(24);
+        JTextField pairedLabelField = new JTextField(24);
+        JTextField pairedHostField = new JTextField(24);
+        JTextField assignmentField = new JTextField(24);
 
         String savedSsid = readWifiHeaderDefine(localConfigPath, "WIFI_SSID_VALUE", "");
         if (savedSsid.isEmpty()) {
@@ -1395,6 +1549,26 @@ public class UniversalMonitorControlCenter extends JFrame {
             savedTcpPort = readWifiHeaderDefine(defaultConfigPath, "WIFI_TCP_PORT_VALUE", "5000");
         }
         tcpPortField.setText(savedTcpPort.isEmpty() ? "5000" : savedTcpPort);
+        deviceNameField.setText(firstNonBlank(
+                readWifiHeaderDefine(localConfigPath, "WIFI_DEVICE_NAME_VALUE", ""),
+                readWifiHeaderDefine(defaultConfigPath, "WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_DEVICE_NAME),
+                DEFAULT_WIFI_DEVICE_NAME
+        ));
+        pairedLabelField.setText(firstNonBlank(
+                readWifiHeaderDefine(localConfigPath, "PAIRED_HOST_LABEL_VALUE", ""),
+                readWifiHeaderDefine(defaultConfigPath, "PAIRED_HOST_LABEL_VALUE", DEFAULT_PAIRED_LABEL),
+                DEFAULT_PAIRED_LABEL
+        ));
+        pairedHostField.setText(firstNonBlank(
+                readWifiHeaderDefine(localConfigPath, "PAIRED_HOSTNAME_VALUE", ""),
+                readWifiHeaderDefine(defaultConfigPath, "PAIRED_HOSTNAME_VALUE", ""),
+                ""
+        ));
+        assignmentField.setText(firstNonBlank(
+                readWifiHeaderDefine(localConfigPath, "PAIRED_BOARD_ASSIGNMENT_VALUE", ""),
+                readWifiHeaderDefine(defaultConfigPath, "PAIRED_BOARD_ASSIGNMENT_VALUE", ""),
+                ""
+        ));
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 0, 8));
         panel.add(new JLabel("Wi-Fi SSID"));
@@ -1403,6 +1577,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(passwordField);
         panel.add(new JLabel("Wi-Fi TCP Port"));
         panel.add(tcpPortField);
+        panel.add(new JLabel("Wi-Fi Device Name"));
+        panel.add(deviceNameField);
+        panel.add(new JLabel("Paired Computer Label"));
+        panel.add(pairedLabelField);
+        panel.add(new JLabel("Target Computer Hostname"));
+        panel.add(pairedHostField);
+        panel.add(new JLabel("Board Assignment"));
+        panel.add(assignmentField);
 
         int result = JOptionPane.showConfirmDialog(
                 this,
@@ -1420,6 +1602,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         String ssid = ssidField.getText() == null ? "" : ssidField.getText().trim();
         String password = new String(passwordField.getPassword());
         String tcpPortText = tcpPortField.getText() == null ? "" : tcpPortField.getText().trim();
+        String deviceName = sanitizeWifiMetadata(deviceNameField.getText(), DEFAULT_WIFI_DEVICE_NAME);
+        String pairedLabel = sanitizeWifiMetadata(pairedLabelField.getText(), DEFAULT_PAIRED_LABEL);
+        String pairedHost = sanitizeWifiMetadata(pairedHostField.getText(), "");
+        String pairedAssignment = sanitizeWifiMetadata(assignmentField.getText(), "");
         if (ssid.isEmpty()) {
             log("[WARN] Wi-Fi credentials not saved: SSID is required.");
             return;
@@ -1436,7 +1622,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort);
+        boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort, deviceName, pairedLabel, pairedHost, pairedAssignment);
         Path configPath = monitorLocalConfigPath();
         boolean savedMonitorConfig = false;
         try {
@@ -1456,7 +1642,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (savedHeader) {
             wifiPortField.setText(String.valueOf(tcpPort));
             refreshWifiCredentialsIndicator(false);
-            log("[INFO] Wi-Fi settings saved for the R4 Wi-Fi sketch (TCP port " + tcpPort + "). Reflash the board to apply them.");
+            log("[INFO] Wi-Fi settings saved for the R4 Wi-Fi sketch (TCP port " + tcpPort
+                    + ", device=" + deviceName + ", label=" + pairedLabel + "). Reflash the board to apply them.");
             log("[INFO] Settings were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
             if (savedMonitorConfig) {
                 restartMonitorServiceForSettingsChange();

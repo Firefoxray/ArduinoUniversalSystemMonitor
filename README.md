@@ -194,6 +194,7 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 - The Java Control Center can optionally remember your sudo password in a local `.control_center_sudo_password` file in the repo root; that file is ignored by Git so it stays local to your machine.
 - On Fedora and other distros that gate `/dev/ttyACM*` access more aggressively, the flasher now automatically retries the upload with `sudo` if the Arduino UNO R4 WiFi reset/upload step reports `Permission denied` or a failed 1200-bps touch reset, while preserving the original user's Arduino CLI home/config paths so installed board cores remain visible during the retry.
 - Built-in board flashing now also does a short automatic retry for transient upload failures before giving up on a board, which helps when several boards are connected at the same time.
+- UNO R4 WiFi flashing now supports per-board pairing metadata in `R4_WIFI35/wifi_config.local.h`, including `WIFI_DEVICE_NAME_VALUE`, `PAIRED_HOST_LABEL_VALUE`, `PAIRED_HOSTNAME_VALUE`, and `PAIRED_BOARD_ASSIGNMENT_VALUE`, so you can label each board before flashing and verify the assignment on-screen and through Wi-Fi discovery.
 - The Linux installer now runs the service with `/usr/bin/python3` again and installs Python dependencies with `pip` instead of pointing systemd at a project `.venv`.
 - On Ubuntu / Linux Mint, the installer automatically uses `pip --break-system-packages` when available so the required Python packages can still be installed on PEP 668 managed systems.
 - Install flow order is: dependency setup -> Arduino flash prompt -> systemd service start.
@@ -208,6 +209,8 @@ For the Wi-Fi TCP port specifically, the effective precedence is:
 4. Flashed sketch header settings from `R4_WIFI35/wifi_config.local.h` or `R4_WIFI35/wifi_config.h`
 
 If you expect a port change to take effect immediately, keep the machine-local JSON, any environment override, and the flashed sketch header settings in agreement. Changing only one layer can leave the Python monitor and the flashed Arduino sketch listening on different TCP ports until you re-save/reflash/restart the matching pieces.
+
+For UNO R4 WiFi boards, the flashed header can now also carry pairing metadata. The shell flasher prompts for those values before each UNO R4 WiFi upload, and the Java Control Center saves/prompts for the same fields when it writes `wifi_config.local.h`. The flashed board shows the paired label on-screen and includes the pairing fields in the UDP discovery response so the Linux sender can log a human-readable target name.
 
 `install.sh` also writes the systemd service file with your real detected username and install path automatically. The `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
 

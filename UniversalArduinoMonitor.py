@@ -571,7 +571,21 @@ def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Optional[Tu
         port = int(parts[2].strip())
     except Exception:
         return None
-    name = parts[3].strip() if len(parts) > 3 and parts[3].strip() else host
+
+    device_name = parts[3].strip() if len(parts) > 3 else ""
+    paired_label = parts[4].strip() if len(parts) > 4 else ""
+    paired_host = parts[5].strip() if len(parts) > 5 else ""
+    paired_assignment = parts[6].strip() if len(parts) > 6 else ""
+
+    detail_parts = [value for value in (paired_host, paired_assignment) if value and value != "--"]
+    if paired_label and paired_label != "--":
+        name = paired_label
+        if detail_parts:
+            name += " (" + ", ".join(detail_parts) + ")"
+    elif device_name:
+        name = device_name
+    else:
+        name = host
     return host, port, name
 
 

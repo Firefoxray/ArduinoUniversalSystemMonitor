@@ -11,6 +11,22 @@
 #define WIFI_TCP_PORT_VALUE 5000
 #endif
 
+#ifndef WIFI_DEVICE_NAME_VALUE
+#define WIFI_DEVICE_NAME_VALUE "R4_WIFI35"
+#endif
+
+#ifndef PAIRED_HOST_LABEL_VALUE
+#define PAIRED_HOST_LABEL_VALUE "Unassigned"
+#endif
+
+#ifndef PAIRED_HOSTNAME_VALUE
+#define PAIRED_HOSTNAME_VALUE ""
+#endif
+
+#ifndef PAIRED_BOARD_ASSIGNMENT_VALUE
+#define PAIRED_BOARD_ASSIGNMENT_VALUE ""
+#endif
+
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
 #define RED     DIYables_TFT::colorRGB(255, 0, 0)
@@ -34,7 +50,10 @@ char pass[] = WIFI_PASS_VALUE;
 
 const uint16_t TCP_PORT = WIFI_TCP_PORT_VALUE;
 const uint16_t DISCOVERY_PORT = 5001;
-const char* DEVICE_NAME = "R4_WIFI35";
+const char* DEVICE_NAME = WIFI_DEVICE_NAME_VALUE;
+const char* PAIRED_HOST_LABEL = PAIRED_HOST_LABEL_VALUE;
+const char* PAIRED_HOSTNAME = PAIRED_HOSTNAME_VALUE;
+const char* PAIRED_BOARD_ASSIGNMENT = PAIRED_BOARD_ASSIGNMENT_VALUE;
 const char* DISCOVERY_MAGIC = "UAM_DISCOVER";
 const char* DISCOVERY_RESPONSE_PREFIX = "UAM_HERE";
 
@@ -43,6 +62,9 @@ WiFiClient wifiClient;
 WiFiUDP discoveryUdp;
 String usbLine = "";
 String wifiLine = "";
+String pairedLabel = "--";
+String pairedHostName = "--";
+String pairedAssignment = "--";
 String linkType = "NONE";
 String arduinoWifiIp = "--";
 bool wifiSuspendedForUsb = false;
@@ -205,6 +227,26 @@ void waitForValidIP(unsigned long timeoutMs = 10000) {
   refreshArduinoWifiIp();
 }
 
+String configuredOrPlaceholder(const char* rawValue, const char* placeholder = "--") {
+  String value = String(rawValue == nullptr ? "" : rawValue);
+  value.trim();
+  if (value.length() == 0) {
+    return String(placeholder);
+  }
+  return value;
+}
+
+String buildDiscoveryResponse() {
+  refreshArduinoWifiIp();
+  return String(DISCOVERY_RESPONSE_PREFIX)
+    + "|" + arduinoWifiIp
+    + "|" + String(TCP_PORT)
+    + "|" + configuredOrPlaceholder(DEVICE_NAME, "R4_WIFI35")
+    + "|" + configuredOrPlaceholder(PAIRED_HOST_LABEL)
+    + "|" + configuredOrPlaceholder(PAIRED_HOSTNAME)
+    + "|" + configuredOrPlaceholder(PAIRED_BOARD_ASSIGNMENT);
+}
+
 void startNetworkServices() {
   if (WiFi.status() != WL_CONNECTED) {
     return;
@@ -238,8 +280,7 @@ void handleDiscoveryRequests() {
     return;
   }
 
-  refreshArduinoWifiIp();
-  String response = String(DISCOVERY_RESPONSE_PREFIX) + "|" + arduinoWifiIp + "|" + String(TCP_PORT) + "|" + DEVICE_NAME;
+  String response = buildDiscoveryResponse();
   discoveryUdp.beginPacket(discoveryUdp.remoteIP(), discoveryUdp.remotePort());
   discoveryUdp.print(response);
   discoveryUdp.endPacket();
@@ -352,7 +393,7 @@ void updateHome() {
   drawLabelBar(114, "Disk0", disk0Pct, MAGENTA);
   drawLabelBar(148, "Disk1", disk1Pct, ORANGE);
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
-  drawInfoLine(210, "RAM", fitText(ramUsageStr, 18), CYAN, 95);
+  drawInfoLine(210, "Pair", fitText(pairedLabel, 24), MAGENTA, 95);
   drawInfoLine(236, "Host", fitText(hostName, 24), GREEN, 95);
   drawDualInfoLine(262, "Up", fitText(uptimeStr, 18), WHITE, 95, "Link", fitText(linkType, 8), YELLOW, 245, 330);
   drawInfoLine(288, "OS", fitText(prettyOS(osName), 28), CYAN, 95);
@@ -460,16 +501,16 @@ void updateNet() {
     arduinoIpWithPort += ":" + String(TCP_PORT);
   }
 
-  drawInfoLine(48,  "Host", fitText(hostName, 24), CYAN, 95);
-  drawInfoLine(74,  "OS", fitText(prettyOS(osName), 32), ORANGE, 95);
-  drawInfoLine(100, "PC IP", fitText(ipAddr, 18), WHITE, 95);
-  drawInfoLine(126, "A IP", fitText(arduinoIpWithPort, 18), YELLOW, 95);
-  drawInfoLine(152, "WiFi", wifiStateText(), wifiStateColor(), 95);
-  drawInfoLine(178, "Down", fitText(downStr, 18), GREEN, 105);
-  drawInfoLine(204, "Up", fitText(upStr, 18), YELLOW, 105);
-  drawInfoLine(230, "DnTot", fitText(downTotalStr, 18), CYAN, 105);
-  drawInfoLine(256, "UpTot", fitText(upTotalStr, 18), ORANGE, 105);
-  drawInfoLine(282, "Uptm", fitText(uptimeStr, 18), WHITE, 105);
+  drawInfoLine(48,  "Pair", fitText(pairedLabel, 24), MAGENTA, 95);
+  drawInfoLine(74,  "Target", fitText(pairedHostName, 22), CYAN, 95);
+  drawInfoLine(100, "Assign", fitText(pairedAssignment, 22), ORANGE, 95);
+  drawInfoLine(126, "PC IP", fitText(ipAddr, 18), WHITE, 95);
+  drawInfoLine(152, "A IP", fitText(arduinoIpWithPort, 18), YELLOW, 95);
+  drawInfoLine(178, "WiFi", wifiStateText(), wifiStateColor(), 95);
+  drawInfoLine(204, "Down", fitText(downStr, 18), GREEN, 105);
+  drawInfoLine(230, "Up", fitText(upStr, 18), YELLOW, 105);
+  drawInfoLine(256, "DnTot", fitText(downTotalStr, 18), CYAN, 105);
+  drawInfoLine(282, "UpTot", fitText(upTotalStr, 18), ORANGE, 105);
 }
 
 void updateGpu() {
@@ -762,6 +803,12 @@ void ensureWiFi() {
     Serial.println(WiFi.RSSI());
     Serial.print("Discovery UDP port: ");
     Serial.println(DISCOVERY_PORT);
+    Serial.print("Paired label: ");
+    Serial.println(pairedLabel);
+    Serial.print("Target host: ");
+    Serial.println(pairedHostName);
+    Serial.print("Board assignment: ");
+    Serial.println(pairedAssignment);
   } else {
     refreshArduinoWifiIp();
     Serial.println("\nWiFi reconnect failed.");
@@ -837,6 +884,10 @@ void setup() {
     Serial.println("BOOT: WiFi credentials not set. Waiting for USB or future WiFi setup.");
   }
 
+  pairedLabel = configuredOrPlaceholder(PAIRED_HOST_LABEL);
+  pairedHostName = configuredOrPlaceholder(PAIRED_HOSTNAME);
+  pairedAssignment = configuredOrPlaceholder(PAIRED_BOARD_ASSIGNMENT);
+
   if (wifiConfigured && WiFi.status() == WL_CONNECTED) {
     Serial.println("\nBOOT: WiFi connected, waiting for valid IP...");
     startNetworkServices();
@@ -849,6 +900,12 @@ void setup() {
     Serial.println(TCP_PORT);
     Serial.print("Discovery UDP port: ");
     Serial.println(DISCOVERY_PORT);
+    Serial.print("Paired label: ");
+    Serial.println(pairedLabel);
+    Serial.print("Target host: ");
+    Serial.println(pairedHostName);
+    Serial.print("Board assignment: ");
+    Serial.println(pairedAssignment);
   } else {
     refreshArduinoWifiIp();
     if (wifiConfigured) {

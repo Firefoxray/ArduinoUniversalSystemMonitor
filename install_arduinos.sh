@@ -25,6 +25,8 @@ R3_MEGA_SKETCH="R3_MEGA_MonitorScreen35"
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
 R4_SKETCH="R4_WIFI35"
+R4_WIFI_LOCAL_CONFIG="$R4_SKETCH/wifi_config.local.h"
+R4_WIFI_DEFAULT_CONFIG="$R4_SKETCH/wifi_config.h"
 
 REQUIRED_LIBS=(
     "MCUFRIEND_kbv|MCUFRIEND_kbv|MCUFRIEND_kbv.h"
@@ -93,6 +95,74 @@ header_exists() {
     fi
 
     return 1
+}
+
+read_wifi_define() {
+    local define_name="$1"
+    local default_value="${2:-}"
+    local marker="#define $define_name"
+    local path=""
+    local line=""
+
+    for path in "$R4_WIFI_LOCAL_CONFIG" "$R4_WIFI_DEFAULT_CONFIG"; do
+        [[ -f "$path" ]] || continue
+        while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            [[ "$line" == "$marker"* ]] || continue
+            line="${line#"$marker"}"
+            line="${line#"${line%%[![:space:]]*}"}"
+            if [[ "$line" == '"'*'"' ]]; then
+                line="${line#\"}"
+                line="${line%\"}"
+            fi
+            printf '%s\n' "${line:-$default_value}"
+            return 0
+        done < "$path"
+    done
+
+    printf '%s\n' "$default_value"
+}
+
+prompt_with_default() {
+    local prompt="$1"
+    local default_value="${2:-}"
+    local reply=""
+
+    if [[ ! -t 0 ]]; then
+        printf '%s\n' "$default_value"
+        return 0
+    fi
+
+    read -r -p "$prompt [$default_value]: " reply
+    printf '%s\n' "${reply:-$default_value}"
+}
+
+escape_cpp_string() {
+    local value="${1//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '%s' "$value"
+}
+
+write_r4_wifi_local_config() {
+    local ssid="$1"
+    local pass="$2"
+    local tcp_port="$3"
+    local device_name="$4"
+    local paired_label="$5"
+    local paired_hostname="$6"
+    local paired_assignment="$7"
+
+    cat > "$R4_WIFI_LOCAL_CONFIG" <<EOF
+#pragma once
+
+#define WIFI_SSID_VALUE "$(escape_cpp_string "$ssid")"
+#define WIFI_PASS_VALUE "$(escape_cpp_string "$pass")"
+#define WIFI_TCP_PORT_VALUE $tcp_port
+#define WIFI_DEVICE_NAME_VALUE "$(escape_cpp_string "$device_name")"
+#define PAIRED_HOST_LABEL_VALUE "$(escape_cpp_string "$paired_label")"
+#define PAIRED_HOSTNAME_VALUE "$(escape_cpp_string "$paired_hostname")"
+#define PAIRED_BOARD_ASSIGNMENT_VALUE "$(escape_cpp_string "$paired_assignment")"
+EOF
 }
 
 lib_installed_by_name() {
@@ -239,7 +309,23 @@ flash_boards() {
     local board_name=""
     local fqbn=""
     local sketch=""
+    local board_index=0
+    local wifi_ssid=""
+    local wifi_pass=""
+    local wifi_tcp_port=""
+    local wifi_device_name=""
+    local paired_host_label=""
+    local paired_hostname=""
+    local paired_assignment=""
     declare -A compiled_sketches=()
+
+    wifi_ssid="$(read_wifi_define "WIFI_SSID_VALUE" "YOUR_WIFI_SSID")"
+    wifi_pass="$(read_wifi_define "WIFI_PASS_VALUE" "YOUR_WIFI_PASSWORD")"
+    wifi_tcp_port="$(read_wifi_define "WIFI_TCP_PORT_VALUE" "5000")"
+    wifi_device_name="$(read_wifi_define "WIFI_DEVICE_NAME_VALUE" "R4_WIFI35")"
+    paired_host_label="$(read_wifi_define "PAIRED_HOST_LABEL_VALUE" "Unassigned")"
+    paired_hostname="$(read_wifi_define "PAIRED_HOSTNAME_VALUE" "")"
+    paired_assignment="$(read_wifi_define "PAIRED_BOARD_ASSIGNMENT_VALUE" "")"
 
     for line in "${BOARD_LINES[@]}"; do
         port="$(awk '{print $1}' <<< "$line")"
@@ -266,7 +352,32 @@ flash_boards() {
         echo "      Sketch: $sketch"
         echo "      FQBN:   $fqbn"
 
+        if [[ "$fqbn" == "$R4_FQBN" ]]; then
+            board_index=$((board_index + 1))
+            echo "      Configure pairing metadata for UNO R4 WiFi board #$board_index on $port."
+            wifi_device_name="$(prompt_with_default "      Wi-Fi device name" "$wifi_device_name")"
+            paired_host_label="$(prompt_with_default "      Paired computer label" "$paired_host_label")"
+            paired_hostname="$(prompt_with_default "      Target computer hostname" "$paired_hostname")"
+            paired_assignment="$(prompt_with_default "      Board assignment" "$paired_assignment")"
+            write_r4_wifi_local_config \
+                "$wifi_ssid" \
+                "$wifi_pass" \
+                "$wifi_tcp_port" \
+                "$wifi_device_name" \
+                "$paired_host_label" \
+                "$paired_hostname" \
+                "$paired_assignment"
+            echo "      Updated $R4_WIFI_LOCAL_CONFIG for this board:"
+            echo "        device=$wifi_device_name"
+            echo "        label=$paired_host_label"
+            echo "        host=${paired_hostname:-<blank>}"
+            echo "        assignment=${paired_assignment:-<blank>}"
+        fi
+
         compile_key="$fqbn|$sketch"
+        if [[ "$fqbn" == "$R4_FQBN" ]]; then
+            compile_key="$fqbn|$sketch|$wifi_device_name|$paired_host_label|$paired_hostname|$paired_assignment"
+        fi
         if [[ -z "${compiled_sketches[$compile_key]:-}" ]]; then
             echo "      Compiling $sketch once for all matching boards..."
             arduino-cli compile --fqbn "$fqbn" "$sketch" || exit 1
