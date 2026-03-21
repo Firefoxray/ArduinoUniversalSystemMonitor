@@ -142,7 +142,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiTargetHostnameField.setToolTipText("Optional intended computer hostname flashed into the R4 Wi-Fi sketch for pairing.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from the default/shared/local monitor config files.");
-        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings, mirrors the Wi-Fi port into wifi_config.local.h, stops the monitor service, flashes the R4 WiFi sketch, and starts the service again.");
+        saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -352,6 +352,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
                 + "Board name / target host values are also mirrored into <b>wifi_config.local.h</b> so discovery can match each PC with the intended board.<br>"
+                + "Important: <b>Save Monitor Settings & Flash R4 WiFi</b> reflashes every detected UNO R4 WiFi with the same local header, so for unique per-board names/targets you should flash one R4 at a time.<br>"
                 + "Environment override <b>ARDUINO_MONITOR_WIFI_PORT</b> wins at runtime; otherwise local JSON, then shared JSON, then flashed header values are used.<br>"
                 + "For an immediate port or pairing change, keep those layers aligned, then stop the service, flash the R4 WiFi sketch, and start the monitor again.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));

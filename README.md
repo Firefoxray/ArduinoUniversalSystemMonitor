@@ -211,6 +211,64 @@ If you expect a port change to take effect immediately, keep the machine-local J
 
 `install.sh` also writes the systemd service file with your real detected username and install path automatically. The `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
 
+### Multi-board Wi-Fi pairing
+
+If you have more than one Arduino UNO R4 WiFi on the same network, the recommended rollout order is:
+
+1. **Start with fixed IPs / no auto-discovery** so each PC points at one exact board.
+2. **Give each board a unique Wi-Fi device name** so discovery can later distinguish them cleanly.
+3. Optionally re-enable discovery after the board names and target-host values are set correctly.
+
+For the immediate fixed-IP setup on each computer, create or edit `monitor_config.local.json` and set:
+
+```json
+{
+  "wifi_enabled": true,
+  "wifi_auto_discovery": false,
+  "wifi_host": "192.168.1.50",
+  "wifi_port": 5000
+}
+```
+
+This example is **not** hard-coded globally by the project. The tracked configs still keep `wifi_host` blank and leave auto-discovery enabled by default; `monitor_config.local.json` is the machine-local place to override that for one PC at a time.
+
+Use the real IP of the intended Arduino on that machine. With two boards, a common layout would be:
+
+- Office PC -> `192.168.1.50`
+- Gaming PC -> `192.168.1.51`
+
+Each board can also advertise a unique identity from `R4_WIFI35/wifi_config.local.h` (or `wifi_config.h` if you are intentionally committing a shared template):
+
+```cpp
+#define WIFI_SSID_VALUE "YOUR_WIFI_SSID"
+#define WIFI_PASS_VALUE "YOUR_WIFI_PASSWORD"
+#define WIFI_TCP_PORT_VALUE 5000
+#define WIFI_DEVICE_NAME_VALUE "R4_OFFICE"
+#define WIFI_TARGET_HOST_VALUE "192.168.1.100"
+#define WIFI_TARGET_HOSTNAME_VALUE "office-desktop"
+```
+
+Example second board:
+
+```cpp
+#define WIFI_DEVICE_NAME_VALUE "R4_GAMING"
+#define WIFI_TARGET_HOST_VALUE "192.168.1.101"
+#define WIFI_TARGET_HOSTNAME_VALUE "gaming-desktop"
+```
+
+The flashed R4 sketch includes the board name and optional target host / target hostname in its UDP discovery reply, and the Python monitor uses those values to decide whether a discovered board is meant for the current PC. This lets you start with fixed IPs now and later move back to discovery with much more control over which computer talks to which board.
+
+#### GUI vs CLI workflow
+
+- **GUI / Control Center:** the `Save Monitor Settings & Flash R4 WiFi` action writes your local monitor settings plus `R4_WIFI35/wifi_config.local.h`, then reflashes **every detected UNO R4 WiFi board** with that same local header. That is convenient when you want several boards to share one config, but for per-board identity it is best to connect and flash **one R4 at a time**.
+- **CLI / manual flashing:** edit `monitor_config.local.json` on the PC that should talk to one board, edit `R4_WIFI35/wifi_config.local.h` with that board's name/target values, then flash only the specific R4 you currently have connected. Repeat for the next board with different values.
+
+So if you want one board named `R4_OFFICE` and another named `R4_GAMING`, the safest current workflow is:
+
+1. Plug in only the office R4, set `R4_OFFICE` values, flash it.
+2. Plug in only the gaming R4, set `R4_GAMING` values, flash it.
+3. On each PC, choose whether you want fixed-IP mode (`wifi_auto_discovery: false` + `wifi_host`) or discovery mode with the flashed pairing fields.
+
 ### Ubuntu / Linux Mint service workaround
 
 If your service still refuses to start on Ubuntu or Linux Mint after installation, re-open the systemd unit and make sure it uses the system Python plus the repo as the working directory:
