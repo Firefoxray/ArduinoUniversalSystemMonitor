@@ -151,6 +151,49 @@ ensure_libraries() {
 }
 
 
+sync_display_rotation_headers() {
+    python3 - "$PWD" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+config_path = repo / "monitor_config.local.json"
+default_rotation = 1
+rotation_map = {
+    "r4_display_rotation": [repo / "R4_WIFI35/display_config.local.h"],
+    "r3_display_rotation": [
+        repo / "R3_MonitorScreen28/display_config.local.h",
+        repo / "R3_MonitorScreen35/display_config.local.h",
+    ],
+    "mega_display_rotation": [repo / "R3_MEGA_MonitorScreen35/display_config.local.h"],
+}
+
+config = {}
+if config_path.exists():
+    try:
+        loaded = json.loads(config_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            config = loaded
+    except Exception as exc:
+        print(f"Warning: failed to parse {config_path.name}: {exc}", file=sys.stderr)
+
+for key, targets in rotation_map.items():
+    raw_value = config.get(key, default_rotation)
+    try:
+        rotation = int(raw_value)
+    except Exception:
+        rotation = default_rotation
+    if rotation not in (1, 3):
+        rotation = default_rotation
+    header = f"#pragma once\n\n#define DISPLAY_ROTATION_VALUE {rotation}\n"
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(header, encoding="utf-8")
+        print(f"Synced {target.relative_to(repo)} => DISPLAY_ROTATION_VALUE {rotation}")
+PY
+}
+
 count_r3_and_mega_boards() {
     local count=0
     local line=""
@@ -306,6 +349,7 @@ ensure_arduino_cli
 stop_service_before_flash
 ensure_arduino_cores
 ensure_libraries
+sync_display_rotation_headers
 detect_boards
 
 R3_MEGA_BOARD_COUNT="$(count_r3_and_mega_boards)"

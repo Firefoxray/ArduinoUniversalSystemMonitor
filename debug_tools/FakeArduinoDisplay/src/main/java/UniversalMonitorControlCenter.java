@@ -33,6 +33,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String DEFAULT_WIFI_BOARD_NAME = "R4_WIFI35";
     private static final String WIFI_MODE_AUTO_DISCOVERY = "Auto Discovery (UDP)";
     private static final String WIFI_MODE_MANUAL = "Manual / Fixed IP";
+    private static final int DISPLAY_ROTATION_NORMAL = 1;
+    private static final int DISPLAY_ROTATION_FLIPPED = 3;
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -75,6 +77,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
+    private final JComboBox<String> r4RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
+    private final JComboBox<String> r3RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
+    private final JComboBox<String> megaRotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
     private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
     private final JComboBox<String> wifiConnectionModeSelector = new JComboBox<>(new String[]{WIFI_MODE_AUTO_DISCOVERY, WIFI_MODE_MANUAL});
     private final JTextField wifiPortField = new JTextField(6);
@@ -161,6 +166,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
         connectPreviewButton.setToolTipText("Connects the built-in preview window to the fake output serial port.");
         unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto every detected Arduino UNO R3. R4 boards are not affected.");
+        r4RotationSelector.setToolTipText("Set the saved screen rotation for every UNO R4 WiFi flash: Normal = setRotation(1), Flipped = setRotation(3).");
+        r3RotationSelector.setToolTipText("Set the saved screen rotation for every UNO R3 flash, including the 2.8\" and 3.5\" sketches: Normal = setRotation(1), Flipped = setRotation(3).");
+        megaRotationSelector.setToolTipText("Set the saved screen rotation for every Arduino Mega 3.5\" flash: Normal = setRotation(1), Flipped = setRotation(3).");
         arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         wifiConnectionModeSelector.setToolTipText("Choose whether this PC discovers R4 Wi-Fi boards automatically or connects to a fixed board IP/hostname.");
@@ -185,6 +193,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         setDebugIndicator("UNKNOWN", Color.GRAY);
         loadSavedSudoPassword();
         settingsOutputArea.setDocument(outputArea.getDocument());
+        setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
+        setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
+        setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
 
@@ -327,6 +338,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(new JLabel("UNO R3 mode:"));
         unoR3ScreenSizeSelector.setSelectedIndex(0);
         panel.add(unoR3ScreenSizeSelector);
+        panel.add(new JLabel("R4 rotation:"));
+        panel.add(r4RotationSelector);
+        panel.add(new JLabel("R3 rotation:"));
+        panel.add(r3RotationSelector);
+        panel.add(new JLabel("Mega rotation:"));
+        panel.add(megaRotationSelector);
         panel.add(flashButton);
         panel.add(customFlashButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
@@ -920,7 +937,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "wifi_discovery_port",
                 "wifi_discovery_timeout",
                 "wifi_discovery_refresh",
-                "wifi_discovery_magic"
+                "wifi_discovery_magic",
+                "r4_display_rotation",
+                "r3_display_rotation",
+                "mega_display_rotation"
         )) {
             merged = copyConfigEntryIfPresent(merged, overrideText, key);
         }
@@ -1041,6 +1061,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                 wifiBoardNameField.setText(DEFAULT_WIFI_BOARD_NAME);
                 wifiTargetHostField.setText("");
                 wifiTargetHostnameField.setText("");
+                setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
+                setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
+                setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
                 wifiPortSourceLabel.setText("Effective source: default fallback (5000)");
                 updateWifiHostFieldState();
                 if (verbose) {
@@ -1059,6 +1082,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiBoardNameField.setText(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME));
             wifiTargetHostField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""));
             wifiTargetHostnameField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOSTNAME_VALUE", ""));
+            setRotationSelectorValue(r4RotationSelector, resolveDisplayRotation(text, "r4_display_rotation"));
+            setRotationSelectorValue(r3RotationSelector, resolveDisplayRotation(text, "r3_display_rotation"));
+            setRotationSelectorValue(megaRotationSelector, resolveDisplayRotation(text, "mega_display_rotation"));
             wifiPortSourceLabel.setText("Effective source: " + wifiResolution.source());
             updateWifiHostFieldState();
             if (verbose) {
@@ -1068,7 +1094,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", wifi_host=" + (wifiHost == null || wifiHost.isBlank() ? "<unset>" : wifiHost.trim()) + "."
                         + " Board name=" + normalizeWifiBoardName(wifiBoardNameField.getText().trim())
                         + ", target host/ip=" + wifiTargetHostField.getText().trim()
-                        + ", target hostname=" + wifiTargetHostnameField.getText().trim() + ".");
+                        + ", target hostname=" + wifiTargetHostnameField.getText().trim()
+                        + ", R4 rotation=" + selectedRotationSummary(r4RotationSelector)
+                        + ", R3 rotation=" + selectedRotationSummary(r3RotationSelector)
+                        + ", Mega rotation=" + selectedRotationSummary(megaRotationSelector) + ".");
             }
         } catch (Exception ex) {
             if (verbose) {
@@ -1108,6 +1137,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
         String wifiBoardName = normalizeWifiBoardName(wifiBoardNameField.getText() == null ? "" : wifiBoardNameField.getText().trim());
+        int r4Rotation = selectedRotationValue(r4RotationSelector);
+        int r3Rotation = selectedRotationValue(r3RotationSelector);
+        int megaRotation = selectedRotationValue(megaRotationSelector);
         String wifiTargetHost = wifiTargetHostField.getText() == null ? "" : wifiTargetHostField.getText().trim();
         String wifiTargetHostname = wifiTargetHostnameField.getText() == null ? "" : wifiTargetHostnameField.getText().trim();
 
@@ -1122,13 +1154,19 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertBooleanConfigValue(updated, "wifi_auto_discovery", wifiAutoDiscovery);
             updated = upsertBooleanConfigValue(updated, "wifi_enabled", true);
             updated = upsertBooleanConfigValue(updated, "prefer_usb", false);
+            updated = upsertNumberConfigValue(updated, "r4_display_rotation", r4Rotation);
+            updated = upsertNumberConfigValue(updated, "r3_display_rotation", r3Rotation);
+            updated = upsertNumberConfigValue(updated, "mega_display_rotation", megaRotation);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                 log("[INFO] Saved machine-local monitor settings to " + configPath
                         + " (arduino_port=" + arduinoPort
                         + ", wifi_enabled=true, prefer_usb=false, wifi_port=" + wifiPort
                         + ", wifi_auto_discovery=" + wifiAutoDiscovery
-                        + ", wifi_host=" + ((wifiAutoDiscovery || wifiHost.isBlank()) ? "<unset>" : wifiHost) + ").");
+                        + ", wifi_host=" + ((wifiAutoDiscovery || wifiHost.isBlank()) ? "<unset>" : wifiHost)
+                        + ", r4_display_rotation=" + r4Rotation
+                        + ", r3_display_rotation=" + r3Rotation
+                        + ", mega_display_rotation=" + megaRotation + ").");
             } else {
                 log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains preferred over USB).");
             }
@@ -1138,6 +1176,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         syncedWifiHeader = syncWifiHeaderIntoLocalHeader(wifiPort, wifiBoardName, wifiTargetHost, wifiTargetHostname);
+        boolean syncedDisplayHeaders = syncDisplayRotationHeaders(r4Rotation, r3Rotation, megaRotation);
         refreshWifiCredentialsIndicator(false);
 
         if (!savedMonitorConfig) {
@@ -1148,12 +1187,82 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (syncedWifiHeader) {
             log("[INFO] Synced Wi-Fi port/pairing settings into wifi_config.local.h so the flashed sketch uses the matching board identity immediately.");
         }
+        if (syncedDisplayHeaders) {
+            log("[INFO] Synced per-board display rotation headers so the next compile enforces the saved GUI rotation for R4, R3, and Mega boards.");
+        }
         log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort
                 + ", connection mode " + (wifiAutoDiscovery ? "Auto Discovery (UDP)" : "Manual / Fixed IP")
                 + ", wifi host/ip " + (wifiAutoDiscovery || wifiHost.isBlank() ? "<unset>" : wifiHost)
                 + ", board name " + wifiBoardName + ", target host/ip " + (wifiTargetHost.isBlank() ? "<unset>" : wifiTargetHost)
-                + ", and target hostname " + (wifiTargetHostname.isBlank() ? "<unset>" : wifiTargetHostname) + " apply right away.");
+                + ", target hostname " + (wifiTargetHostname.isBlank() ? "<unset>" : wifiTargetHostname)
+                + ", R4 rotation " + rotationLabel(r4Rotation)
+                + ", R3 rotation " + rotationLabel(r3Rotation)
+                + ", and Mega rotation " + rotationLabel(megaRotation) + " apply right away.");
         reflashWifiBoardsAndRestartMonitor(wifiPort);
+    }
+
+    private int resolveDisplayRotation(String text, String key) {
+        int raw = readIntConfigValue(text, key, DISPLAY_ROTATION_NORMAL);
+        return raw == DISPLAY_ROTATION_FLIPPED ? DISPLAY_ROTATION_FLIPPED : DISPLAY_ROTATION_NORMAL;
+    }
+
+    private static String rotationLabel(int rotation) {
+        return rotation == DISPLAY_ROTATION_FLIPPED ? "Flipped (setRotation(3))" : "Normal (setRotation(1))";
+    }
+
+    private void setRotationSelectorValue(JComboBox<String> selector, int rotation) {
+        selector.setSelectedItem(rotationLabel(rotation));
+    }
+
+    private int selectedRotationValue(JComboBox<String> selector) {
+        Object selected = selector.getSelectedItem();
+        return selected != null && selected.toString().startsWith("Flipped")
+                ? DISPLAY_ROTATION_FLIPPED
+                : DISPLAY_ROTATION_NORMAL;
+    }
+
+    private String selectedRotationSummary(JComboBox<String> selector) {
+        return rotationLabel(selectedRotationValue(selector));
+    }
+
+    private Path r4DisplayConfigPath() {
+        return repoPath().resolve("R4_WIFI35/display_config.local.h");
+    }
+
+    private Path r3DisplayConfig28Path() {
+        return repoPath().resolve("R3_MonitorScreen28/display_config.local.h");
+    }
+
+    private Path r3DisplayConfig35Path() {
+        return repoPath().resolve("R3_MonitorScreen35/display_config.local.h");
+    }
+
+    private Path megaDisplayConfigPath() {
+        return repoPath().resolve("R3_MEGA_MonitorScreen35/display_config.local.h");
+    }
+
+    private boolean writeDisplayRotationHeader(Path target, int rotation) {
+        int normalized = rotation == DISPLAY_ROTATION_FLIPPED ? DISPLAY_ROTATION_FLIPPED : DISPLAY_ROTATION_NORMAL;
+        String header = "#pragma once\n\n#define DISPLAY_ROTATION_VALUE " + normalized + "\n";
+        try {
+            if (target.getParent() != null) {
+                Files.createDirectories(target.getParent());
+            }
+            Files.writeString(target, header, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            return true;
+        } catch (IOException ex) {
+            log("[WARN] Failed to write display rotation config " + target + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private boolean syncDisplayRotationHeaders(int r4Rotation, int r3Rotation, int megaRotation) {
+        boolean ok = true;
+        ok &= writeDisplayRotationHeader(r4DisplayConfigPath(), r4Rotation);
+        ok &= writeDisplayRotationHeader(r3DisplayConfig28Path(), r3Rotation);
+        ok &= writeDisplayRotationHeader(r3DisplayConfig35Path(), r3Rotation);
+        ok &= writeDisplayRotationHeader(megaDisplayConfigPath(), megaRotation);
+        return ok;
     }
 
     private boolean updateBooleanConfig(String key, boolean enabled) {
@@ -1487,6 +1596,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void reflashWifiBoardsAndRestartMonitor(int wifiPort) {
+        syncDisplayRotationHeaders(selectedRotationValue(r4RotationSelector), selectedRotationValue(r3RotationSelector), selectedRotationValue(megaRotationSelector));
         String arduinoCli = ensureArduinoCliAvailable("reflash the UNO R4 WiFi monitor sketch");
         if (arduinoCli == null) {
             log("[WARN] Reflash skipped. TCP port " + wifiPort
@@ -1701,6 +1811,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 log("[INFO] The Control Center also saved a local backup file so SSID/password and pairing values come back after reopening or updating.");
             }
             log("[INFO] Settings were written to wifi_config.local.h and the local backup file for safe testing/pushing.");
+            syncDisplayRotationHeaders(selectedRotationValue(r4RotationSelector), selectedRotationValue(r3RotationSelector), selectedRotationValue(megaRotationSelector));
             if (savedMonitorConfig) {
                 restartMonitorServiceForSettingsChange();
             }
@@ -2526,6 +2637,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiModeOnButton.setEnabled(enabled);
             wifiModeOffButton.setEnabled(enabled);
             wifiModeRefreshButton.setEnabled(enabled);
+            unoR3ScreenSizeSelector.setEnabled(enabled);
+            r4RotationSelector.setEnabled(enabled);
+            r3RotationSelector.setEnabled(enabled);
+            megaRotationSelector.setEnabled(enabled);
+            refreshMonitorPortsButton.setEnabled(enabled);
+            loadMonitorSettingsButton.setEnabled(enabled);
+            saveMonitorSettingsButton.setEnabled(enabled);
         });
     }
 

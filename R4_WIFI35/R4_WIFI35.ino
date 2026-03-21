@@ -1,4 +1,9 @@
 #include <DIYables_TFT_Touch_Shield.h>
+#if __has_include("display_config.local.h")
+#include "display_config.local.h"
+#else
+#include "display_config.h"
+#endif
 #if __has_include("wifi_config.local.h")
 #include "wifi_config.local.h"
 #else
@@ -6,6 +11,10 @@
 #endif
 #include <WiFiS3.h>
 #include <WiFiUdp.h>
+
+#ifndef DISPLAY_ROTATION_VALUE
+#define DISPLAY_ROTATION_VALUE 1
+#endif
 
 #ifndef WIFI_TCP_PORT_VALUE
 #define WIFI_TCP_PORT_VALUE 5000
@@ -834,7 +843,7 @@ void setup() {
   Serial.println("BOOT: setup start");
 
   tft.begin();
-  tft.setRotation(3); //1 for charger left, 3 for charger right
+  tft.setRotation(DISPLAY_ROTATION_VALUE);
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
 
   wifiConfigured = wifiCredentialsProvided();
