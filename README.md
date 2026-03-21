@@ -317,7 +317,9 @@ What the root launcher does:
 
 So for normal testing, you can stay in the repo root and just run `./UniversalMonitorControlCenter.sh`.
 
-Inside the Control Center, **Update from GitHub** still pulls the newest repo files from GitHub first, then rebuilds the Java app and relaunches it.
+Inside the Control Center, **Update and Restart GUI** still pulls the newest repo files from GitHub first, then rebuilds the Java app and relaunches it.
+
+The Control Center also includes an **Install Monitor + Desktop Entry** button that reruns `install.sh` without pulling from GitHub, clears machine-local/generated files first (`monitor_config.json`, `monitor_config.local.json`, `R4_WIFI35/wifi_config.local.h`, saved sudo/Wi-Fi helper files, the desktop launcher, and Control Center build artifacts), refreshes the Linux desktop launcher with `screenshots/arduinoPreview1.png`, and then restarts the GUI so desktop/taskbar icon changes show up immediately.
 
 ### Optional Linux app-menu launcher
 

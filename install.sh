@@ -25,6 +25,7 @@ LOCAL_CONFIG_NAME="monitor_config.local.json"
 SERVICE_NAME="arduino-monitor.service"
 PYTHON_BIN="/usr/bin/python3"
 PIP_FLAGS=()
+DESKTOP_FILE="${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/applications/universal-monitor-control-center.desktop"
 
 have_command() {
     command -v "$1" >/dev/null 2>&1
@@ -32,7 +33,7 @@ have_command() {
 
 run_preinstall_uninstall() {
     echo "[pre] Stopping and removing old service for a clean install..."
-    if systemctl list-unit-files | grep -q "^$SERVICE_NAME"; then
+    if systemctl list-unit-files --plain --no-legend --type=service 2>/dev/null | grep -q "^$SERVICE_NAME"; then
         sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
         sudo systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     fi
@@ -53,6 +54,23 @@ detect_distro() {
     else
         DISTRO="unknown"
     fi
+}
+
+reset_local_state_if_requested() {
+    if [ "${RESET_LOCAL_STATE:-0}" != "1" ]; then
+        return 0
+    fi
+
+    echo "[reset] Removing local/generated files so this repo can reinstall cleanly..."
+
+    rm -f "$PROJECT_DIR/$CONFIG_NAME"
+    rm -f "$PROJECT_DIR/$LOCAL_CONFIG_NAME"
+    rm -f "$PROJECT_DIR/.control_center_sudo_password"
+    rm -f "$PROJECT_DIR/.control_center_wifi_settings.properties"
+    rm -f "$PROJECT_DIR/R4_WIFI35/wifi_config.local.h"
+    rm -f "$DESKTOP_FILE"
+    rm -rf "$PROJECT_DIR/.venv"
+    rm -rf "$PROJECT_DIR/debug_tools/FakeArduinoDisplay/build"
 }
 
 install_system_packages() {
@@ -91,8 +109,12 @@ install_or_update_repo() {
     echo "[2/8] Installing repository into $PROJECT_DIR..."
 
     if [ -d "$PROJECT_DIR/.git" ]; then
-        echo "Existing git repo found. Pulling latest..."
-        git -C "$PROJECT_DIR" pull origin main
+        if [ "${SKIP_GIT_PULL:-0}" = "1" ]; then
+            echo "Existing git repo found. Skipping git pull because SKIP_GIT_PULL=1."
+        else
+            echo "Existing git repo found. Pulling latest..."
+            git -C "$PROJECT_DIR" pull origin main
+        fi
     elif [ "$PROJECT_DIR" = "$SCRIPT_DIR" ]; then
         echo "Using current project directory (not re-cloning)."
     else
@@ -227,6 +249,11 @@ prompt_arduino_install() {
     local reply
 
     echo
+    if [ ! -t 0 ] || [ "${CONTROL_CENTER_NONINTERACTIVE:-0}" = "1" ]; then
+        echo "Non-interactive install detected. Skipping Arduino install and flash prompt."
+        return 0
+    fi
+
     read -r -p "Would you like to install and flash your Arduino(s) now? [y/N]: " reply
 
     if [[ "$reply" =~ ^[Yy]$ ]]; then
@@ -279,6 +306,7 @@ run_preinstall_uninstall
 detect_distro
 install_system_packages
 install_or_update_repo
+reset_local_state_if_requested
 install_python_packages
 fix_serial_permissions
 ensure_config
