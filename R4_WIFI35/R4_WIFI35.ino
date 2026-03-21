@@ -11,6 +11,18 @@
 #define WIFI_TCP_PORT_VALUE 5000
 #endif
 
+#ifndef WIFI_DEVICE_NAME_VALUE
+#define WIFI_DEVICE_NAME_VALUE "R4_WIFI35"
+#endif
+
+#ifndef WIFI_TARGET_HOST_VALUE
+#define WIFI_TARGET_HOST_VALUE ""
+#endif
+
+#ifndef WIFI_TARGET_HOSTNAME_VALUE
+#define WIFI_TARGET_HOSTNAME_VALUE ""
+#endif
+
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
 #define RED     DIYables_TFT::colorRGB(255, 0, 0)
@@ -34,7 +46,9 @@ char pass[] = WIFI_PASS_VALUE;
 
 const uint16_t TCP_PORT = WIFI_TCP_PORT_VALUE;
 const uint16_t DISCOVERY_PORT = 5001;
-const char* DEVICE_NAME = "R4_WIFI35";
+const char* DEVICE_NAME = WIFI_DEVICE_NAME_VALUE;
+const char* TARGET_HOST = WIFI_TARGET_HOST_VALUE;
+const char* TARGET_HOSTNAME = WIFI_TARGET_HOSTNAME_VALUE;
 const char* DISCOVERY_MAGIC = "UAM_DISCOVER";
 const char* DISCOVERY_RESPONSE_PREFIX = "UAM_HERE";
 
@@ -239,7 +253,7 @@ void handleDiscoveryRequests() {
   }
 
   refreshArduinoWifiIp();
-  String response = String(DISCOVERY_RESPONSE_PREFIX) + "|" + arduinoWifiIp + "|" + String(TCP_PORT) + "|" + DEVICE_NAME;
+  String response = String(DISCOVERY_RESPONSE_PREFIX) + "|" + arduinoWifiIp + "|" + String(TCP_PORT) + "|" + DEVICE_NAME + "|" + TARGET_HOST + "|" + TARGET_HOSTNAME;
   discoveryUdp.beginPacket(discoveryUdp.remoteIP(), discoveryUdp.remotePort());
   discoveryUdp.print(response);
   discoveryUdp.endPacket();
