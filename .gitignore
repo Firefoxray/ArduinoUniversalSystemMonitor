@@ -1,4 +1,5 @@
 .venv/
 .control_center_sudo_password
-wifi_config.local.h
+R4_WIFI35/wifi_config.local.h
 monitor_config.local.json
+.control_center_wifi_settings.properties
