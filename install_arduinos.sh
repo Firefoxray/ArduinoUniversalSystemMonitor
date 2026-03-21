@@ -38,28 +38,49 @@ echo "==== Ray Co Arduino Auto Flasher ===="
 cd "$(dirname "$0")"
 
 ensure_arduino_cli() {
+    local local_bin_dir="$HOME/.local/bin"
+    local local_cli="$local_bin_dir/arduino-cli"
+    local tmp_dir=""
+
+    export PATH="$local_bin_dir:$PATH"
+
     if command -v arduino-cli >/dev/null 2>&1; then
         echo "arduino-cli already installed."
         return 0
     fi
 
-    echo "arduino-cli not found. Installing..."
-    mkdir -p "$HOME/.local/bin"
+    if [[ -x "$local_cli" ]]; then
+        echo "arduino-cli already exists at $local_cli; adding $local_bin_dir to PATH for this run."
+        return 0
+    fi
 
-    if curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/.local/bin" sh; then
-        export PATH="$HOME/.local/bin:$PATH"
-        echo "arduino-cli installed to $HOME/.local/bin"
+    echo "arduino-cli not found. Installing..."
+    mkdir -p "$local_bin_dir"
+    tmp_dir="$(mktemp -d)"
+
+    if curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$tmp_dir" sh; then
+        if [[ ! -x "$tmp_dir/arduino-cli" ]]; then
+            echo "arduino-cli installer completed, but no binary was produced in $tmp_dir."
+            rm -rf "$tmp_dir"
+            echo "Failed to install arduino-cli automatically."
+            echo "Install it manually, then rerun this script."
+            exit 1
+        fi
+
+        install -m 755 "$tmp_dir/arduino-cli" "$local_cli.new"
+        mv -f "$local_cli.new" "$local_cli"
+        rm -rf "$tmp_dir"
+        echo "arduino-cli installed to $local_bin_dir"
     else
+        rm -rf "$tmp_dir"
         echo "Failed to install arduino-cli automatically."
         echo "Install it manually, then rerun this script."
         exit 1
     fi
 
-    export PATH="$HOME/.local/bin:$PATH"
-
     if ! command -v arduino-cli >/dev/null 2>&1; then
         echo "arduino-cli still not found after install."
-        echo "Add $HOME/.local/bin to your PATH and try again."
+        echo "Add $local_bin_dir to your PATH and try again."
         exit 1
     fi
 }
