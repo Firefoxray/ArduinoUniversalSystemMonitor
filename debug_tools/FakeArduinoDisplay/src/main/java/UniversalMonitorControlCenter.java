@@ -50,9 +50,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton connectPreviewButton = new JButton("Connect Preview Port");
     private final JButton disconnectPreviewButton = new JButton("Disconnect Preview Port");
 
-    private final JButton installButton = new JButton("Install on Linux");
+    private final JButton desktopInstallButton = new JButton("Install Monitor + Desktop Entry");
     private final JButton uninstallButton = new JButton("Uninstall");
-    private final JButton updateButton = new JButton("Update from GitHub");
+    private final JButton updateButton = new JButton("Update and Restart GUI");
     private final JButton flashButton = new JButton("Flash Arduino with Included Program");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
     private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
@@ -345,7 +345,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(installButton);
+        panel.add(desktopInstallButton);
         panel.add(uninstallButton);
         panel.add(updateButton);
         return panel;
@@ -476,7 +476,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void wireActions() {
-        installButton.addActionListener(e -> runRepoScript("install.sh", true));
+        desktopInstallButton.addActionListener(e -> runInstallAndDesktopWorkflow());
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
         updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
@@ -536,6 +536,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
         String command = "cd " + escape(repo.toString()) + " && chmod +x update.sh UniversalMonitorControlCenter.sh && ./update.sh";
         runCommand(command, repo.toFile(), "Update and restart Control Center", true, true, () -> relaunchApplication(launcher));
+    }
+
+    private void runInstallAndDesktopWorkflow() {
+        Path repo = repoPath();
+        Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
+        String command = "cd " + escape(repo.toString())
+                + " && chmod +x install.sh install_control_center_desktop.sh UniversalMonitorControlCenter.sh"
+                + " && RESET_LOCAL_STATE=1 SKIP_GIT_PULL=1 CONTROL_CENTER_NONINTERACTIVE=1 ./install.sh"
+                + " && ./install_control_center_desktop.sh";
+        runCommand(command, repo.toFile(), "Install monitor and desktop entry", true, true, () -> relaunchApplication(launcher));
     }
 
     private void runRepoScript(String scriptName, boolean needsSudo) {
@@ -2499,7 +2509,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void setActionButtons(boolean enabled) {
         SwingUtilities.invokeLater(() -> {
-            installButton.setEnabled(enabled);
+            desktopInstallButton.setEnabled(enabled);
             uninstallButton.setEnabled(enabled);
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
