@@ -260,7 +260,7 @@ The flashed R4 sketch includes the board name and optional target host / target 
 
 #### GUI vs CLI workflow
 
-- **GUI / Control Center:** the `Save Monitor Settings & Flash R4 WiFi` action writes your local monitor settings plus `R4_WIFI35/wifi_config.local.h`, then reflashes **every detected UNO R4 WiFi board** with that same local header. That is convenient when you want several boards to share one config, but for per-board identity it is best to connect and flash **one R4 at a time**.
+- **GUI / Control Center:** the Monitor Connection Settings panel now lets you choose **Auto Discovery (UDP)** or **Manual / Fixed IP**, including a machine-local `wifi_host` when manual mode is selected. The `Save Monitor Settings & Flash R4 WiFi` action writes those local monitor settings plus `R4_WIFI35/wifi_config.local.h`, then reflashes **every detected UNO R4 WiFi board** with that same local header. That is convenient when you want several boards to share one config, but for per-board identity it is best to connect and flash **one R4 at a time**.
 - **CLI / manual flashing:** edit `monitor_config.local.json` on the PC that should talk to one board, edit `R4_WIFI35/wifi_config.local.h` with that board's name/target values, then flash only the specific R4 you currently have connected. Repeat for the next board with different values.
 
 So if you want one board named `R4_OFFICE` and another named `R4_GAMING`, the safest current workflow is:
