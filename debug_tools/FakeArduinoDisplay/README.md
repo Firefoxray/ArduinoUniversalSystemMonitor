@@ -16,7 +16,8 @@ It includes:
   - `uninstall_monitor.sh`
   - `update.sh`
   - `arduino_install.sh`
-- When **Update from GitHub** is used, pull the newest repo files from GitHub as the repo owner, rebuild the Java jar/distribution, and relaunch the Control Center automatically
+- When **Update and Restart GUI** is used, pull the newest repo files from GitHub as the repo owner, rebuild the Java jar/distribution, and relaunch the Control Center automatically
+- When **Install Monitor + Desktop Entry** is used, rerun `install.sh` without pulling from GitHub, clear machine-local/generated files first, install/refresh the Linux desktop launcher, and relaunch the Control Center so the latest icon is picked up immediately
 - Manage Linux service state (`arduino-monitor.service`):
   - Service On
   - Service Off
