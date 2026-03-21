@@ -117,11 +117,32 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Path selectedCustomSketchPath;
 
 
+
+    private void applyWindowIcon() {
+        Path repoRoot = detectRepoRoot();
+        List<Path> candidates = List.of(
+                repoRoot.resolve("screenshots/arduinoPreview1.png"),
+                repoRoot.resolve("screenshots/arduinoPreview.png"),
+                repoRoot.resolve("screenshots/home1.JPEG")
+        );
+
+        for (Path candidate : candidates) {
+            if (Files.isRegularFile(candidate)) {
+                Image icon = Toolkit.getDefaultToolkit().getImage(candidate.toAbsolutePath().toString());
+                if (icon != null) {
+                    setIconImage(icon);
+                    return;
+                }
+            }
+        }
+    }
+
     public UniversalMonitorControlCenter() {
         super(APP_NAME + " v" + APP_VERSION);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(1500, 940);
         setLocationRelativeTo(null);
+        applyWindowIcon();
 
         darkMode = shouldUseDarkModeByDefault();
 
@@ -2448,7 +2469,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "9.0 beta").trim();
+                String version = properties.getProperty("app.version", "9.1 beta").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -2456,7 +2477,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "9.0 beta";
+        return "9.1 beta";
     }
 
     private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,

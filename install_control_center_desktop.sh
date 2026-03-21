@@ -4,7 +4,7 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 DESKTOP_FILE="$DESKTOP_DIR/universal-monitor-control-center.desktop"
-ICON_PATH="$REPO_ROOT/screenshots/home1.JPEG"
+ICON_PATH="$REPO_ROOT/screenshots/arduinoPreview1.png"
 
 mkdir -p "$DESKTOP_DIR"
 
