@@ -27,6 +27,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = loadAppVersion();
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
+    private static final String WIFI_SETTINGS_BACKUP_FILE = ".control_center_wifi_settings.properties";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
     private static final String DEFAULT_WIFI_PORT = "5000";
     private static final String DEFAULT_WIFI_BOARD_NAME = "R4_WIFI35";
@@ -179,27 +180,36 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildRepoPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createTitledBorder("Project Location / Privileges"));
-        panel.add(new JLabel("Program Root:"));
-        panel.add(repoField);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel repoRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        repoRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        repoRow.add(new JLabel("Program Root:"));
+        repoRow.add(repoField);
 
         JButton browseButton = new JButton("Browse");
         browseButton.addActionListener(e -> browseRepoPath());
-        panel.add(browseButton);
+        repoRow.add(browseButton);
 
         JButton openFolderButton = new JButton("Open Folder");
         openFolderButton.addActionListener(e -> openRepoFolder());
-        panel.add(openFolderButton);
+        repoRow.add(openFolderButton);
+        panel.add(repoRow);
 
-        panel.add(new JLabel("sudo password:"));
-        panel.add(sudoPasswordField);
+        JPanel credentialsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        credentialsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        credentialsRow.add(new JLabel("sudo password:"));
+        credentialsRow.add(sudoPasswordField);
         rememberPasswordToggle.setFocusable(false);
-        panel.add(rememberPasswordToggle);
-        panel.add(clearSavedPasswordButton);
+        credentialsRow.add(rememberPasswordToggle);
+        credentialsRow.add(clearSavedPasswordButton);
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
-        panel.add(Box.createHorizontalStrut(12));
-        panel.add(versionLabel);
+        credentialsRow.add(Box.createHorizontalStrut(12));
+        credentialsRow.add(versionLabel);
+        panel.add(credentialsRow);
 
         return panel;
     }
@@ -227,6 +237,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(buildRepoPanel());
         content.add(Box.createVerticalStrut(10));
         content.add(buildDisplayAndFlashPanel());
@@ -242,6 +253,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -288,6 +300,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildDisplayAndFlashPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Display / Flash Settings"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         lightModeToggle.setFocusable(false);
         panel.add(lightModeToggle);
         panel.add(new JLabel("UNO R3 mode:"));
@@ -310,6 +323,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildAppManagementPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         panel.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(installButton);
         panel.add(uninstallButton);
         panel.add(updateButton);
@@ -317,16 +331,26 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildPreviewControlsPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createTitledBorder("Preview / Virtual Serial Ports (test bench only)"));
-        panel.add(new JLabel("Input:"));
-        panel.add(fakeInField);
-        panel.add(new JLabel("Output:"));
-        panel.add(fakeOutField);
-        panel.add(startFakePortsButton);
-        panel.add(stopFakePortsButton);
-        panel.add(connectPreviewButton);
-        panel.add(disconnectPreviewButton);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel portsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        portsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        portsRow.add(new JLabel("Input:"));
+        portsRow.add(fakeInField);
+        portsRow.add(new JLabel("Output:"));
+        portsRow.add(fakeOutField);
+        panel.add(portsRow);
+
+        JPanel buttonsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        buttonsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        buttonsRow.add(startFakePortsButton);
+        buttonsRow.add(stopFakePortsButton);
+        buttonsRow.add(connectPreviewButton);
+        buttonsRow.add(disconnectPreviewButton);
+        panel.add(buttonsRow);
         return panel;
     }
 
@@ -334,30 +358,45 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel monitorSettingsPanel = new JPanel();
         monitorSettingsPanel.setLayout(new BoxLayout(monitorSettingsPanel, BoxLayout.Y_AXIS));
         monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Physical Arduino Monitor Connection Settings"));
+        monitorSettingsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel controlsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel controlsRow = new JPanel();
+        controlsRow.setLayout(new BoxLayout(controlsRow, BoxLayout.Y_AXIS));
+        controlsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         arduinoPortSelector.setEditable(true);
         arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
-        controlsRow.add(new JLabel("Arduino USB Port:"));
-        controlsRow.add(arduinoPortSelector);
-        controlsRow.add(refreshMonitorPortsButton);
-        controlsRow.add(Box.createHorizontalStrut(12));
-        controlsRow.add(new JLabel("Arduino Wi-Fi TCP Port:"));
-        controlsRow.add(wifiPortField);
-        controlsRow.add(new JLabel("Connection Mode:"));
-        controlsRow.add(wifiConnectionModeSelector);
-        controlsRow.add(new JLabel("Wi-Fi Host/IP:"));
-        controlsRow.add(wifiHostField);
-        controlsRow.add(new JLabel("Board Name:"));
-        controlsRow.add(wifiBoardNameField);
-        controlsRow.add(new JLabel("Target Host/IP:"));
-        controlsRow.add(wifiTargetHostField);
-        controlsRow.add(new JLabel("Target Hostname:"));
-        controlsRow.add(wifiTargetHostnameField);
+
+        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowOne.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rowOne.add(new JLabel("Arduino USB Port:"));
+        rowOne.add(arduinoPortSelector);
+        rowOne.add(refreshMonitorPortsButton);
+        rowOne.add(Box.createHorizontalStrut(12));
+        rowOne.add(new JLabel("Arduino Wi-Fi TCP Port:"));
+        rowOne.add(wifiPortField);
+        rowOne.add(new JLabel("Connection Mode:"));
+        rowOne.add(wifiConnectionModeSelector);
+        controlsRow.add(rowOne);
+
+        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rowTwo.add(new JLabel("Wi-Fi Host/IP:"));
+        rowTwo.add(wifiHostField);
+        rowTwo.add(new JLabel("Board Name:"));
+        rowTwo.add(wifiBoardNameField);
+        rowTwo.add(new JLabel("Target Host/IP:"));
+        rowTwo.add(wifiTargetHostField);
+        rowTwo.add(new JLabel("Target Hostname:"));
+        rowTwo.add(wifiTargetHostnameField);
+        controlsRow.add(rowTwo);
+
+        JPanel rowThree = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowThree.setAlignmentX(Component.LEFT_ALIGNMENT);
         wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
-        controlsRow.add(wifiPortSourceLabel);
-        controlsRow.add(loadMonitorSettingsButton);
-        controlsRow.add(saveMonitorSettingsButton);
+        rowThree.add(wifiPortSourceLabel);
+        rowThree.add(loadMonitorSettingsButton);
+        rowThree.add(saveMonitorSettingsButton);
+        controlsRow.add(rowThree);
         monitorSettingsPanel.add(controlsRow);
 
         JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
@@ -390,7 +429,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private JPanel buildSettingsOutputPanel() {
         JPanel panel = buildOutputPanel(settingsOutputArea, "Command Output / Logs (also shown here while working in Settings)");
-        panel.setPreferredSize(new Dimension(1000, 240));
+        panel.setPreferredSize(new Dimension(1000, 320));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return panel;
     }
@@ -400,7 +439,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder(title));
         area.setEditable(false);
         area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        panel.add(new JScrollPane(area), BorderLayout.CENTER);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        JScrollPane scrollPane = new JScrollPane(area);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
 
@@ -779,6 +822,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private Path monitorLocalConfigPath() {
         return repoPath().resolve("monitor_config.local.json");
+    }
+
+    private Path wifiSettingsBackupPath() {
+        return repoPath().resolve(WIFI_SETTINGS_BACKUP_FILE);
     }
 
     private String readConfigFileIfPresent(Path path) throws IOException {
@@ -1276,6 +1323,85 @@ public class UniversalMonitorControlCenter extends JFrame {
         return value == null || value.isBlank() ? DEFAULT_WIFI_BOARD_NAME : value.trim();
     }
 
+    private WifiSettingsSnapshot loadSavedWifiSettings() {
+        Properties properties = new Properties();
+        Path backupPath = wifiSettingsBackupPath();
+        if (Files.exists(backupPath)) {
+            try (var input = Files.newInputStream(backupPath)) {
+                properties.load(input);
+            } catch (IOException ex) {
+                log("[WARN] Failed to read saved Wi-Fi settings backup " + backupPath + ": " + ex.getMessage());
+            }
+        }
+
+        String ssid = firstNonBlank(
+                properties.getProperty("ssid"),
+                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_SSID_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_SSID_VALUE", "")
+        );
+        String password = firstNonBlank(
+                properties.getProperty("password"),
+                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_PASS_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "")
+        );
+        String tcpPort = firstNonBlank(
+                properties.getProperty("tcp_port"),
+                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", ""),
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
+                DEFAULT_WIFI_PORT
+        );
+        String boardName = normalizeWifiBoardName(firstNonBlank(
+                properties.getProperty("board_name"),
+                resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME),
+                DEFAULT_WIFI_BOARD_NAME
+        ));
+        String targetHost = firstNonBlank(
+                properties.getProperty("target_host"),
+                resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""),
+                ""
+        );
+        String targetHostname = firstNonBlank(
+                properties.getProperty("target_hostname"),
+                resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOSTNAME_VALUE", ""),
+                ""
+        );
+
+        if ("YOUR_WIFI_SSID".equals(ssid)) {
+            ssid = "";
+        }
+        if ("YOUR_WIFI_PASSWORD".equals(password)) {
+            password = "";
+        }
+
+        return new WifiSettingsSnapshot(ssid, password, tcpPort, boardName, targetHost, targetHostname);
+    }
+
+    private boolean saveWifiSettingsBackup(String ssid, String password, int tcpPort, String boardName, String targetHost, String targetHostname) {
+        Path backupPath = wifiSettingsBackupPath();
+        Properties properties = new Properties();
+        properties.setProperty("ssid", ssid == null ? "" : ssid.trim());
+        properties.setProperty("password", password == null ? "" : password);
+        properties.setProperty("tcp_port", String.valueOf(tcpPort));
+        properties.setProperty("board_name", normalizeWifiBoardName(boardName));
+        properties.setProperty("target_host", targetHost == null ? "" : targetHost.trim());
+        properties.setProperty("target_hostname", targetHostname == null ? "" : targetHostname.trim());
+        try {
+            try (var output = Files.newOutputStream(
+                    backupPath,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE
+            )) {
+                properties.store(output, "Control Center Wi-Fi settings backup");
+            }
+            log("[INFO] Saved local Wi-Fi settings backup to " + backupPath + ".");
+            return true;
+        } catch (IOException ex) {
+            log("[WARN] Failed to write Wi-Fi settings backup " + backupPath + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
     private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort, String boardName, String targetHost, String targetHostname) {
         Path target = wifiLocalConfigPath();
         String header = "#pragma once\n\n"
@@ -1306,17 +1432,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private boolean syncWifiHeaderIntoLocalHeader(int tcpPort, String boardName, String targetHost, String targetHostname) {
-        String ssid = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_SSID_VALUE", "");
-        if (ssid.isEmpty()) {
-            ssid = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_SSID_VALUE", "");
-        }
-        String password = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_PASS_VALUE", "");
-        if (password.isEmpty()) {
-            password = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "");
-        }
+        WifiSettingsSnapshot snapshot = loadSavedWifiSettings();
         return saveWifiHeaderSettings(
-                ssid,
-                password,
+                snapshot.ssid(),
+                snapshot.password(),
                 tcpPort,
                 boardName,
                 targetHost,
@@ -1392,26 +1511,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshWifiCredentialsIndicator(boolean verbose) {
-        List<Path> targets = List.of(
-                repoPath().resolve("R4_WIFI35/wifi_config.local.h")
-        );
-
-        boolean saved = false;
-        for (Path target : targets) {
-            try {
-                if (!Files.exists(target)) {
-                    continue;
-                }
-                String text = Files.readString(target, StandardCharsets.UTF_8);
-                if (text.contains("#define WIFI_SSID_VALUE \"") && !text.contains("#define WIFI_SSID_VALUE \"\"")) {
-                    saved = true;
-                    break;
-                }
-            } catch (IOException ex) {
-                if (verbose) {
-                    log("[WARN] Could not inspect saved Wi-Fi credentials at " + target + ": " + ex.getMessage());
-                }
-            }
+        WifiSettingsSnapshot snapshot = loadSavedWifiSettings();
+        boolean saved = snapshot.hasCredentials();
+        if (!saved && verbose) {
+            log("[INFO] No saved Wi-Fi credentials were found in the local backup or Wi-Fi header files.");
         }
 
         final boolean credentialsSaved = saved;
@@ -1464,9 +1567,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void promptForWifiCredentials() {
-        Path localConfigPath = wifiLocalConfigPath();
-        Path defaultConfigPath = wifiDefaultConfigPath();
-
         JTextField ssidField = new JTextField(24);
         JPasswordField passwordField = new JPasswordField(24);
         JTextField tcpPortField = new JTextField(8);
@@ -1474,30 +1574,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         JTextField targetHostField = new JTextField(24);
         JTextField targetHostnameField = new JTextField(24);
 
-        String savedSsid = readWifiHeaderDefine(localConfigPath, "WIFI_SSID_VALUE", "");
-        if (savedSsid.isEmpty()) {
-            savedSsid = readWifiHeaderDefine(defaultConfigPath, "WIFI_SSID_VALUE", "");
-        }
-        if (!savedSsid.equals("YOUR_WIFI_SSID")) {
-            ssidField.setText(savedSsid);
-        }
-
-        String savedPassword = readWifiHeaderDefine(localConfigPath, "WIFI_PASS_VALUE", "");
-        if (savedPassword.isEmpty()) {
-            savedPassword = readWifiHeaderDefine(defaultConfigPath, "WIFI_PASS_VALUE", "");
-        }
-        if (!savedPassword.equals("YOUR_WIFI_PASSWORD")) {
-            passwordField.setText(savedPassword);
-        }
-
-        String savedTcpPort = readWifiHeaderDefine(localConfigPath, "WIFI_TCP_PORT_VALUE", "");
-        if (savedTcpPort.isEmpty()) {
-            savedTcpPort = readWifiHeaderDefine(defaultConfigPath, "WIFI_TCP_PORT_VALUE", "5000");
-        }
-        tcpPortField.setText(savedTcpPort.isEmpty() ? "5000" : savedTcpPort);
-        boardNameField.setText(normalizeWifiBoardName(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME)));
-        targetHostField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""));
-        targetHostnameField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOSTNAME_VALUE", ""));
+        WifiSettingsSnapshot snapshot = loadSavedWifiSettings();
+        ssidField.setText(snapshot.ssid());
+        passwordField.setText(snapshot.password());
+        tcpPortField.setText(snapshot.tcpPort());
+        boardNameField.setText(snapshot.boardName());
+        targetHostField.setText(snapshot.targetHost());
+        targetHostnameField.setText(snapshot.targetHostname());
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 0, 8));
         panel.add(new JLabel("Wi-Fi SSID"));
@@ -1548,6 +1631,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
+        boolean savedBackup = saveWifiSettingsBackup(ssid, password, tcpPort, boardName, targetHost, targetHostname);
         boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort, boardName, targetHost, targetHostname);
         Path configPath = monitorLocalConfigPath();
         boolean savedMonitorConfig = false;
@@ -1575,7 +1659,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                     + ", board name " + boardName
                     + ", target host/ip " + (targetHost.isBlank() ? "<unset>" : targetHost)
                     + ", target hostname " + (targetHostname.isBlank() ? "<unset>" : targetHostname) + "). Reflash the board to apply them.");
-            log("[INFO] Settings were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
+            if (savedBackup) {
+                log("[INFO] The Control Center also saved a local backup file so SSID/password and pairing values come back after reopening or updating.");
+            }
+            log("[INFO] Settings were written to wifi_config.local.h and the local backup file for safe testing/pushing.");
             if (savedMonitorConfig) {
                 restartMonitorServiceForSettingsChange();
             }
@@ -2363,6 +2450,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             // Fall back to a safe default below.
         }
         return "9.0 beta";
+    }
+
+    private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,
+                                        String targetHost, String targetHostname) {
+        private boolean hasCredentials() {
+            return ssid != null && !ssid.isBlank();
+        }
     }
 
     private boolean runningAsRoot() {
