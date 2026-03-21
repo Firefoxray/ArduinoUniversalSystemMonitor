@@ -387,6 +387,10 @@ public class JavaSerialFakeDisplay extends JFrame {
         private final int[] ramHistory = new int[GRAPH_POINTS];
         private final int[] gpuHistory = new int[GRAPH_POINTS];
         private final int[] vramHistory = new int[GRAPH_POINTS];
+        private boolean previewWifiEnabled;
+        private String previewWifiHostname = "unknown-host";
+        private String previewWifiIp = "No IPv4 address";
+        private int previewWifiPort = 5000;
         private final String[] pageNames = {
                 "Home", "CPU", "Processes", "Network", "GPU", "Storage", "Graph"
         };
@@ -406,6 +410,14 @@ public class JavaSerialFakeDisplay extends JFrame {
         void updatePacket(ParsedPacket packet) {
             this.packet = packet;
             pushHistory(packet);
+            repaint();
+        }
+
+        void setPreviewWifiStatus(boolean enabled, String hostname, String ipAddress, int port) {
+            previewWifiEnabled = enabled;
+            previewWifiHostname = (hostname == null || hostname.isBlank()) ? "unknown-host" : hostname.trim();
+            previewWifiIp = (ipAddress == null || ipAddress.isBlank()) ? "No IPv4 address" : ipAddress.trim();
+            previewWifiPort = port > 0 ? port : 5000;
             repaint();
         }
 
@@ -580,7 +592,8 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawLabelValue(g2, "RAM", packet.get("RAMGB", packet.get("RAMTEXT", "--")), 16, infoY + 21, CYAN);
             drawLabelValue(g2, "Up", packet.get("UPTIME", packet.get("UP", "0m")), 16, infoY + 42, WHITE);
             drawLabelValue(g2, "OS", truncate(packet.get("OS", "Linux"), 28), 16, infoY + 63, CYAN);
-            drawLabelValue(g2, "Host", truncate(packet.get("HOST", "fedora"), 28), 16, infoY + 84, LIME);
+            drawLabelValue(g2, "Host", truncate(resolvePreviewHostname(), 28), 16, infoY + 84, LIME);
+            drawLabelValue(g2, "WiFi", previewWifiEnabled ? "ENABLED" : "DISABLED", 16, infoY + 105, previewWifiEnabled ? LIME : ORANGE);
             drawFooter(g2, w, h);
         }
 
@@ -694,14 +707,15 @@ public class JavaSerialFakeDisplay extends JFrame {
             int headerBottom = drawHeader(g2, "Network", w, m);
             int y = headerBottom + 26;
             int row = 25;
-            drawLabelValue(g2, "Host", packet.get("HOST", "fedora"), 42, y, CYAN);
+            drawLabelValue(g2, "Host", truncate(resolvePreviewHostname(), 28), 42, y, CYAN);
             drawLabelValue(g2, "OS", truncate(packet.get("OS", "Fedora Linux 43"), 28), 42, y + row, YELLOW);
-            drawLabelValue(g2, "IP", truncate(packet.get("IP", "192.168.0.104") + ":" + packet.get("TCPPORT", "5000"), 28), 42, y + row * 2, WHITE);
-            drawLabelValue(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "3 KB/s")), 42, y + row * 3, LIME);
-            drawLabelValue(g2, "Up", packet.get("UPNET", packet.get("NETUP", "1 KB/s")), 42, y + row * 4, YELLOW);
-            drawLabelValue(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "212.1 GB")), 42, y + row * 5, CYAN);
-            drawLabelValue(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "4.3 GB")), 42, y + row * 6, YELLOW);
-            drawLabelValue(g2, "Up", packet.get("UPTIME", packet.get("UP", "4h 29m")), 42, y + row * 7, WHITE);
+            drawLabelValue(g2, "IP", truncate(resolvePreviewIpDisplay(), 28), 42, y + row * 2, WHITE);
+            drawLabelValue(g2, "WiFi", previewWifiEnabled ? "WIFI OK" : "WIFI OFF", 42, y + row * 3, previewWifiEnabled ? LIME : ORANGE);
+            drawLabelValue(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "3 KB/s")), 42, y + row * 4, LIME);
+            drawLabelValue(g2, "Up", packet.get("UPNET", packet.get("NETUP", "1 KB/s")), 42, y + row * 5, YELLOW);
+            drawLabelValue(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "212.1 GB")), 42, y + row * 6, CYAN);
+            drawLabelValue(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "4.3 GB")), 42, y + row * 7, YELLOW);
+            drawLabelValue(g2, "Up", packet.get("UPTIME", packet.get("UP", "4h 29m")), 42, y + row * 8, WHITE);
             drawFooter(g2, w, h);
         }
 
@@ -823,6 +837,17 @@ public class JavaSerialFakeDisplay extends JFrame {
         private String truncate(String value, int maxLen) {
             if (value == null) return "--";
             return value.length() <= maxLen ? value : value.substring(0, maxLen);
+        }
+
+        private String resolvePreviewHostname() {
+            return previewWifiEnabled ? previewWifiHostname : packet.get("HOST", "fedora");
+        }
+
+        private String resolvePreviewIpDisplay() {
+            if (!previewWifiEnabled) {
+                return "USB only";
+            }
+            return previewWifiIp + ":" + previewWifiPort;
         }
     }
 }
