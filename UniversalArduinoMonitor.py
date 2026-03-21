@@ -23,7 +23,7 @@ import subprocess
 import time
 import fcntl
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import psutil
 import serial
@@ -164,6 +164,11 @@ def resolve_wifi_port(config: Dict[str, object]) -> Tuple[int, str]:
     return to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000), "R4_WIFI35/wifi_config.h"
 
 
+def normalize_identity_value(text: object, max_len: int = 64) -> str:
+    value = str(text or "").replace("|", "/").replace("\n", " ").replace("\r", " ").strip()
+    return value[:max_len]
+
+
 CONFIG = load_config()
 
 BAUD = to_int(os.environ.get("ARDUINO_MONITOR_BAUD", CONFIG.get("baud")), 115200)
@@ -235,6 +240,9 @@ WIFI_DISCOVERY_PORT = max(1, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVE
 WIFI_DISCOVERY_TIMEOUT = max(0.2, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_TIMEOUT", CONFIG.get("wifi_discovery_timeout")), 1.2))
 WIFI_DISCOVERY_REFRESH = max(5.0, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_REFRESH", CONFIG.get("wifi_discovery_refresh")), 30.0))
 WIFI_DISCOVERY_MAGIC = str(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_MAGIC") or CONFIG.get("wifi_discovery_magic") or "UAM_DISCOVER").strip()
+WIFI_DEVICE_NAME = normalize_identity_value(read_wifi_header_define("WIFI_DEVICE_NAME_VALUE", "R4_WIFI35"), 32) or "R4_WIFI35"
+WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOST_VALUE", ""), 64)
+WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
 
 _gpu_cache = {"ts": 0.0, "data": None}
 _proc_cache = {"ts": 0.0, "data": None}
@@ -294,6 +302,14 @@ def get_hostname() -> str:
         return clean_field(socket.gethostname(), 28)
     except Exception:
         return "--"
+
+
+class WifiDiscoveryRecord(NamedTuple):
+    host: str
+    port: int
+    name: str
+    target_host: str
+    target_hostname: str
 
 
 def get_os_name() -> str:
@@ -561,7 +577,34 @@ def close_socket(sock: Optional[socket.socket]) -> None:
 
 
 
-def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Optional[Tuple[str, int, str]]:
+def identity_matches(expected: str, actual: str) -> bool:
+    expected_value = str(expected or "").strip().lower()
+    actual_value = str(actual or "").strip().lower()
+    if not expected_value:
+        return True
+    if not actual_value:
+        return False
+    return expected_value == actual_value
+
+
+def board_matches_expected(record: WifiDiscoveryRecord) -> bool:
+    if WIFI_DEVICE_NAME and WIFI_DEVICE_NAME != "R4_WIFI35" and not identity_matches(record.name, WIFI_DEVICE_NAME):
+        return False
+    if WIFI_TARGET_HOST and not identity_matches(record.target_host, WIFI_TARGET_HOST):
+        return False
+    if WIFI_TARGET_HOSTNAME and not identity_matches(record.target_hostname, WIFI_TARGET_HOSTNAME):
+        return False
+
+    local_host_ip = get_ip()
+    local_hostname = get_hostname()
+    if record.target_host and not identity_matches(record.target_host, local_host_ip):
+        return False
+    if record.target_hostname and not identity_matches(record.target_hostname, local_hostname):
+        return False
+    return True
+
+
+def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Optional[WifiDiscoveryRecord]:
     text = (message or "").strip()
     parts = text.split("|")
     if len(parts) < 3 or parts[0] != "UAM_HERE":
@@ -572,10 +615,12 @@ def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Optional[Tu
     except Exception:
         return None
     name = parts[3].strip() if len(parts) > 3 and parts[3].strip() else host
-    return host, port, name
+    target_host = parts[4].strip() if len(parts) > 4 else ""
+    target_hostname = parts[5].strip() if len(parts) > 5 else ""
+    return WifiDiscoveryRecord(host, port, name, target_host, target_hostname)
 
 
-def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[Tuple[str, int, str]]:
+def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[WifiDiscoveryRecord]:
     if not WIFI_ENABLED or not WIFI_AUTO_DISCOVERY:
         return None
     wait_time = WIFI_DISCOVERY_TIMEOUT if timeout is None else max(0.2, float(timeout))
@@ -593,7 +638,7 @@ def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[Tuple[str
             except socket.timeout:
                 break
             parsed = parse_discovery_response(data.decode("utf-8", errors="ignore"), addr)
-            if parsed is not None:
+            if parsed is not None and board_matches_expected(parsed):
                 return parsed
     except OSError:
         return None
@@ -606,22 +651,23 @@ def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[Tuple[str
     return None
 
 
-def resolve_wifi_endpoint(cached_host: str, cached_port: int, last_discovery_ts: float) -> Tuple[str, int, float, Optional[str]]:
+def resolve_wifi_endpoint(cached_host: str, cached_port: int, last_discovery_ts: float) -> Tuple[str, int, float, Optional[WifiDiscoveryRecord]]:
     host = cached_host
     port = cached_port if cached_port > 0 else WIFI_PORT
-    discovered_name: Optional[str] = None
+    discovered: Optional[WifiDiscoveryRecord] = None
     should_refresh = WIFI_AUTO_DISCOVERY and (
         not host or (time.time() - last_discovery_ts) >= WIFI_DISCOVERY_REFRESH
     )
     if should_refresh:
         found = discover_wifi_monitor()
         if found is not None:
-            host, port, discovered_name = found
+            host, port = found.host, found.port
+            discovered = found
             last_discovery_ts = time.time()
     if not host:
         host = WIFI_HOST
         port = WIFI_PORT
-    return host, port, last_discovery_ts, discovered_name
+    return host, port, last_discovery_ts, discovered
 
 
 def send_to_usb_devices(payload: str, arduino_serials: Dict[str, serial.Serial]) -> Dict[str, serial.Serial]:
@@ -1258,7 +1304,15 @@ def main() -> None:
         print(f"Wi-Fi TCP port source: {WIFI_PORT_SOURCE} -> {WIFI_PORT}")
         if WIFI_AUTO_DISCOVERY:
             fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
-            print(f"Wi-Fi target: auto-discovery on UDP {WIFI_DISCOVERY_PORT}{fallback}")
+            filters: List[str] = []
+            if WIFI_DEVICE_NAME and WIFI_DEVICE_NAME != "R4_WIFI35":
+                filters.append(f"board={WIFI_DEVICE_NAME}")
+            if WIFI_TARGET_HOST:
+                filters.append(f"target_host={WIFI_TARGET_HOST}")
+            if WIFI_TARGET_HOSTNAME:
+                filters.append(f"target_hostname={WIFI_TARGET_HOSTNAME}")
+            filter_suffix = f" [{', '.join(filters)}]" if filters else ""
+            print(f"Wi-Fi target: auto-discovery on UDP {WIFI_DISCOVERY_PORT}{fallback}{filter_suffix}")
         else:
             print(f"Wi-Fi target: {WIFI_HOST}:{WIFI_PORT}")
     else:
@@ -1315,13 +1369,13 @@ def main() -> None:
                     wifi_first_mode() or not should_prefer_usb_transport(arduino_serials)
                 ) and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
                     last_wifi_attempt = now
-                    wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_name = resolve_wifi_endpoint(
+                    wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_record = resolve_wifi_endpoint(
                         wifi_host_active,
                         wifi_port_active,
                         last_wifi_discovery,
                     )
-                    if discovered_name:
-                        wifi_name_active = discovered_name
+                    if discovered_record is not None:
+                        wifi_name_active = discovered_record.name
                     quiet_wifi = wifi_error_suppressed and (now - last_wifi_error_log) < 30.0
                     candidate = connect_wifi_socket(
                         wifi_host_active,

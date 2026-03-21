@@ -29,6 +29,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
     private static final String DEFAULT_WIFI_PORT = "5000";
+    private static final String DEFAULT_WIFI_BOARD_NAME = "R4_WIFI35";
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -73,6 +74,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
     private final JTextField wifiPortField = new JTextField(6);
+    private final JTextField wifiBoardNameField = new JTextField(14);
+    private final JTextField wifiTargetHostField = new JTextField(14);
+    private final JTextField wifiTargetHostnameField = new JTextField(14);
     private final JLabel wifiPortSourceLabel = new JLabel("Effective source: unknown");
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
@@ -133,6 +137,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto every detected Arduino UNO R3. R4 boards are not affected.");
         arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
+        wifiBoardNameField.setToolTipText("Optional board name flashed into the R4 Wi-Fi sketch and used during discovery matching.");
+        wifiTargetHostField.setToolTipText("Optional intended computer IP/host identity flashed into the R4 Wi-Fi sketch for pairing.");
+        wifiTargetHostnameField.setToolTipText("Optional intended computer hostname flashed into the R4 Wi-Fi sketch for pairing.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from the default/shared/local monitor config files.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP port settings, mirrors the Wi-Fi port into wifi_config.local.h, stops the monitor service, flashes the R4 WiFi sketch, and starts the service again.");
@@ -331,6 +338,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(Box.createHorizontalStrut(12));
         controlsRow.add(new JLabel("Arduino Wi-Fi TCP Port:"));
         controlsRow.add(wifiPortField);
+        controlsRow.add(new JLabel("Board Name:"));
+        controlsRow.add(wifiBoardNameField);
+        controlsRow.add(new JLabel("Target Host/IP:"));
+        controlsRow.add(wifiTargetHostField);
+        controlsRow.add(new JLabel("Target Hostname:"));
+        controlsRow.add(wifiTargetHostnameField);
         wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
         controlsRow.add(wifiPortSourceLabel);
         controlsRow.add(loadMonitorSettingsButton);
@@ -338,8 +351,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         monitorSettingsPanel.add(controlsRow);
 
         JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
+                + "Board name / target host values are also mirrored into <b>wifi_config.local.h</b> so discovery can match each PC with the intended board.<br>"
                 + "Environment override <b>ARDUINO_MONITOR_WIFI_PORT</b> wins at runtime; otherwise local JSON, then shared JSON, then flashed header values are used.<br>"
-                + "For an immediate port change, keep those layers aligned, then stop the service, flash the R4 WiFi sketch, and start the monitor again.</html>");
+                + "For an immediate port or pairing change, keep those layers aligned, then stop the service, flash the R4 WiFi sketch, and start the monitor again.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -924,6 +938,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (text == null || text.isBlank()) {
                 arduinoPortSelector.setSelectedItem("AUTO");
                 wifiPortField.setText("5000");
+                wifiBoardNameField.setText(DEFAULT_WIFI_BOARD_NAME);
+                wifiTargetHostField.setText("");
+                wifiTargetHostnameField.setText("");
                 wifiPortSourceLabel.setText("Effective source: default fallback (5000)");
                 if (verbose) {
                     log("[WARN] Cannot load monitor settings: no monitor config file was found.");
@@ -934,10 +951,16 @@ public class UniversalMonitorControlCenter extends JFrame {
             WifiPortResolution wifiResolution = resolveEffectiveWifiPort();
             arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
             wifiPortField.setText(String.valueOf(wifiResolution.port()));
+            wifiBoardNameField.setText(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME));
+            wifiTargetHostField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""));
+            wifiTargetHostnameField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOSTNAME_VALUE", ""));
             wifiPortSourceLabel.setText("Effective source: " + wifiResolution.source());
             if (verbose) {
                 log("[INFO] Loaded merged monitor connection settings (default/shared/local). Effective Wi-Fi TCP port source: "
-                        + wifiResolution.source() + " (" + wifiResolution.port() + ").");
+                        + wifiResolution.source() + " (" + wifiResolution.port() + ")."
+                        + " Board name=" + normalizeWifiBoardName(wifiBoardNameField.getText().trim())
+                        + ", target host/ip=" + wifiTargetHostField.getText().trim()
+                        + ", target hostname=" + wifiTargetHostnameField.getText().trim() + ".");
             }
         } catch (Exception ex) {
             if (verbose) {
@@ -970,6 +993,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             log("[WARN] Wi-Fi TCP port must be between 1 and 65535.");
             return;
         }
+        String wifiBoardName = normalizeWifiBoardName(wifiBoardNameField.getText() == null ? "" : wifiBoardNameField.getText().trim());
+        String wifiTargetHost = wifiTargetHostField.getText() == null ? "" : wifiTargetHostField.getText().trim();
+        String wifiTargetHostname = wifiTargetHostnameField.getText() == null ? "" : wifiTargetHostnameField.getText().trim();
 
         boolean savedMonitorConfig = false;
         boolean syncedWifiHeader = false;
@@ -992,7 +1018,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             log("[WARN] Failed to save machine-local monitor settings to " + configPath + ": " + ex.getMessage());
         }
 
-        syncedWifiHeader = syncWifiPortIntoLocalHeader(wifiPort);
+        syncedWifiHeader = syncWifiHeaderIntoLocalHeader(wifiPort, wifiBoardName, wifiTargetHost, wifiTargetHostname);
         refreshWifiCredentialsIndicator(false);
 
         if (!savedMonitorConfig) {
@@ -1001,9 +1027,11 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         setTransportIndicator("WIFI", new Color(24, 170, 24));
         if (syncedWifiHeader) {
-            log("[INFO] Synced the same Wi-Fi TCP port into wifi_config.local.h so the flashed sketch uses the matching port immediately.");
+            log("[INFO] Synced Wi-Fi port/pairing settings into wifi_config.local.h so the flashed sketch uses the matching board identity immediately.");
         }
-        log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort + " applies right away.");
+        log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort
+                + ", board name " + wifiBoardName + ", target host/ip " + (wifiTargetHost.isBlank() ? "<unset>" : wifiTargetHost)
+                + ", and target hostname " + (wifiTargetHostname.isBlank() ? "<unset>" : wifiTargetHostname) + " apply right away.");
         reflashWifiBoardsAndRestartMonitor(wifiPort);
     }
 
@@ -1189,12 +1217,27 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort) {
+    private String resolveEffectiveWifiHeaderValue(String defineName, String defaultValue) {
+        String localValue = readWifiHeaderDefine(wifiLocalConfigPath(), defineName, "");
+        if (!localValue.isEmpty()) {
+            return localValue;
+        }
+        return readWifiHeaderDefine(wifiDefaultConfigPath(), defineName, defaultValue);
+    }
+
+    private String normalizeWifiBoardName(String value) {
+        return value == null || value.isBlank() ? DEFAULT_WIFI_BOARD_NAME : value.trim();
+    }
+
+    private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort, String boardName, String targetHost, String targetHostname) {
         Path target = wifiLocalConfigPath();
         String header = "#pragma once\n\n"
                 + "#define WIFI_SSID_VALUE \"" + escapeCppString(ssid) + "\"\n"
                 + "#define WIFI_PASS_VALUE \"" + escapeCppString(password) + "\"\n"
-                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n";
+                + "#define WIFI_TCP_PORT_VALUE " + tcpPort + "\n"
+                + "#define WIFI_DEVICE_NAME_VALUE \"" + escapeCppString(normalizeWifiBoardName(boardName)) + "\"\n"
+                + "#define WIFI_TARGET_HOST_VALUE \"" + escapeCppString(targetHost == null ? "" : targetHost.trim()) + "\"\n"
+                + "#define WIFI_TARGET_HOSTNAME_VALUE \"" + escapeCppString(targetHostname == null ? "" : targetHostname.trim()) + "\"\n";
         try {
             if (target.getParent() != null) {
                 Files.createDirectories(target.getParent());
@@ -1215,7 +1258,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private boolean syncWifiPortIntoLocalHeader(int tcpPort) {
+    private boolean syncWifiHeaderIntoLocalHeader(int tcpPort, String boardName, String targetHost, String targetHostname) {
         String ssid = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_SSID_VALUE", "");
         if (ssid.isEmpty()) {
             ssid = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_SSID_VALUE", "");
@@ -1224,7 +1267,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (password.isEmpty()) {
             password = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "");
         }
-        return saveWifiHeaderSettings(ssid, password, tcpPort);
+        return saveWifiHeaderSettings(
+                ssid,
+                password,
+                tcpPort,
+                boardName,
+                targetHost,
+                targetHostname
+        );
     }
 
     private void restartMonitorServiceForSettingsChange() {
@@ -1373,6 +1423,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         JTextField ssidField = new JTextField(24);
         JPasswordField passwordField = new JPasswordField(24);
         JTextField tcpPortField = new JTextField(8);
+        JTextField boardNameField = new JTextField(24);
+        JTextField targetHostField = new JTextField(24);
+        JTextField targetHostnameField = new JTextField(24);
 
         String savedSsid = readWifiHeaderDefine(localConfigPath, "WIFI_SSID_VALUE", "");
         if (savedSsid.isEmpty()) {
@@ -1395,6 +1448,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             savedTcpPort = readWifiHeaderDefine(defaultConfigPath, "WIFI_TCP_PORT_VALUE", "5000");
         }
         tcpPortField.setText(savedTcpPort.isEmpty() ? "5000" : savedTcpPort);
+        boardNameField.setText(normalizeWifiBoardName(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME)));
+        targetHostField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""));
+        targetHostnameField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOSTNAME_VALUE", ""));
 
         JPanel panel = new JPanel(new GridLayout(0, 1, 0, 8));
         panel.add(new JLabel("Wi-Fi SSID"));
@@ -1403,6 +1459,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(passwordField);
         panel.add(new JLabel("Wi-Fi TCP Port"));
         panel.add(tcpPortField);
+        panel.add(new JLabel("Board Name"));
+        panel.add(boardNameField);
+        panel.add(new JLabel("Target Host/IP"));
+        panel.add(targetHostField);
+        panel.add(new JLabel("Target Hostname"));
+        panel.add(targetHostnameField);
 
         int result = JOptionPane.showConfirmDialog(
                 this,
@@ -1420,6 +1482,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         String ssid = ssidField.getText() == null ? "" : ssidField.getText().trim();
         String password = new String(passwordField.getPassword());
         String tcpPortText = tcpPortField.getText() == null ? "" : tcpPortField.getText().trim();
+        String boardName = normalizeWifiBoardName(boardNameField.getText() == null ? "" : boardNameField.getText().trim());
+        String targetHost = targetHostField.getText() == null ? "" : targetHostField.getText().trim();
+        String targetHostname = targetHostnameField.getText() == null ? "" : targetHostnameField.getText().trim();
         if (ssid.isEmpty()) {
             log("[WARN] Wi-Fi credentials not saved: SSID is required.");
             return;
@@ -1436,7 +1501,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort);
+        boolean savedHeader = saveWifiHeaderSettings(ssid, password, tcpPort, boardName, targetHost, targetHostname);
         Path configPath = monitorLocalConfigPath();
         boolean savedMonitorConfig = false;
         try {
@@ -1455,8 +1520,14 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (savedHeader) {
             wifiPortField.setText(String.valueOf(tcpPort));
+            wifiBoardNameField.setText(boardName);
+            wifiTargetHostField.setText(targetHost);
+            wifiTargetHostnameField.setText(targetHostname);
             refreshWifiCredentialsIndicator(false);
-            log("[INFO] Wi-Fi settings saved for the R4 Wi-Fi sketch (TCP port " + tcpPort + "). Reflash the board to apply them.");
+            log("[INFO] Wi-Fi settings saved for the R4 Wi-Fi sketch (TCP port " + tcpPort
+                    + ", board name " + boardName
+                    + ", target host/ip " + (targetHost.isBlank() ? "<unset>" : targetHost)
+                    + ", target hostname " + (targetHostname.isBlank() ? "<unset>" : targetHostname) + "). Reflash the board to apply them.");
             log("[INFO] Settings were written to wifi_config.local.h, which is git-ignored for safe testing/pushing.");
             if (savedMonitorConfig) {
                 restartMonitorServiceForSettingsChange();
