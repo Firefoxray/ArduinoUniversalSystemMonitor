@@ -145,6 +145,25 @@ def read_wifi_header_define(define_name: str, default_value: str = "") -> str:
     return default_value
 
 
+def resolve_wifi_port(config: Dict[str, object]) -> Tuple[int, str]:
+    env_value = os.environ.get("ARDUINO_MONITOR_WIFI_PORT")
+    if env_value is not None:
+        return to_int(env_value, 5000), "environment override (ARDUINO_MONITOR_WIFI_PORT)"
+
+    local_value = load_json_config(LOCAL_CONFIG_PATH).get("wifi_port")
+    if local_value not in (None, ""):
+        return to_int(local_value, 5000), "monitor_config.local.json"
+
+    for path in (CONFIG_PATH, DEFAULT_CONFIG_PATH):
+        shared_value = load_json_config(path).get("wifi_port")
+        if shared_value not in (None, ""):
+            return to_int(shared_value, 5000), f"shared JSON config ({path.name})"
+
+    if WIFI_LOCAL_CONFIG_PATH.exists():
+        return to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000), "R4_WIFI35/wifi_config.local.h"
+    return to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000), "R4_WIFI35/wifi_config.h"
+
+
 CONFIG = load_config()
 
 BAUD = to_int(os.environ.get("ARDUINO_MONITOR_BAUD", CONFIG.get("baud")), 115200)
@@ -206,14 +225,7 @@ DEBUG_MIRROR_ENABLED = to_bool(CONFIG.get("debug_enabled"), False) and bool(DEBU
 
 WIFI_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_WIFI_ENABLED", CONFIG.get("wifi_enabled")), True)
 WIFI_HOST = str(os.environ.get("ARDUINO_MONITOR_WIFI_HOST") or CONFIG.get("wifi_host") or "").strip()
-_wifi_port_override = os.environ.get("ARDUINO_MONITOR_WIFI_PORT")
-_wifi_port_config = CONFIG.get("wifi_port")
-if _wifi_port_override is not None:
-    WIFI_PORT = to_int(_wifi_port_override, 5000)
-elif _wifi_port_config not in (None, "", 5000, "5000"):
-    WIFI_PORT = to_int(_wifi_port_config, 5000)
-else:
-    WIFI_PORT = to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000)
+WIFI_PORT, WIFI_PORT_SOURCE = resolve_wifi_port(CONFIG)
 PREFER_USB = to_bool(os.environ.get("ARDUINO_MONITOR_PREFER_USB", CONFIG.get("prefer_usb")), True)
 WIFI_RETRY_DELAY = max(2, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_RETRY_DELAY", CONFIG.get("wifi_retry_delay")), 5))
 WIFI_QUICK_RETRY_DELAY = max(0.5, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_QUICK_RETRY_DELAY"), 1.0))
@@ -1243,6 +1255,7 @@ def main() -> None:
     print(f"Secondary disk mount: {static['secondary_mount']}")
     print(f"Preferred transport: {'USB first, Wi-Fi fallback' if WIFI_ENABLED and PREFER_USB else ('Wi-Fi first, USB fallback' if WIFI_ENABLED else 'USB only')}")
     if WIFI_ENABLED:
+        print(f"Wi-Fi TCP port source: {WIFI_PORT_SOURCE} -> {WIFI_PORT}")
         if WIFI_AUTO_DISCOVERY:
             fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
             print(f"Wi-Fi target: auto-discovery on UDP {WIFI_DISCOVERY_PORT}{fallback}")
