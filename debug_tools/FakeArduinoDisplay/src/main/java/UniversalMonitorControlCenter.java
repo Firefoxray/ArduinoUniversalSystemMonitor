@@ -8,6 +8,10 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +21,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.Enumeration;
 import java.util.Set;
 import java.util.List;
 import java.util.Locale;
@@ -93,6 +98,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
     private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
+    private final JLabel previewWifiStateLabel = new JLabel("Disabled");
+    private final JLabel previewWifiHostnameLabel = new JLabel("--");
+    private final JLabel previewWifiIpLabel = new JLabel("--");
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -183,6 +191,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         JTabbedPane mainTabs = buildMainTabs();
 
         add(mainTabs, BorderLayout.CENTER);
+        JPanel footerOutputPanel = buildOutputPanel();
+        footerOutputPanel.setPreferredSize(new Dimension(1000, 240));
+        add(footerOutputPanel, BorderLayout.SOUTH);
 
         lightModeToggle.setSelected(!darkMode);
 
@@ -198,6 +209,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
+        updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
@@ -249,38 +261,31 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JTabbedPane buildMainTabs() {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Dashboard", buildDashboardTab());
-        tabs.addTab("Settings", buildSettingsTab());
+        tabs.addTab("Project", buildProjectTab());
+        tabs.addTab("Flash", buildFlashTab());
         return tabs;
     }
 
     private JPanel buildDashboardTab() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.add(buildQuickStatusPanel(), BorderLayout.NORTH);
+        panel.add(buildDashboardStatusPanel(), BorderLayout.NORTH);
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setResizeWeight(0.62);
+        splitPane.setResizeWeight(0.68);
         splitPane.setLeftComponent(buildPreviewPanel());
-        splitPane.setRightComponent(buildOutputPanel());
+        splitPane.setRightComponent(buildPreviewControlsPanel());
         panel.add(splitPane, BorderLayout.CENTER);
         return panel;
     }
 
-    private JPanel buildSettingsTab() {
+    private JPanel buildProjectTab() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(buildRepoPanel());
         content.add(Box.createVerticalStrut(10));
-        content.add(buildDisplayAndFlashPanel());
-        content.add(Box.createVerticalStrut(10));
         content.add(buildAppManagementPanel());
-        content.add(Box.createVerticalStrut(10));
-        content.add(buildMonitorSettingsPanel());
-        content.add(Box.createVerticalStrut(10));
-        content.add(buildPreviewControlsPanel());
-        content.add(Box.createVerticalStrut(10));
-        content.add(buildSettingsOutputPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -290,20 +295,57 @@ public class UniversalMonitorControlCenter extends JFrame {
         return panel;
     }
 
-    private JPanel buildQuickStatusPanel() {
-        JPanel panel = new JPanel(new GridLayout(3, 1, 10, 10));
-        JPanel servicePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    private JPanel buildFlashTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(buildTransportPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildDisplayAndFlashPanel());
+        content.add(Box.createVerticalStrut(10));
+        content.add(buildMonitorSettingsPanel());
+
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildDashboardStatusPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.add(buildServiceControlsPanel());
+        panel.add(Box.createVerticalStrut(10));
+        panel.add(buildDebugPanel());
+        return panel;
+    }
+
+    private JPanel buildServiceControlsPanel() {
+        JPanel servicePanel = new JPanel(new BorderLayout(10, 8));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         serviceIndicator.setOpaque(true);
         serviceIndicator.setPreferredSize(new Dimension(100, 30));
-        servicePanel.add(serviceOnButton);
-        servicePanel.add(serviceOffButton);
-        servicePanel.add(serviceRestartButton);
-        servicePanel.add(serviceStatusButton);
-        servicePanel.add(new JLabel("Indicator:"));
-        servicePanel.add(serviceIndicator);
+        buttonPanel.add(serviceOnButton);
+        buttonPanel.add(serviceOffButton);
+        buttonPanel.add(serviceRestartButton);
+        buttonPanel.add(serviceStatusButton);
+        buttonPanel.add(new JLabel("Indicator:"));
+        buttonPanel.add(serviceIndicator);
+        servicePanel.add(buttonPanel, BorderLayout.CENTER);
+        lightModeToggle.setFocusable(false);
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        rightPanel.add(lightModeToggle);
+        servicePanel.add(rightPanel, BorderLayout.EAST);
+        servicePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return servicePanel;
+    }
 
-        JPanel debugPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    private JPanel buildDebugPanel() {
+        JPanel debugPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         debugPanel.setBorder(BorderFactory.createTitledBorder("Python Debug Mirror"));
         debugIndicator.setOpaque(true);
         debugIndicator.setPreferredSize(new Dimension(100, 30));
@@ -313,7 +355,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugPanel.add(new JLabel("Indicator:"));
         debugPanel.add(debugIndicator);
 
-        JPanel transportPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        debugPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return debugPanel;
+    }
+
+    private JPanel buildTransportPanel() {
+        JPanel transportPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         transportPanel.setBorder(BorderFactory.createTitledBorder("Monitor Transport Mode"));
         transportIndicator.setOpaque(true);
         transportIndicator.setPreferredSize(new Dimension(120, 30));
@@ -322,39 +369,43 @@ public class UniversalMonitorControlCenter extends JFrame {
         transportPanel.add(wifiModeRefreshButton);
         transportPanel.add(new JLabel("Indicator:"));
         transportPanel.add(transportIndicator);
-
-        panel.add(servicePanel);
-        panel.add(debugPanel);
-        panel.add(transportPanel);
-        return panel;
+        transportPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return transportPanel;
     }
 
     private JPanel buildDisplayAndFlashPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(BorderFactory.createTitledBorder("Display / Flash Settings"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lightModeToggle.setFocusable(false);
-        panel.add(lightModeToggle);
-        panel.add(new JLabel("UNO R3 mode:"));
+
+        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowOne.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rowOne.add(new JLabel("UNO R3 mode:"));
         unoR3ScreenSizeSelector.setSelectedIndex(0);
-        panel.add(unoR3ScreenSizeSelector);
-        panel.add(new JLabel("R4 rotation:"));
-        panel.add(r4RotationSelector);
-        panel.add(new JLabel("R3 rotation:"));
-        panel.add(r3RotationSelector);
-        panel.add(new JLabel("Mega rotation:"));
-        panel.add(megaRotationSelector);
-        panel.add(flashButton);
-        panel.add(customFlashButton);
+        rowOne.add(unoR3ScreenSizeSelector);
+        rowOne.add(new JLabel("R4 rotation:"));
+        rowOne.add(r4RotationSelector);
+        rowOne.add(new JLabel("R3 rotation:"));
+        rowOne.add(r3RotationSelector);
+        rowOne.add(new JLabel("Mega rotation:"));
+        rowOne.add(megaRotationSelector);
+        panel.add(rowOne);
+
+        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rowTwo.add(flashButton);
+        rowTwo.add(customFlashButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        panel.add(customSketchIndicator);
-        panel.add(wifiCredentialsButton);
+        rowTwo.add(customSketchIndicator);
+        rowTwo.add(wifiCredentialsButton);
         wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         wifiCredentialsIndicator.setOpaque(true);
         wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
         wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
-        panel.add(wifiCredentialsIndicator);
+        rowTwo.add(wifiCredentialsIndicator);
+        panel.add(rowTwo);
         return panel;
     }
 
@@ -398,9 +449,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         monitorSettingsPanel.setBorder(BorderFactory.createTitledBorder("Physical Arduino Monitor Connection Settings"));
         monitorSettingsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel controlsRow = new JPanel();
-        controlsRow.setLayout(new BoxLayout(controlsRow, BoxLayout.Y_AXIS));
-        controlsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         arduinoPortSelector.setEditable(true);
         arduinoPortSelector.setPreferredSize(new Dimension(170, arduinoPortSelector.getPreferredSize().height));
 
@@ -414,7 +462,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowOne.add(wifiPortField);
         rowOne.add(new JLabel("Connection Mode:"));
         rowOne.add(wifiConnectionModeSelector);
-        controlsRow.add(rowOne);
+        monitorSettingsPanel.add(rowOne);
 
         JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -434,7 +482,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         targetHostnameLabel.setToolTipText(wifiTargetHostnameField.getToolTipText());
         rowTwo.add(targetHostnameLabel);
         rowTwo.add(wifiTargetHostnameField);
-        controlsRow.add(rowTwo);
+        monitorSettingsPanel.add(rowTwo);
 
         JPanel rowThree = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowThree.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -442,8 +490,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowThree.add(wifiPortSourceLabel);
         rowThree.add(loadMonitorSettingsButton);
         rowThree.add(saveMonitorSettingsButton);
-        controlsRow.add(rowThree);
-        monitorSettingsPanel.add(controlsRow);
+        monitorSettingsPanel.add(rowThree);
 
         JLabel helper = new JLabel("<html><b>Easy setup:</b> choose <b>Auto Discovery</b> if this PC should automatically find its Arduino on your Wi-Fi. Choose <b>Manual / Fixed IP</b> only if you want this PC to always talk to one exact Arduino address.<br>"
                 + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC in Manual mode. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
@@ -462,21 +509,38 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder("Arduino Preview (live from output port)"));
         panel.add(fakeDisplayPanel, BorderLayout.CENTER);
 
+        JPanel footer = new JPanel();
+        footer.setLayout(new BoxLayout(footer, BoxLayout.Y_AXIS));
+        footer.add(buildPreviewWifiPanel());
         JLabel helper = new JLabel("Preview listens live to the Output port path used by the fake serial pair.");
-        helper.setBorder(new EmptyBorder(8, 8, 8, 8));
-        panel.add(helper, BorderLayout.SOUTH);
+        helper.setBorder(new EmptyBorder(4, 8, 8, 8));
+        helper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        footer.add(helper);
+        panel.add(footer, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private JPanel buildPreviewWifiPanel() {
+        JPanel panel = new JPanel(new GridLayout(1, 3, 12, 0));
+        panel.setBorder(new EmptyBorder(8, 8, 4, 8));
+        panel.add(buildInfoValuePanel("Preview Wi-Fi", previewWifiStateLabel));
+        panel.add(buildInfoValuePanel("PC Hostname", previewWifiHostnameLabel));
+        panel.add(buildInfoValuePanel("PC IP", previewWifiIpLabel));
+        return panel;
+    }
+
+    private JPanel buildInfoValuePanel(String title, JLabel valueLabel) {
+        JPanel panel = new JPanel(new BorderLayout(4, 4));
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
+        valueLabel.setBorder(new EmptyBorder(2, 0, 2, 0));
+        panel.add(titleLabel, BorderLayout.NORTH);
+        panel.add(valueLabel, BorderLayout.CENTER);
         return panel;
     }
 
     private JPanel buildOutputPanel() {
         return buildOutputPanel(outputArea, "Command Output / Logs");
-    }
-
-    private JPanel buildSettingsOutputPanel() {
-        JPanel panel = buildOutputPanel(settingsOutputArea, "Command Output / Logs (also shown here while working in Settings)");
-        panel.setPreferredSize(new Dimension(1000, 320));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return panel;
     }
 
     private JPanel buildOutputPanel(JTextArea area, String title) {
@@ -829,6 +893,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 wifiEnabled ? "WIFI" : "USB ONLY",
                 wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24)
         );
+        updatePreviewWifiStatus(wifiEnabled);
         log("[INFO] Cycling " + SERVICE_NAME + " so the Arduino monitor can switch transports cleanly.");
         cycleServiceForTransportChange();
     }
@@ -860,11 +925,55 @@ public class UniversalMonitorControlCenter extends JFrame {
                 log("[INFO] Monitor transport is set to " + mode + " in the merged monitor config.");
             }
             lastWifiEnabledState = enabled;
+            updatePreviewWifiStatus(enabled);
         } catch (Exception ex) {
             setTransportIndicator("UNKNOWN", Color.GRAY);
             lastWifiEnabledState = null;
+            updatePreviewWifiStatus(false);
             log("[WARN] Failed to refresh transport mode: " + ex.getMessage());
         }
+    }
+
+    private void updatePreviewWifiStatus(boolean wifiEnabled) {
+        String hostname = detectLocalHostname();
+        String ipAddress = resolveLocalIpv4Address();
+        previewWifiStateLabel.setText(wifiEnabled ? "Enabled" : "Disabled");
+        previewWifiStateLabel.setForeground(wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24));
+        previewWifiHostnameLabel.setText(hostname);
+        previewWifiIpLabel.setText(ipAddress);
+        int port = parseWifiPort(wifiPortField.getText(), Integer.parseInt(DEFAULT_WIFI_PORT));
+        fakeDisplayPanel.setPreviewWifiStatus(wifiEnabled, hostname, ipAddress, port);
+    }
+
+    private String detectLocalHostname() {
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception ignored) {
+            String envHost = System.getenv("HOSTNAME");
+            return (envHost == null || envHost.isBlank()) ? "unknown-host" : envHost.trim();
+        }
+    }
+
+    private String resolveLocalIpv4Address() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                if (!network.isUp() || network.isLoopback() || network.isVirtual()) {
+                    continue;
+                }
+                Enumeration<InetAddress> addresses = network.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress address = addresses.nextElement();
+                    if (address instanceof Inet4Address && !address.isLoopbackAddress()) {
+                        return address.getHostAddress();
+                    }
+                }
+            }
+        } catch (SocketException ignored) {
+            // Fall through to unknown state below.
+        }
+        return "No IPv4 address";
     }
 
     private Path monitorDefaultConfigPath() {
