@@ -73,6 +73,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
     private final JTextField wifiPortField = new JTextField(6);
+    private final JLabel wifiPortSourceLabel = new JLabel("Effective source: unknown");
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
@@ -330,12 +331,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(Box.createHorizontalStrut(12));
         controlsRow.add(new JLabel("Arduino Wi-Fi TCP Port:"));
         controlsRow.add(wifiPortField);
+        wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
+        controlsRow.add(wifiPortSourceLabel);
         controlsRow.add(loadMonitorSettingsButton);
         controlsRow.add(saveMonitorSettingsButton);
         monitorSettingsPanel.add(controlsRow);
 
         JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
-                + "then stops the service, flashes the R4 WiFi sketch, and starts the monitor again.</html>");
+                + "Environment override <b>ARDUINO_MONITOR_WIFI_PORT</b> wins at runtime; otherwise local JSON, then shared JSON, then flashed header values are used.<br>"
+                + "For an immediate port change, keep those layers aligned, then stop the service, flash the R4 WiFi sketch, and start the monitor again.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -920,18 +924,20 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (text == null || text.isBlank()) {
                 arduinoPortSelector.setSelectedItem("AUTO");
                 wifiPortField.setText("5000");
+                wifiPortSourceLabel.setText("Effective source: default fallback (5000)");
                 if (verbose) {
                     log("[WARN] Cannot load monitor settings: no monitor config file was found.");
                 }
                 return;
             }
             String arduinoPort = readStringConfigValue(text, "arduino_port", "AUTO");
-            int wifiPort = readIntConfigValue(text, "wifi_port", 5000);
-            wifiPort = resolveSharedWifiPort(wifiPort);
+            WifiPortResolution wifiResolution = resolveEffectiveWifiPort();
             arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
-            wifiPortField.setText(String.valueOf(wifiPort));
+            wifiPortField.setText(String.valueOf(wifiResolution.port()));
+            wifiPortSourceLabel.setText("Effective source: " + wifiResolution.source());
             if (verbose) {
-                log("[INFO] Loaded merged monitor connection settings (default/shared/local). ");
+                log("[INFO] Loaded merged monitor connection settings (default/shared/local). Effective Wi-Fi TCP port source: "
+                        + wifiResolution.source() + " (" + wifiResolution.port() + ").");
             }
         } catch (Exception ex) {
             if (verbose) {
@@ -1141,19 +1147,46 @@ public class UniversalMonitorControlCenter extends JFrame {
         return repoPath().resolve("R4_WIFI35/wifi_config.h");
     }
 
-    private int resolveSharedWifiPort(int monitorConfigPort) {
-        String savedTcpPort = readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", "");
-        if (savedTcpPort.isEmpty()) {
-            savedTcpPort = readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT);
+    private WifiPortResolution resolveEffectiveWifiPort() throws IOException {
+        String envWifiPort = System.getenv("ARDUINO_MONITOR_WIFI_PORT");
+        if (envWifiPort != null && !envWifiPort.isBlank()) {
+            return new WifiPortResolution(parseWifiPort(envWifiPort, 5000), "environment override (ARDUINO_MONITOR_WIFI_PORT)");
         }
-        try {
-            int parsed = Integer.parseInt(savedTcpPort.trim());
-            if (parsed >= 1 && parsed <= 65535) {
-                return parsed;
+
+        String localText = readConfigFileIfPresent(monitorLocalConfigPath());
+        String localRawPort = localText == null ? null : findRawConfigValue(localText, "wifi_port");
+        if (localRawPort != null && !localRawPort.isBlank()) {
+            return new WifiPortResolution(parseWifiPort(localRawPort, 5000), "monitor_config.local.json");
+        }
+
+        for (Path path : List.of(monitorSharedConfigPath(), monitorDefaultConfigPath())) {
+            String sourceText = readConfigFileIfPresent(path);
+            String rawPort = sourceText == null ? null : findRawConfigValue(sourceText, "wifi_port");
+            if (rawPort != null && !rawPort.isBlank()) {
+                return new WifiPortResolution(parseWifiPort(rawPort, 5000), "shared JSON config (" + path.getFileName() + ")");
             }
-        } catch (NumberFormatException ignored) {
         }
-        return monitorConfigPort;
+
+        if (Files.exists(wifiLocalConfigPath())) {
+            return new WifiPortResolution(parseWifiPort(
+                    readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
+                    5000
+            ), "R4_WIFI35/wifi_config.local.h");
+        }
+
+        return new WifiPortResolution(parseWifiPort(
+                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
+                5000
+        ), "R4_WIFI35/wifi_config.h");
+    }
+
+    private int parseWifiPort(String rawValue, int defaultValue) {
+        try {
+            int parsed = Integer.parseInt(rawValue.replace("\"", "").trim());
+            return parsed >= 1 && parsed <= 65535 ? parsed : defaultValue;
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
     }
 
     private boolean saveWifiHeaderSettings(String ssid, String password, int tcpPort) {
@@ -1314,6 +1347,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             log("[WARN] Failed to read Wi-Fi config header " + path + ": " + ex.getMessage());
         }
         return defaultValue;
+    }
+
+    private record WifiPortResolution(int port, String source) {
     }
 
     private void cycleServiceForTransportChange() {

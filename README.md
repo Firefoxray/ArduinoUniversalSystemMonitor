@@ -200,6 +200,15 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 
 Default/shared `monitor_config.default.json` + `monitor_config.json` files are created during installation, and a git-ignored `monitor_config.local.json` is also created for per-computer overrides such as serial port and Wi-Fi port changes.
 
+For the Wi-Fi TCP port specifically, the effective precedence is:
+
+1. `ARDUINO_MONITOR_WIFI_PORT` environment override at monitor startup
+2. `monitor_config.local.json` machine-local override
+3. Shared JSON config (`monitor_config.json`, then `monitor_config.default.json`)
+4. Flashed sketch header settings from `R4_WIFI35/wifi_config.local.h` or `R4_WIFI35/wifi_config.h`
+
+If you expect a port change to take effect immediately, keep the machine-local JSON, any environment override, and the flashed sketch header settings in agreement. Changing only one layer can leave the Python monitor and the flashed Arduino sketch listening on different TCP ports until you re-save/reflash/restart the matching pieces.
+
 `install.sh` also writes the systemd service file with your real detected username and install path automatically. The `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
 
 ### Ubuntu / Linux Mint service workaround
