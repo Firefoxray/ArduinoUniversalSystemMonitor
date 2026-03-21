@@ -143,12 +143,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         wifiConnectionModeSelector.setToolTipText("Choose whether this PC discovers R4 Wi-Fi boards automatically or connects to a fixed board IP/hostname.");
-        wifiHostField.setToolTipText("Used when Manual / Fixed IP mode is selected. Enter the intended Arduino IP or hostname for this PC.");
-        wifiBoardNameField.setToolTipText("Optional board name flashed into the R4 Wi-Fi sketch and used during discovery matching.");
-        wifiTargetHostField.setToolTipText("Optional intended computer IP/host identity flashed into the R4 Wi-Fi sketch for pairing.");
-        wifiTargetHostnameField.setToolTipText("Optional intended computer hostname flashed into the R4 Wi-Fi sketch for pairing.");
+        wifiHostField.setToolTipText("Use this only in Manual / Fixed IP mode. Put the Arduino board address that THIS PC should talk to, like 192.168.1.50 or a hostname. Leave it alone in Auto Discovery mode.");
+        wifiBoardNameField.setToolTipText("Easy nickname for the Arduino board, like OFFICE_PC_SCREEN or LIVING_ROOM_MONITOR. This helps Auto Discovery match the right board to the right PC when you have more than one.");
+        wifiTargetHostField.setToolTipText("Optional: the IP address or network name of the PC this Arduino belongs to. Example: 192.168.1.20. Use this when each Arduino should pair with one specific computer.");
+        wifiTargetHostnameField.setToolTipText("Optional: the computer name this Arduino should look for, like GAMING-PC or OFFICE-DESKTOP. This is another way to lock one Arduino to one PC.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
-        loadMonitorSettingsButton.setToolTipText("Loads the current monitor port settings from the default/shared/local monitor config files.");
+        loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
 
         JTabbedPane mainTabs = buildMainTabs();
@@ -380,13 +380,21 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        rowTwo.add(new JLabel("Wi-Fi Host/IP:"));
+        JLabel wifiHostLabel = new JLabel("Wi-Fi Host/IP:");
+        wifiHostLabel.setToolTipText(wifiHostField.getToolTipText());
+        rowTwo.add(wifiHostLabel);
         rowTwo.add(wifiHostField);
-        rowTwo.add(new JLabel("Board Name:"));
+        JLabel boardNameLabel = new JLabel("Board Name:");
+        boardNameLabel.setToolTipText(wifiBoardNameField.getToolTipText());
+        rowTwo.add(boardNameLabel);
         rowTwo.add(wifiBoardNameField);
-        rowTwo.add(new JLabel("Target Host/IP:"));
+        JLabel targetHostLabel = new JLabel("Target Host/IP:");
+        targetHostLabel.setToolTipText(wifiTargetHostField.getToolTipText());
+        rowTwo.add(targetHostLabel);
         rowTwo.add(wifiTargetHostField);
-        rowTwo.add(new JLabel("Target Hostname:"));
+        JLabel targetHostnameLabel = new JLabel("Target Hostname:");
+        targetHostnameLabel.setToolTipText(wifiTargetHostnameField.getToolTipText());
+        rowTwo.add(targetHostnameLabel);
         rowTwo.add(wifiTargetHostnameField);
         controlsRow.add(rowTwo);
 
@@ -399,12 +407,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlsRow.add(rowThree);
         monitorSettingsPanel.add(controlsRow);
 
-        JLabel helper = new JLabel("<html>Writes <b>monitor_config.local.json</b> + <b>R4_WIFI35/wifi_config.local.h</b><br>"
-                + "Choose <b>Auto Discovery (UDP)</b> to search for boards automatically, or <b>Manual / Fixed IP</b> to require a specific <b>wifi_host</b> on this PC.<br>"
-                + "Board name / target host values are also mirrored into <b>wifi_config.local.h</b> so discovery can match each PC with the intended board.<br>"
-                + "Important: <b>Save Monitor Settings & Flash R4 WiFi</b> reflashes every detected UNO R4 WiFi with the same local header, so for unique per-board names/targets you should flash one R4 at a time.<br>"
-                + "Environment override <b>ARDUINO_MONITOR_WIFI_PORT</b> wins at runtime; otherwise local JSON, then shared JSON, then flashed header values are used.<br>"
-                + "For an immediate port or pairing change, keep those layers aligned, then stop the service, flash the R4 WiFi sketch, and start the monitor again.</html>");
+        JLabel helper = new JLabel("<html><b>Easy setup:</b> choose <b>Auto Discovery</b> if this PC should automatically find its Arduino on your Wi-Fi. Choose <b>Manual / Fixed IP</b> only if you want this PC to always talk to one exact Arduino address.<br>"
+                + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC in Manual mode. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
+                + "If you have one Arduino per PC, give each board its own name and flash them <b>one at a time</b> so each one keeps the correct target PC info.<br>"
+                + "<b>Load Monitor Settings</b> reloads the saved config files from this computer, including your last local values if you already saved them. That lets you review them before flashing again.<br>"
+                + "<b>Save Monitor Settings & Flash R4 WiFi</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1255,9 +1262,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiHostField.setEnabled(manualMode);
         wifiHostField.setEditable(manualMode);
         if (!manualMode) {
-            wifiHostField.setToolTipText("Auto Discovery (UDP) is selected, so wifi_host is not required on this PC.");
+            wifiHostField.setToolTipText("Auto Discovery is on, so this box is not needed. The PC will try to find a matching Arduino on the network by itself.");
         } else {
-            wifiHostField.setToolTipText("Manual / Fixed IP mode is selected. Enter the intended Arduino IP or hostname for this PC.");
+            wifiHostField.setToolTipText("Manual / Fixed IP mode is on. Enter the exact Arduino address that this PC should use, like 192.168.1.50.");
         }
     }
 
