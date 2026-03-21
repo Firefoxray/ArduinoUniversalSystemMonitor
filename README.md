@@ -3,8 +3,8 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 9.0 beta
-**Last Modified:** March 20, 2026  
+**Version:** 9.1 beta
+**Last Modified:** March 21, 2026  
 
 ---
 
@@ -123,6 +123,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.12  - Added Control Center UNO R3 mode selection, moved the visible display toggles into the action area, and added monitor connection port settings directly in the Control Center
 8.13  - Removed duplicate nested R4 Wi-Fi monitor/sketch copies so the repo now uses one root Python monitor, one root monitor_config.json, and one canonical R4_WIFI35 sketch folder
 9.0 beta  - Added layered default/shared/local monitor config support for per-computer port overrides, refreshed README screenshots with the newer captures, and bumped the project/control-center release branding to version 9 beta
+9.1 beta  - Updated the Control Center/desktop launcher icon to use the existing arduinoPreview screenshot image and bumped all current project branding to v9.1 beta
 ```
 
 ---

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Universal Linux Arduino system monitor sender v9.0 beta.
+"""Universal Linux Arduino system monitor sender v9.1 beta.
 
 Originally built on Fedora for an Arduino desktop monitor, but intended to run
 across Linux desktops in general.
@@ -1292,7 +1292,7 @@ def main() -> None:
         return
 
     static = get_cached_static()
-    print("Running Universal Arduino Monitor 9.0 beta for Linux")
+    print("Running Universal Arduino Monitor 9.1 beta for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
     print(f"Active network interface: {static['iface']}")
     print(f"OS: {static['os_name']}")
