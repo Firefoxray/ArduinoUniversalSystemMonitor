@@ -140,12 +140,15 @@ The root shell scripts are intentionally kept as stable user-facing wrappers so 
 
 ## Confirmed Working Systems
 
+- Linux Mint 22.3  
+- Fedora KDE 43
+
+//LEGACY
+
 - Windows 11 Pro  
 - Windows 10 LTSC  
 - Windows 7 Ultimate  
-- Linux Mint 22.3  
-- Fedora KDE 43  
-
+ 
 ---
 
 # Installation
