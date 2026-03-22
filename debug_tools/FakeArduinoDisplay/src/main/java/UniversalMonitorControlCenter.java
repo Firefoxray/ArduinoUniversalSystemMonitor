@@ -20,6 +20,7 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.Set;
@@ -42,6 +43,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final int DISPLAY_ROTATION_NORMAL = 1;
     private static final int DISPLAY_ROTATION_FLIPPED = 3;
     private static final int FLASH_SERVICE_RESTART_DELAY_SECONDS = 2;
+    private static final List<String> REQUIRED_ARDUINO_CORE_PACKAGES = List.of(
+            "arduino:avr",
+            "arduino:renesas_uno"
+    );
+    private static final List<ArduinoLibraryRequirement> REQUIRED_ARDUINO_LIBRARIES = List.of(
+            new ArduinoLibraryRequirement("MCUFRIEND_kbv", "MCUFRIEND_kbv", "MCUFRIEND_kbv.h"),
+            new ArduinoLibraryRequirement("Adafruit GFX Library", "Adafruit GFX Library", "Adafruit_GFX.h"),
+            new ArduinoLibraryRequirement("Adafruit TouchScreen", "TouchScreen", "TouchScreen.h"),
+            new ArduinoLibraryRequirement("DIYables TFT Touch Shield", "DIYables TFT Touch Shield", "DIYables_TFT_Touch_Shield.h")
+    );
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -2159,6 +2170,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 .append(" && cd ")
                 .append(escape(repoPath().toString()))
                 .append(" && ")
+                .append(buildArduinoDependencyInstallCommand(arduinoCli))
+                .append(" && ")
                 .append(escape(arduinoCli))
                 .append(" compile --fqbn arduino:renesas_uno:unor4wifi ")
                 .append(escape(sketchPath));
@@ -2207,6 +2220,50 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiCredentialsIndicator.setBackground(credentialsSaved ? new Color(24, 170, 24) : new Color(170, 80, 24));
             wifiCredentialsIndicator.setForeground(Color.WHITE);
         });
+    }
+
+    private String buildArduinoDependencyInstallCommand(String arduinoCli) {
+        String cli = escape(arduinoCli);
+        StringBuilder command = new StringBuilder();
+        command.append("index_updated=0");
+
+        for (String corePackage : REQUIRED_ARDUINO_CORE_PACKAGES) {
+            command.append(" && if ! ").append(cli).append(" core list | grep -q '^")
+                    .append(escapeSingleQuotes(corePackage)).append("'; then ")
+                    .append("echo \"[INFO] Installing missing Arduino core ").append(escapeDoubleQuotes(corePackage)).append(".\"")
+                    .append(" && if [ \"$index_updated\" -eq 0 ]; then ")
+                    .append(cli).append(" core update-index && index_updated=1; fi")
+                    .append(" && ").append(cli).append(" core install ").append(escape(corePackage))
+                    .append("; else echo \"[INFO] Arduino core ").append(escapeDoubleQuotes(corePackage)).append(" already installed.\"; fi");
+        }
+
+        for (ArduinoLibraryRequirement requirement : REQUIRED_ARDUINO_LIBRARIES) {
+            command.append(" && if ")
+                    .append(cli).append(" lib list | grep -Fqi ").append(escape(requirement.detectName()))
+                    .append(" || find \"$HOME/Arduino/libraries\" -maxdepth 4 -type f -name ")
+                    .append(escape(requirement.headerName()))
+                    .append(" 2>/dev/null | grep -q .; then ")
+                    .append("echo \"[INFO] Arduino library ").append(escapeDoubleQuotes(requirement.installName())).append(" already installed.\"")
+                    .append("; else ")
+                    .append("echo \"[INFO] Installing missing Arduino library ").append(escapeDoubleQuotes(requirement.installName())).append(".\"")
+                    .append(" && if [ \"$index_updated\" -eq 0 ]; then ")
+                    .append(cli).append(" lib update-index && index_updated=1; fi")
+                    .append(" && (")
+                    .append(cli).append(" lib install ").append(escape(requirement.installName()))
+                    .append(" || ").append(cli).append(" lib install ").append(escape(requirement.detectName()))
+                    .append(")")
+                    .append("; fi");
+        }
+
+        return command.toString();
+    }
+
+    private String escapeSingleQuotes(String value) {
+        return value.replace("\\", "\\\\").replace("'", "'\"'\"'");
+    }
+
+    private String escapeDoubleQuotes(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private String readWifiHeaderDefine(Path path, String defineName, String defaultValue) {
@@ -3179,6 +3236,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         public String toString() {
             return label + " [" + port + "]";
         }
+    }
+
+    private record ArduinoLibraryRequirement(String installName, String detectName, String headerName) {
     }
 
     private static String loadAppVersion() {
