@@ -208,14 +208,14 @@ During `./install.sh`, the script installs system packages, Python dependencies,
 
 Default/shared `config/monitor_config.default.json` + `config/monitor_config.json` files are created during installation, and a git-ignored `config/monitor_config.local.json` is also created for per-computer overrides such as serial port and Wi-Fi port changes.
 
-For the Wi-Fi TCP port specifically, the effective precedence is:
+For the Wi-Fi TCP port specifically, the active monitor-side precedence is now:
 
 1. `ARDUINO_MONITOR_WIFI_PORT` environment override at monitor startup
 2. `config/monitor_config.local.json` machine-local override
 3. Shared JSON config (`config/monitor_config.json`, then `config/monitor_config.default.json`)
-4. Flashed sketch header settings from `R4_WIFI35/wifi_config.local.h` or `R4_WIFI35/wifi_config.h`
+4. Built-in JSON default (`5000`)
 
-If you expect a port change to take effect immediately, keep the machine-local JSON, any environment override, and the flashed sketch header settings in agreement. Changing only one layer can leave the Python monitor and the flashed Arduino sketch listening on different TCP ports until you re-save/reflash/restart the matching pieces.
+The Control Center treats the JSON monitor config as the single source of truth for the active Wi-Fi TCP port. When you save the port in the GUI, it also mirrors that same value into `R4_WIFI35/wifi_config.local.h` for the next flash and into the local backup helper file used to repopulate the Wi-Fi dialog, so the Python monitor, reopened GUI, flash preview, and flashed R4 sketch stay aligned automatically.
 
 `install.sh` also writes the systemd service file with your real detected username and install path automatically. The service now points at the root `UniversalArduinoMonitor.py`, and the `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
 

@@ -167,9 +167,8 @@ def resolve_wifi_port(config: Dict[str, object]) -> Tuple[int, str]:
         if shared_value not in (None, ""):
             return to_int(shared_value, 5000), f"shared JSON config ({path.name})"
 
-    if WIFI_LOCAL_CONFIG_PATH.exists():
-        return to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000), "R4_WIFI35/wifi_config.local.h"
-    return to_int(read_wifi_header_define("WIFI_TCP_PORT_VALUE", "5000"), 5000), "R4_WIFI35/wifi_config.h"
+    merged_value = config.get("wifi_port")
+    return to_int(merged_value, 5000), "merged JSON config default"
 
 
 def normalize_identity_value(text: object, max_len: int = 64) -> str:
