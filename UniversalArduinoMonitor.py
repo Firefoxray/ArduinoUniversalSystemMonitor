@@ -1307,7 +1307,7 @@ def main() -> None:
     print(f"Primary GPU vendor guess: {static['gpu_vendor']}")
     print(f"Primary disk mount: {ROOT_MOUNT}")
     print(f"Secondary disk mount: {static['secondary_mount']}")
-    print(f"Preferred transport: {'USB first, Wi-Fi fallback' if WIFI_ENABLED and PREFER_USB else ('Wi-Fi first, USB fallback' if WIFI_ENABLED else 'USB only')}")
+    print(f"Transport mode: {'Simultaneous USB + Wi-Fi outputs' if WIFI_ENABLED else 'USB only'}")
     if WIFI_ENABLED:
         print(f"Wi-Fi TCP port source: {WIFI_PORT_SOURCE} -> {WIFI_PORT}")
         if WIFI_AUTO_DISCOVERY:
@@ -1369,13 +1369,8 @@ def main() -> None:
                 payload = build_arduino_payload(snapshot)
 
                 wifi_retry_delay = current_wifi_retry_delay(monitor_start, last_wifi_success, now)
-                if WIFI_ENABLED and wifi_first_mode() and arduino_serials:
-                    print("Wi-Fi mode active; closing USB serial session so the UNO R4 can accept TCP data.")
-                    arduino_serials = close_serials(arduino_serials)
 
-                if WIFI_ENABLED and (
-                    wifi_first_mode() or not should_prefer_usb_transport(arduino_serials)
-                ) and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
+                if WIFI_ENABLED and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
                     last_wifi_attempt = now
                     wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_record = resolve_wifi_endpoint(
                         wifi_host_active,
@@ -1405,32 +1400,14 @@ def main() -> None:
                             last_wifi_error_log = now
                             wifi_error_suppressed = True
 
-                should_probe_usb = (
-                    not WIFI_ENABLED
-                    or PREFER_USB
-                    or wifi_sock is None
-                )
-                if should_probe_usb and (now - last_discovery_attempt) >= RETRY_DELAY:
+                if (now - last_discovery_attempt) >= RETRY_DELAY:
                     last_discovery_attempt = now
                     arduino_serials = connect_arduinos(arduino_serials)
-
-                usb_preferred = should_prefer_usb_transport(arduino_serials)
-
-                if usb_preferred and wifi_sock is not None:
-                    print("USB transport detected; closing Wi-Fi session until USB disconnects.")
-                    close_socket(wifi_sock)
-                    wifi_sock = None
-                    if WIFI_AUTO_DISCOVERY:
-                        wifi_host_active = ""
-                        wifi_name_active = None
-
-                if wifi_sock is not None and wifi_first_mode() and arduino_serials:
-                    arduino_serials = close_serials(arduino_serials)
 
                 if arduino_serials:
                     arduino_serials = send_to_usb_devices(payload, arduino_serials)
 
-                if not usb_preferred and wifi_sock is not None:
+                if wifi_sock is not None:
                     wifi_sock = send_to_wifi_device(payload, wifi_sock)
                     if wifi_sock is None:
                         last_wifi_attempt = now
