@@ -43,7 +43,7 @@ const int SCREEN_W = 320;
 const int SCREEN_H = 240;
 const uint8_t TOTAL_PAGES = 5;
 const uint8_t GRAPH_POINTS = 16;
-const uint8_t FIELD_COUNT = 64;
+const uint8_t FIELD_COUNT = 69;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
@@ -86,7 +86,7 @@ char proc1Ram[7] = "--", proc2Ram[7] = "--", proc3Ram[7] = "--", proc4Ram[7] = "
 char storage1[22] = "Disk: --";
 char storage2[22] = "Disk: --";
 char storage3[22] = "Disk: --";
-char opticalStr[14] = "--";
+char ramUsageText[16] = "--";
 
 // Streaming parser state (replaces giant line buffer)
 char fieldBuf[40];
@@ -289,7 +289,7 @@ static void updateStorage() {
   drawKV(30, F("S1"), storage1, WHITE);
   drawKV(44, F("S2"), storage2, WHITE);
   drawKV(58, F("S3"), storage3, WHITE);
-  drawKV(76, F("Opt"), opticalStr, CYAN);
+  drawKV(76, F("RAM"), ramUsageText, CYAN);
   drawKV(96, F("DnTot"), downTotalStr, GREEN);
   drawKV(110, F("UpTot"), upTotalStr, YELLOW);
   drawKV(128, F("OS"), osName, ORANGE);
@@ -402,33 +402,33 @@ static void applyField(uint8_t idx, const char* value) {
     case 28: safeCopy(upTotalStr, sizeof(upTotalStr), value); break;
     case 29: safeCopy(cpuFreqStr, sizeof(cpuFreqStr), value); break;
 
-    case 30: gpuPct = parsePercentField(value); break;
-    case 31: safeCopy(gpuTemp, sizeof(gpuTemp), value); break;
-    case 32: gpuMemUsed = (uint16_t)atoi(value); break;
-    case 33: gpuMemTotal = (uint16_t)atoi(value); break;
-    case 34: gpuMemPct = parsePercentField(value); break;
-    case 35: gpuClock = (uint16_t)atoi(value); break;
-    case 36: safeCopy(gpuName, sizeof(gpuName), value); break;
+    case 30: safeCopy(ramUsageText, sizeof(ramUsageText), value); break;
+    case 31: gpuPct = parsePercentField(value); break;
+    case 32: safeCopy(gpuTemp, sizeof(gpuTemp), value); break;
+    case 33: gpuMemUsed = (uint16_t)atoi(value); break;
+    case 34: gpuMemTotal = (uint16_t)atoi(value); break;
+    case 35: gpuMemPct = parsePercentField(value); break;
+    case 36: gpuClock = (uint16_t)atoi(value); break;
+    case 37: safeCopy(gpuName, sizeof(gpuName), value); break;
 
-    case 37: safeCopy(proc1, sizeof(proc1), value); break;
-    case 38: safeCopy(proc2, sizeof(proc2), value); break;
-    case 39: safeCopy(proc3, sizeof(proc3), value); break;
-    case 40: safeCopy(proc4, sizeof(proc4), value); break;
+    case 38: safeCopy(proc1, sizeof(proc1), value); break;
+    case 39: safeCopy(proc2, sizeof(proc2), value); break;
+    case 40: safeCopy(proc3, sizeof(proc3), value); break;
+    case 41: safeCopy(proc4, sizeof(proc4), value); break;
 
-    case 43: safeCopy(proc1Cpu, sizeof(proc1Cpu), value); break;
-    case 44: safeCopy(proc2Cpu, sizeof(proc2Cpu), value); break;
-    case 45: safeCopy(proc3Cpu, sizeof(proc3Cpu), value); break;
-    case 46: safeCopy(proc4Cpu, sizeof(proc4Cpu), value); break;
+    case 44: safeCopy(proc1Cpu, sizeof(proc1Cpu), value); break;
+    case 45: safeCopy(proc2Cpu, sizeof(proc2Cpu), value); break;
+    case 46: safeCopy(proc3Cpu, sizeof(proc3Cpu), value); break;
+    case 47: safeCopy(proc4Cpu, sizeof(proc4Cpu), value); break;
 
-    case 49: safeCopy(proc1Ram, sizeof(proc1Ram), value); break;
-    case 50: safeCopy(proc2Ram, sizeof(proc2Ram), value); break;
-    case 51: safeCopy(proc3Ram, sizeof(proc3Ram), value); break;
-    case 52: safeCopy(proc4Ram, sizeof(proc4Ram), value); break;
+    case 50: safeCopy(proc1Ram, sizeof(proc1Ram), value); break;
+    case 51: safeCopy(proc2Ram, sizeof(proc2Ram), value); break;
+    case 52: safeCopy(proc3Ram, sizeof(proc3Ram), value); break;
+    case 53: safeCopy(proc4Ram, sizeof(proc4Ram), value); break;
 
-    case 55: safeCopy(storage1, sizeof(storage1), value); break;
-    case 56: safeCopy(storage2, sizeof(storage2), value); break;
-    case 57: safeCopy(storage3, sizeof(storage3), value); break;
-    case 62: safeCopy(opticalStr, sizeof(opticalStr), value); break;
+    case 56: safeCopy(storage1, sizeof(storage1), value); break;
+    case 57: safeCopy(storage2, sizeof(storage2), value); break;
+    case 58: safeCopy(storage3, sizeof(storage3), value); break;
     default: break;
   }
 }
