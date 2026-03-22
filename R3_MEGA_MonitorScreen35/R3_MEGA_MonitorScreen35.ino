@@ -6,6 +6,13 @@
 #endif
 #include <string.h>
 #include <stdlib.h>
+#if __has_include("app_version.generated.h")
+#include "app_version.generated.h"
+#endif
+
+#ifndef APP_VERSION
+#define APP_VERSION "unknown version"
+#endif
 
 #ifndef DISPLAY_ROTATION_VALUE
 #define DISPLAY_ROTATION_VALUE 1
@@ -143,6 +150,9 @@ static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.setTextColor(CYAN);
   tft.setTextSize(2);
   tft.setCursor(10, 8); tft.print(title);
+  tft.setTextColor(WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(360, 12); tft.print(APP_VERSION);
   tft.drawFastHLine(0, 34, SCREEN_W, WHITE);
   tft.setTextColor(WHITE);
   tft.setTextSize(1);

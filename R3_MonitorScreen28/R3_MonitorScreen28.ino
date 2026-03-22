@@ -8,6 +8,13 @@
 #include <TouchScreen.h>
 #include <string.h>
 #include <stdlib.h>
+#if __has_include("app_version.generated.h")
+#include "app_version.generated.h"
+#endif
+
+#ifndef APP_VERSION
+#define APP_VERSION "unknown version"
+#endif
 
 #ifndef DISPLAY_ROTATION_VALUE
 #define DISPLAY_ROTATION_VALUE 1
@@ -166,6 +173,8 @@ static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.setTextColor(CYAN);
   tft.setTextSize(1);
   tft.setCursor(6, 7); tft.print(title);
+  tft.setTextColor(WHITE);
+  tft.setCursor(244, 7); tft.print(APP_VERSION);
   tft.drawFastHLine(0, 22, SCREEN_W, WHITE);
   tft.setTextColor(WHITE);
   tft.setCursor(6, 229); tft.print(F("Tap "));
