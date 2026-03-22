@@ -15,10 +15,10 @@ UNO_R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-28}"
 
 case "$UNO_R3_SCREEN_SIZE" in
     28)
-        R3_SKETCH="R3_MonitorScreen28"
+        R3_SKETCH_DIR="$PROJECT_DIR/R3_MonitorScreen28"
         ;;
     35)
-        R3_SKETCH="R3_MonitorScreen35"
+        R3_SKETCH_DIR="$PROJECT_DIR/R3_MonitorScreen35"
         ;;
     *)
         echo "Invalid UNO_R3_SCREEN_SIZE: $UNO_R3_SCREEN_SIZE (expected 28 or 35)" >&2
@@ -26,10 +26,10 @@ case "$UNO_R3_SCREEN_SIZE" in
         ;;
 esac
 
-R3_MEGA_SKETCH="R3_MEGA_MonitorScreen35"
+R3_MEGA_SKETCH_DIR="$PROJECT_DIR/R3_MEGA_MonitorScreen35"
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
-R4_SKETCH="R4_WIFI35"
+R4_SKETCH_DIR="$PROJECT_DIR/R4_WIFI35"
 
 REQUIRED_LIBS=(
     "MCUFRIEND_kbv|MCUFRIEND_kbv|MCUFRIEND_kbv.h"
@@ -42,7 +42,7 @@ APP_VERSION="v9.2 BETA"
 
 echo "==== Ray Co Arduino Auto Flasher $APP_VERSION ===="
 
-cd "$(dirname "$0")"
+cd "$PROJECT_DIR"
 
 ensure_arduino_cli() {
     local local_bin_dir="$HOME/.local/bin"
@@ -363,15 +363,15 @@ flash_boards() {
         if grep -q "Arduino UNO R4 WiFi" <<< "$line"; then
             board_name="Arduino UNO R4 WiFi"
             fqbn="$R4_FQBN"
-            sketch="$R4_SKETCH"
+            sketch="$R4_SKETCH_DIR"
         elif grep -Eq "Arduino Mega|Mega 2560" <<< "$line"; then
             board_name="Arduino Mega 2560"
             fqbn="$R3_MEGA_FQBN"
-            sketch="$R3_MEGA_SKETCH"
+            sketch="$R3_MEGA_SKETCH_DIR"
         elif grep -q "Arduino UNO" <<< "$line"; then
             board_name="Arduino UNO R3"
             fqbn="$R3_FQBN"
-            sketch="$R3_SKETCH"
+            sketch="$R3_SKETCH_DIR"
         else
             echo "Skipping unsupported device on $port"
             continue
@@ -379,18 +379,18 @@ flash_boards() {
 
         echo
         echo "[3/4] Flashing $board_name on $port"
-        echo "      Sketch: $sketch"
+        echo "      Sketch: $(basename "$sketch") ($sketch)"
         echo "      FQBN:   $fqbn"
 
         compile_key="$fqbn|$sketch"
         if [[ -z "${compiled_sketches[$compile_key]:-}" ]]; then
-            echo "      Compiling $sketch once for all matching boards..."
+            echo "      Compiling $(basename "$sketch") once for all matching boards..."
             echo "      Verifying generated headers/config values before compile:"
             print_effective_flash_settings
             arduino-cli compile --fqbn "$fqbn" "$sketch" || exit 1
             compiled_sketches[$compile_key]=1
         else
-            echo "      Reusing existing compile output for $sketch"
+            echo "      Reusing existing compile output for $(basename "$sketch")"
         fi
 
         if upload_with_retry "$port" "$fqbn" "$sketch" "$board_name"; then
@@ -432,8 +432,8 @@ R3_MEGA_BOARD_COUNT="$(count_r3_and_mega_boards)"
 if [[ "$R3_MEGA_BOARD_COUNT" -gt 0 ]]; then
     echo
     echo "Detected $R3_MEGA_BOARD_COUNT Arduino UNO R3 / Mega board(s)."
-    echo "Arduino UNO R3 boards will use $R3_SKETCH based on UNO_R3_SCREEN_SIZE=$UNO_R3_SCREEN_SIZE."
-    echo "Arduino Mega boards will use $R3_MEGA_SKETCH."
+    echo "Arduino UNO R3 boards will use $(basename "$R3_SKETCH_DIR") based on UNO_R3_SCREEN_SIZE=$UNO_R3_SCREEN_SIZE."
+    echo "Arduino Mega boards will use $(basename "$R3_MEGA_SKETCH_DIR")."
 fi
 
 flash_boards
