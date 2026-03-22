@@ -435,22 +435,36 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowOne.add(megaRotationSelector);
         panel.add(rowOne);
 
-        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel rowTwo = new JPanel();
+        rowTwo.setLayout(new BoxLayout(rowTwo, BoxLayout.Y_AXIS));
         rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        rowTwo.add(flashButton);
-        rowTwo.add(flashPreviewButton);
-        rowTwo.add(customFlashButton);
+
+        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        actionRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        actionRow.add(flashButton);
+        actionRow.add(flashPreviewButton);
+        actionRow.add(customFlashButton);
+        actionRow.add(wifiCredentialsButton);
+        actionRow.add(killRunningTaskButton);
+        actionRow.add(alwaysShowFlashPreviewToggle);
+        rowTwo.add(actionRow);
+
+        JPanel indicatorRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        indicatorRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        rowTwo.add(customSketchIndicator);
-        rowTwo.add(wifiCredentialsButton);
-        rowTwo.add(killRunningTaskButton);
-        rowTwo.add(alwaysShowFlashPreviewToggle);
+        indicatorRow.add(Box.createHorizontalStrut(flashButton.getPreferredSize().width
+                + flashPreviewButton.getPreferredSize().width + 20));
+        indicatorRow.add(Box.createHorizontalStrut(customFlashButton.getPreferredSize().width / 6));
+        indicatorRow.add(customSketchIndicator);
+        indicatorRow.add(Box.createHorizontalStrut(wifiCredentialsButton.getPreferredSize().width - 20));
         wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         wifiCredentialsIndicator.setOpaque(true);
         wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
         wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
-        rowTwo.add(wifiCredentialsIndicator);
+        indicatorRow.add(wifiCredentialsIndicator);
+        rowTwo.add(indicatorRow);
+
         panel.add(rowTwo);
         return panel;
     }

@@ -38,7 +38,7 @@ const uint8_t GRAPH_POINTS = 32;
 const uint8_t CPU_THREADS = 16;
 const uint8_t PROCESS_ROWS = 6;
 const uint8_t STORAGE_LINES = 7;
-const uint8_t FIELD_COUNT = 64;
+const uint8_t FIELD_COUNT = 69;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
@@ -73,7 +73,9 @@ char upTotalStr[20] = "--";
 char cpuFreqStr[18] = "--";
 char gpuTemp[12] = "--";
 char gpuName[34] = "--";
-char opticalStr[20] = "--";
+char batteryPctStr[8] = "--";
+char batteryStateStr[20] = "--";
+char batteryModeStr[12] = "--";
 
 char procName[PROCESS_ROWS][20];
 char procCpu[PROCESS_ROWS][8];
@@ -259,7 +261,7 @@ static void updateStorage() {
   for (uint8_t i = 0; i < STORAGE_LINES; i++) {
     drawStorageRow(48 + (i * 30), i, storageLine[i], (i % 2 == 0) ? CYAN : YELLOW);
   }
-  drawKV(268, F("Opt"), opticalStr, ORANGE, 76);
+  drawKV(268, F("Batt"), batteryStateStr, ORANGE, 76);
 }
 
 static void drawGraphSeries(const uint8_t* values, uint16_t color) {
@@ -336,19 +338,21 @@ static void applyField(uint8_t idx, const char* value) {
   else if (idx == 27) safeCopy(downTotalStr, sizeof(downTotalStr), value);
   else if (idx == 28) safeCopy(upTotalStr, sizeof(upTotalStr), value);
   else if (idx == 29) safeCopy(cpuFreqStr, sizeof(cpuFreqStr), value);
-  else if (idx == 30) gpuPct = parsePercentField(value);
-  else if (idx == 31) safeCopy(gpuTemp, sizeof(gpuTemp), value);
-  else if (idx == 32) gpuMemUsed = (uint16_t)atoi(value);
-  else if (idx == 33) gpuMemTotal = (uint16_t)atoi(value);
-  else if (idx == 34) gpuMemPct = parsePercentField(value);
-  else if (idx == 35) gpuClock = (uint16_t)atoi(value);
-  else if (idx == 36) safeCopy(gpuName, sizeof(gpuName), value);
-  else if (idx >= 37 && idx <= 42) safeCopy(procName[idx - 37], sizeof(procName[0]), value);
-  else if (idx >= 43 && idx <= 48) safeCopy(procCpu[idx - 43], sizeof(procCpu[0]), value);
-  else if (idx >= 49 && idx <= 54) safeCopy(procRam[idx - 49], sizeof(procRam[0]), value);
-  else if (idx >= 55 && idx <= 61) safeCopy(storageLine[idx - 55], sizeof(storageLine[0]), value);
-  else if (idx == 62) safeCopy(opticalStr, sizeof(opticalStr), value);
-  else if (idx == 63) safeCopy(ramUsageText, sizeof(ramUsageText), value);
+  else if (idx == 30) safeCopy(ramUsageText, sizeof(ramUsageText), value);
+  else if (idx == 31) gpuPct = parsePercentField(value);
+  else if (idx == 32) safeCopy(gpuTemp, sizeof(gpuTemp), value);
+  else if (idx == 33) gpuMemUsed = (uint16_t)atoi(value);
+  else if (idx == 34) gpuMemTotal = (uint16_t)atoi(value);
+  else if (idx == 35) gpuMemPct = parsePercentField(value);
+  else if (idx == 36) gpuClock = (uint16_t)atoi(value);
+  else if (idx == 37) safeCopy(gpuName, sizeof(gpuName), value);
+  else if (idx >= 38 && idx <= 43) safeCopy(procName[idx - 38], sizeof(procName[0]), value);
+  else if (idx >= 44 && idx <= 49) safeCopy(procCpu[idx - 44], sizeof(procCpu[0]), value);
+  else if (idx >= 50 && idx <= 55) safeCopy(procRam[idx - 50], sizeof(procRam[0]), value);
+  else if (idx >= 56 && idx <= 62) safeCopy(storageLine[idx - 56], sizeof(storageLine[0]), value);
+  else if (idx == 64) safeCopy(batteryPctStr, sizeof(batteryPctStr), value);
+  else if (idx == 65) safeCopy(batteryStateStr, sizeof(batteryStateStr), value);
+  else if (idx == 66) safeCopy(batteryModeStr, sizeof(batteryModeStr), value);
 }
 
 static void finalizeField() {

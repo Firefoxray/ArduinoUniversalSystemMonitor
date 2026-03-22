@@ -231,6 +231,17 @@ SECONDARY_MOUNT_CANDIDATES = [
 STORAGE_LINES = 8
 PROCESS_ROWS = 6
 CPU_THREADS_TO_SEND = 16
+ARDUINO_PAYLOAD_FIELD_COUNT = 69
+ARDUINO_PAYLOAD_LAYOUT = (
+    "0=cpu_total, 1-16=per_core, 17=ram_pct, 18=disk0_pct, 19=disk1_pct, "
+    "20=cpu_temp, 21=os_name, 22=host_name, 23=ip, 24=uptime, 25=down_rate, "
+    "26=up_rate, 27=down_total, 28=up_total, 29=cpu_freq, 30=ram_usage_text, "
+    "31=gpu_util, 32=gpu_temp, 33=gpu_mem_used, 34=gpu_mem_total, "
+    "35=gpu_mem_pct, 36=gpu_clock, 37=gpu_name, 38-43=proc_names, "
+    "44-49=proc_cpu, 50-55=proc_ram, 56-63=storage_lines, 64=battery_pct, "
+    "65=battery_state, 66=battery_mode, 67=extra_battery_label, "
+    "68=extra_battery_state"
+)
 EXTRA_BATTERY_SLOTS = 1
 
 DEBUG_MIRROR_PORT = str(os.environ.get("ARDUINO_MONITOR_DEBUG_PORT") or CONFIG.get("debug_port") or "").strip()
@@ -1442,6 +1453,11 @@ def build_arduino_payload(snapshot) -> str:
         else:
             fields.append("--")
             fields.append("--")
+    if len(fields) != ARDUINO_PAYLOAD_FIELD_COUNT:
+        raise RuntimeError(
+            f"Arduino payload field count mismatch: built {len(fields)} fields, "
+            f"expected {ARDUINO_PAYLOAD_FIELD_COUNT}"
+        )
     return "|".join(fields) + "\n"
 
 
@@ -1535,6 +1551,8 @@ def main() -> None:
         print(f"Debug mirror enabled on: {DEBUG_MIRROR_PORT}")
     else:
         print("Debug mirror disabled (set debug_enabled + debug_port in config/monitor_config.json).")
+    print(f"Arduino payload field count: {ARDUINO_PAYLOAD_FIELD_COUNT}")
+    print(f"Arduino payload layout: {ARDUINO_PAYLOAD_LAYOUT}")
 
     psutil.cpu_percent(interval=None)
     psutil.cpu_percent(interval=None, percpu=True)

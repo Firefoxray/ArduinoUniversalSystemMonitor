@@ -92,7 +92,7 @@ const int CPU_THREADS = 16;
 const int PROCESS_ROWS = 6;
 const int STORAGE_LINES = 8;
 const int EXTRA_BATTERY_SLOTS = 1;
-const int FIELD_COUNT = 70;
+const int FIELD_COUNT = 69;
 const char* APP_VERSION = "v9.4";
 
 int cpuHistory[GRAPH_POINTS];

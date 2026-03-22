@@ -251,7 +251,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private static final int PROCESS_ROWS = 6;
         private static final int STORAGE_LINES = 8;
         private static final int EXTRA_BATTERY_SLOTS = 1;
-        private static final int FIELD_COUNT = 70;
+        private static final int FIELD_COUNT = 69;
 
         private final Map<String, String> values = new LinkedHashMap<>();
         private String raw = "";
@@ -518,7 +518,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             if (homePage) {
                 String leftText = "Ray Co. System Monitor " + versionText;
-                g2.setFont(fitFont(g2, leftText, Font.BOLD, 11, 8, 220));
+                g2.setFont(fitFont(g2, leftText, Font.BOLD, 13, 9, 250));
                 FontMetrics leftMetrics = g2.getFontMetrics();
                 int baseline = top + leftMetrics.getAscent() + 2;
                 g2.setColor(CYAN);
@@ -526,7 +526,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
                 g2.setFont(fitFont(g2, wifiText, Font.PLAIN, 9, 8, 80));
                 FontMetrics wifiMetrics = g2.getFontMetrics();
-                int wifiX = Math.max(left + leftMetrics.stringWidth(leftText) + 12, (w - wifiMetrics.stringWidth(wifiText)) / 2);
+                int wifiX = Math.max(left + leftMetrics.stringWidth(leftText) + 20, (w - wifiMetrics.stringWidth(wifiText)) / 2 + 12);
                 wifiX = Math.min(wifiX, counterX - wifiMetrics.stringWidth(wifiText) - 12);
                 g2.setColor(previewWifiEnabled ? LIME : ORANGE);
                 g2.drawString(wifiText, wifiX, baseline);
