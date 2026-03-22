@@ -131,6 +131,22 @@ run_as_repo_user() {
     fi
 }
 
+git_remote_has_updates() {
+    local branch="${1:-main}"
+    local local_head remote_line remote_head
+
+    local_head="$(run_as_repo_user "git rev-parse HEAD")"
+    remote_line="$(run_as_repo_user "git ls-remote --heads origin $(printf '%q' "$branch")")"
+    remote_head="${remote_line%%[[:space:]]*}"
+
+    if [[ -z "$local_head" || -z "$remote_head" ]]; then
+        echo "Unable to determine local or remote git commit for branch $branch." >&2
+        return 2
+    fi
+
+    [[ "$local_head" != "$remote_head" ]]
+}
+
 build_control_center() {
     local build_command="cd debug_tools/FakeArduinoDisplay && ./gradlew fatJar installDist"
     local jdk_home=""
@@ -171,9 +187,19 @@ fi
 detect_repo_owner
 cd "$PROJECT_DIR"
 
-echo "[1/7] Pulling latest changes from GitHub..."
-run_as_repo_user "git pull origin main"
-fix_repo_ownership
+echo "[1/7] Checking GitHub for new changes..."
+if git_remote_has_updates main; then
+    echo "Updates found on origin/main. Pulling latest changes from GitHub..."
+    run_as_repo_user "git pull origin main"
+    fix_repo_ownership
+else
+    status=$?
+    if [[ $status -eq 2 ]]; then
+        exit 1
+    fi
+    echo "Project is already up to date on origin/main. Nothing to pull or reinstall."
+    exit 0
+fi
 
 echo "[2/7] Ensuring Python virtual environment exists..."
 rebuild_venv_if_needed

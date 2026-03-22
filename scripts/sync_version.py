@@ -6,7 +6,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERSION_FILE = REPO_ROOT / 'VERSION'
-ARDUINO_HEADER = REPO_ROOT / 'R4_WIFI35' / 'app_version.generated.h'
+ARDUINO_HEADERS = [
+    REPO_ROOT / 'R4_WIFI35' / 'app_version.generated.h',
+    REPO_ROOT / 'R3_MonitorScreen28' / 'app_version.generated.h',
+    REPO_ROOT / 'R3_MonitorScreen35' / 'app_version.generated.h',
+    REPO_ROOT / 'R3_MEGA_MonitorScreen35' / 'app_version.generated.h',
+]
 
 def load_version() -> str:
     value = VERSION_FILE.read_text(encoding='utf-8').strip()
@@ -28,8 +33,9 @@ def sync_generated_files(version: str) -> list[str]:
     changed: list[str] = []
     escaped = version.replace('\\', '\\\\').replace('"', '\\"')
     header = f'#pragma once\n\n#define APP_VERSION "{escaped}"\n'
-    if write_if_changed(ARDUINO_HEADER, header):
-        changed.append(str(ARDUINO_HEADER.relative_to(REPO_ROOT)))
+    for header_path in ARDUINO_HEADERS:
+        if write_if_changed(header_path, header):
+            changed.append(str(header_path.relative_to(REPO_ROOT)))
     return changed
 
 

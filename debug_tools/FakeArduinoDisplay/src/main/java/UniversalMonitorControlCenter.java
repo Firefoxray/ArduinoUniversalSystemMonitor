@@ -182,7 +182,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     public UniversalMonitorControlCenter() {
         super(APP_NAME + " " + APP_VERSION);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        setSize(1500, 940);
+        setSize(1340, 940);
         setLocationRelativeTo(null);
         applyWindowIcon();
 
@@ -332,7 +332,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -351,7 +351,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -414,29 +414,30 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildTransportPanel() {
-        JPanel transportPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        JPanel transportPanel = new JPanel();
+        transportPanel.setLayout(new BoxLayout(transportPanel, BoxLayout.Y_AXIS));
         transportPanel.setBorder(BorderFactory.createTitledBorder("Monitor Transport Mode"));
+
+        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        modeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         transportIndicator.setOpaque(true);
         transportIndicator.setPreferredSize(new Dimension(120, 30));
-        transportPanel.add(wifiModeOnButton);
-        transportPanel.add(wifiModeOffButton);
-        transportPanel.add(wifiModeRefreshButton);
-        transportPanel.add(new JLabel("Mode:"));
-        transportPanel.add(transportIndicator);
-        flashTransportIndicator.setOpaque(true);
-        flashTransportIndicator.setPreferredSize(new Dimension(120, 30));
-        transportPanel.add(Box.createHorizontalStrut(12));
-        transportPanel.add(new JLabel("Wi-Fi:"));
-        transportPanel.add(flashTransportIndicator);
-        transportPanel.add(Box.createHorizontalStrut(12));
-        transportPanel.add(wifiCredentialsButton);
+        modeRow.add(wifiModeOnButton);
+        modeRow.add(wifiModeOffButton);
+        modeRow.add(wifiModeRefreshButton);
+        modeRow.add(new JLabel("Mode:"));
+        modeRow.add(transportIndicator);
+        modeRow.add(Box.createHorizontalStrut(12));
+        modeRow.add(wifiCredentialsButton);
         wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 8));
         wifiCredentialsIndicator.setOpaque(true);
         wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
         wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
-        transportPanel.add(wifiCredentialsIndicator);
-        transportPanel.add(Box.createHorizontalStrut(12));
-        transportPanel.add(killRunningTaskButton);
+        modeRow.add(wifiCredentialsIndicator);
+        modeRow.add(Box.createHorizontalStrut(12));
+        modeRow.add(killRunningTaskButton);
+
+        transportPanel.add(modeRow);
         transportPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return transportPanel;
     }
@@ -656,7 +657,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         JScrollPane scrollPane = new JScrollPane(area);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -946,9 +947,79 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void runUpdateWorkflow() {
         Path repo = repoPath();
         Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
+        UpdateCheckResult checkResult = checkForRemoteUpdate(repo);
+        if (!checkResult.canProceed()) {
+            log("[WARN] " + checkResult.message());
+            JOptionPane.showMessageDialog(this, checkResult.message(), "Update check failed", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (!checkResult.updateAvailable()) {
+            log("[INFO] " + checkResult.message());
+            JOptionPane.showMessageDialog(this, checkResult.message(), "Already up to date", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
         String command = "cd " + escape(repo.toString()) + " && chmod +x update.sh UniversalMonitorControlCenter.sh && ./update.sh";
         runCommand(command, repo.toFile(), "Update and restart Control Center", true, true, () -> relaunchApplication(launcher));
     }
+
+    private UpdateCheckResult checkForRemoteUpdate(Path repo) {
+        String branch = runGitQuery(repo, "git rev-parse --abbrev-ref HEAD");
+        if (branch == null || branch.isBlank() || "HEAD".equals(branch)) {
+            return new UpdateCheckResult(false, false, "Could not determine the current git branch for the selected repo.");
+        }
+
+        String localHead = runGitQuery(repo, "git rev-parse HEAD");
+        if (localHead == null || localHead.isBlank()) {
+            return new UpdateCheckResult(false, false, "Could not read the local git commit for the selected repo.");
+        }
+
+        String remoteHeadLine = runGitQuery(repo, "git ls-remote --heads origin " + escape(branch));
+        if (remoteHeadLine == null || remoteHeadLine.isBlank()) {
+            return new UpdateCheckResult(false, false, "Could not contact origin/" + branch + " to check for updates.");
+        }
+
+        String remoteHead = remoteHeadLine.split("\\s+")[0].trim();
+        if (remoteHead.isBlank()) {
+            return new UpdateCheckResult(false, false, "Git returned an invalid remote hash for origin/" + branch + ".");
+        }
+
+        if (localHead.equals(remoteHead)) {
+            return new UpdateCheckResult(true, false, "This project is already up to date on branch '" + branch + "'.");
+        }
+
+        return new UpdateCheckResult(true, true, "New updates are available on origin/" + branch + ". Running the update now.");
+    }
+
+    private String runGitQuery(Path repo, String commandText) {
+        try {
+            Process process = new ProcessBuilder("bash", "-lc", "cd " + escape(repo.toString()) + " && " + commandText)
+                    .directory(repo.toFile())
+                    .redirectErrorStream(true)
+                    .start();
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (output.length() > 0) {
+                        output.append("\n");
+                    }
+                    output.append(line);
+                }
+            }
+            int code = process.waitFor();
+            String outputText = output.toString().trim();
+            if (code != 0) {
+                log("[WARN] Git query failed (" + commandText + "): " + (outputText.isBlank() ? "exit code " + code : outputText));
+                return null;
+            }
+            return outputText;
+        } catch (Exception ex) {
+            log("[WARN] Git query failed (" + commandText + "): " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private record UpdateCheckResult(boolean canProceed, boolean updateAvailable, String message) {}
 
     private void runInstallAndDesktopWorkflow() {
         Path repo = repoPath();
