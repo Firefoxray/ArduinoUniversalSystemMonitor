@@ -11,6 +11,8 @@
 #endif
 #include <WiFiS3.h>
 #include <WiFiUdp.h>
+#include <EEPROM.h>
+#include <string.h>
 
 #ifndef DISPLAY_ROTATION_VALUE
 #define DISPLAY_ROTATION_VALUE 1
@@ -60,12 +62,16 @@ const char* TARGET_HOST = WIFI_TARGET_HOST_VALUE;
 const char* TARGET_HOSTNAME = WIFI_TARGET_HOSTNAME_VALUE;
 const char* DISCOVERY_MAGIC = "UAM_DISCOVER";
 const char* DISCOVERY_RESPONSE_PREFIX = "UAM_HERE";
+const char* PAIRING_MAGIC = "UAM_PAIR";
+const char* RESET_PAIRING_COMMAND = "CMD|RESET_WIFI_PAIRING|CONFIRM";
+const unsigned long WIFI_CLIENT_AUTH_TIMEOUT_MS = 3000;
 
 WiFiServer server(TCP_PORT);
 WiFiClient wifiClient;
 WiFiUDP discoveryUdp;
 String usbLine = "";
 String wifiLine = "";
+String wifiAuthLine = "";
 String linkType = "NONE";
 String arduinoWifiIp = "--";
 bool wifiSuspendedForUsb = false;
@@ -75,6 +81,8 @@ const unsigned long wifiRetryIntervalMs = 8000;
 const unsigned long usbPriorityHoldMs = 15000;
 bool usbSessionActive = false;
 bool wifiConfigured = false;
+bool wifiClientAuthorized = false;
+unsigned long wifiClientConnectedAtMs = 0;
 
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
@@ -128,6 +136,175 @@ String procName[PROCESS_ROWS];
 String procCpu[PROCESS_ROWS];
 String procRam[PROCESS_ROWS];
 String storageLine[STORAGE_LINES];
+
+struct PairingStore {
+  char magic[8];
+  char targetHost[64];
+  char targetHostname[64];
+};
+
+const int PAIRING_EEPROM_ADDR = 0;
+PairingStore pairingStore = {};
+String pairedTargetHost = "";
+String pairedTargetHostname = "";
+
+String cleanIdentityValue(String value, int maxLen) {
+  value.trim();
+  value.replace("|", "/");
+  value.replace("\n", " ");
+  value.replace("\r", " ");
+  if (value.length() > maxLen) {
+    value = value.substring(0, maxLen);
+  }
+  return value;
+}
+
+bool identityMatches(String expected, String actual) {
+  expected.trim();
+  actual.trim();
+  expected.toLowerCase();
+  actual.toLowerCase();
+  if (expected.length() == 0) return true;
+  if (actual.length() == 0) return false;
+  return expected == actual;
+}
+
+void copyStringToBuffer(const String& value, char* buffer, size_t bufferSize) {
+  if (bufferSize == 0) return;
+  size_t len = value.length();
+  if (len >= bufferSize) len = bufferSize - 1;
+  memcpy(buffer, value.c_str(), len);
+  buffer[len] = '\0';
+}
+
+void persistPairing(String host, String hostname) {
+  host = cleanIdentityValue(host, sizeof(pairingStore.targetHost) - 1);
+  hostname = cleanIdentityValue(hostname, sizeof(pairingStore.targetHostname) - 1);
+
+  memset(&pairingStore, 0, sizeof(pairingStore));
+  memcpy(pairingStore.magic, "UAMPR1", 6);
+  copyStringToBuffer(host, pairingStore.targetHost, sizeof(pairingStore.targetHost));
+  copyStringToBuffer(hostname, pairingStore.targetHostname, sizeof(pairingStore.targetHostname));
+  EEPROM.put(PAIRING_EEPROM_ADDR, pairingStore);
+  pairedTargetHost = host;
+  pairedTargetHostname = hostname;
+}
+
+void clearPersistedPairing() {
+  memset(&pairingStore, 0, sizeof(pairingStore));
+  EEPROM.put(PAIRING_EEPROM_ADDR, pairingStore);
+  pairedTargetHost = "";
+  pairedTargetHostname = "";
+}
+
+void loadPersistedPairing() {
+  EEPROM.get(PAIRING_EEPROM_ADDR, pairingStore);
+  if (strncmp(pairingStore.magic, "UAMPR1", 6) == 0) {
+    pairedTargetHost = cleanIdentityValue(String(pairingStore.targetHost), sizeof(pairingStore.targetHost) - 1);
+    pairedTargetHostname = cleanIdentityValue(String(pairingStore.targetHostname), sizeof(pairingStore.targetHostname) - 1);
+  } else {
+    pairedTargetHost = "";
+    pairedTargetHostname = "";
+  }
+
+  String configuredTargetHost = cleanIdentityValue(String(TARGET_HOST), 63);
+  String configuredTargetHostname = cleanIdentityValue(String(TARGET_HOSTNAME), 63);
+  if (configuredTargetHost.length() > 0 || configuredTargetHostname.length() > 0) {
+    pairedTargetHost = configuredTargetHost;
+    pairedTargetHostname = configuredTargetHostname;
+  }
+}
+
+String effectiveTargetHost() {
+  return pairedTargetHost;
+}
+
+String effectiveTargetHostname() {
+  return pairedTargetHostname;
+}
+
+bool flashedTargetsConfigured() {
+  String configuredTargetHost = cleanIdentityValue(String(TARGET_HOST), 63);
+  String configuredTargetHostname = cleanIdentityValue(String(TARGET_HOSTNAME), 63);
+  return configuredTargetHost.length() > 0 || configuredTargetHostname.length() > 0;
+}
+
+void emitControlResponse(const char* source, const String& message) {
+  if (strcmp(source, "USB") == 0) {
+    Serial.println(message);
+  } else if (strcmp(source, "WIFI") == 0 && wifiClient) {
+    wifiClient.println(message);
+  }
+}
+
+bool handleControlCommand(String line, const char* source) {
+  line.trim();
+  if (line != RESET_PAIRING_COMMAND) {
+    return false;
+  }
+
+  clearPersistedPairing();
+  if (wifiClient) {
+    wifiClient.stop();
+  }
+  wifiClientAuthorized = false;
+  wifiClientConnectedAtMs = 0;
+  wifiAuthLine = "";
+  wifiLine = "";
+
+  if (flashedTargetsConfigured()) {
+    emitControlResponse(source, "PAIRING_RESET:EEPROM_CLEARED_FLASH_TARGET_STILL_ACTIVE");
+  } else {
+    emitControlResponse(source, "PAIRING_RESET:OK");
+  }
+
+  Serial.println("PAIRING RESET: stored Wi-Fi pairing cleared. Next valid monitor may pair.");
+  return true;
+}
+
+void rejectWifiClient(const char* reason) {
+  if (wifiClient) {
+    wifiClient.print(String("PAIR_REJECT|") + reason + "\n");
+    wifiClient.stop();
+  }
+  wifiClientAuthorized = false;
+  wifiClientConnectedAtMs = 0;
+  wifiAuthLine = "";
+  wifiLine = "";
+}
+
+bool authorizeWifiClientLine(String line) {
+  line.trim();
+  if (!line.startsWith(String(PAIRING_MAGIC) + "|")) {
+    rejectWifiClient("missing_handshake");
+    return false;
+  }
+
+  int sep1 = line.indexOf('|');
+  int sep2 = line.indexOf('|', sep1 + 1);
+  if (sep1 < 0 || sep2 < 0) {
+    rejectWifiClient("bad_handshake");
+    return false;
+  }
+
+  String clientHostname = cleanIdentityValue(line.substring(sep1 + 1, sep2), 63);
+  String clientHost = cleanIdentityValue(line.substring(sep2 + 1), 63);
+  String expectedHost = effectiveTargetHost();
+  String expectedHostname = effectiveTargetHostname();
+
+  if (!identityMatches(expectedHost, clientHost) || !identityMatches(expectedHostname, clientHostname)) {
+    rejectWifiClient("wrong_host");
+    return false;
+  }
+
+  if (expectedHost.length() == 0 && expectedHostname.length() == 0) {
+    persistPairing(clientHost, clientHostname);
+  }
+
+  wifiClientAuthorized = true;
+  wifiClient.print("PAIR_OK\n");
+  return true;
+}
 
 
 bool wifiCredentialsProvided() {
@@ -262,7 +439,7 @@ void handleDiscoveryRequests() {
   }
 
   refreshArduinoWifiIp();
-  String response = String(DISCOVERY_RESPONSE_PREFIX) + "|" + arduinoWifiIp + "|" + String(TCP_PORT) + "|" + DEVICE_NAME + "|" + TARGET_HOST + "|" + TARGET_HOSTNAME;
+  String response = String(DISCOVERY_RESPONSE_PREFIX) + "|" + arduinoWifiIp + "|" + String(TCP_PORT) + "|" + DEVICE_NAME + "|" + effectiveTargetHost() + "|" + effectiveTargetHostname();
   discoveryUdp.beginPacket(discoveryUdp.remoteIP(), discoveryUdp.remotePort());
   discoveryUdp.print(response);
   discoveryUdp.endPacket();
@@ -663,7 +840,11 @@ bool splitFields(String s, String out[], int expectedCount) {
   return true;
 }
 
-void parseIncomingLine(String s) {
+void parseIncomingLine(String s, const char* source) {
+  if (handleControlCommand(s, source)) {
+    return;
+  }
+
   String f[FIELD_COUNT];
   if (!splitFields(s, f, FIELD_COUNT)) return;
 
@@ -706,7 +887,7 @@ void parseIncomingLine(String s) {
 
 void parseIncomingChar(char c, String &buffer, const char* source) {
   if (c == '\n') {
-    parseIncomingLine(buffer);
+    parseIncomingLine(buffer, source);
     buffer = "";
     linkType = source;
   } else if (c != '\r') {
@@ -823,15 +1004,43 @@ void handleWifiInput() {
       }
       wifiClient = incoming;
       wifiClient.setTimeout(5);
+      wifiClientAuthorized = false;
+      wifiClientConnectedAtMs = millis();
+      wifiAuthLine = "";
+      wifiLine = "";
     }
   }
 
   while (wifiClient && wifiClient.connected() && wifiClient.available()) {
-    parseIncomingChar((char)wifiClient.read(), wifiLine, "WIFI");
+    char incomingChar = (char)wifiClient.read();
+    if (!wifiClientAuthorized) {
+      if (incomingChar == '\r') {
+        continue;
+      }
+      if (incomingChar == '\n') {
+        if (!authorizeWifiClientLine(wifiAuthLine)) {
+          return;
+        }
+        wifiAuthLine = "";
+        continue;
+      }
+      if (wifiAuthLine.length() < 96) {
+        wifiAuthLine += incomingChar;
+      }
+      continue;
+    }
+    parseIncomingChar(incomingChar, wifiLine, "WIFI");
+  }
+
+  if (wifiClient && !wifiClientAuthorized && wifiClientConnectedAtMs > 0 && millis() - wifiClientConnectedAtMs > WIFI_CLIENT_AUTH_TIMEOUT_MS) {
+    rejectWifiClient("timeout");
+    return;
   }
 
   if (wifiClient && !wifiClient.connected()) {
     wifiClient.stop();
+    wifiClientAuthorized = false;
+    wifiClientConnectedAtMs = 0;
   }
 
 
@@ -841,6 +1050,7 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
   Serial.println("BOOT: setup start");
+  loadPersistedPairing();
 
   tft.begin();
   tft.setRotation(DISPLAY_ROTATION_VALUE);
