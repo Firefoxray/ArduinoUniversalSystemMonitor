@@ -1815,17 +1815,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         }
 
-        if (Files.exists(wifiLocalConfigPath())) {
-            return new WifiPortResolution(parseWifiPort(
-                    readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
-                    5000
-            ), "R4_WIFI35/wifi_config.local.h");
-        }
-
-        return new WifiPortResolution(parseWifiPort(
-                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
-                5000
-        ), "R4_WIFI35/wifi_config.h");
+        return new WifiPortResolution(parseWifiPort(DEFAULT_WIFI_PORT, 5000), "merged JSON config default");
     }
 
     private int parseWifiPort(String rawValue, int defaultValue) {
@@ -1870,12 +1860,18 @@ public class UniversalMonitorControlCenter extends JFrame {
                 readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_PASS_VALUE", ""),
                 readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_PASS_VALUE", "")
         );
-        String tcpPort = firstNonBlank(
-                properties.getProperty("tcp_port"),
-                readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", ""),
-                readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
-                DEFAULT_WIFI_PORT
-        );
+        String tcpPort = DEFAULT_WIFI_PORT;
+        try {
+            tcpPort = String.valueOf(resolveEffectiveWifiPort().port());
+        } catch (IOException ex) {
+            log("[WARN] Failed to resolve active Wi-Fi TCP port from monitor config: " + ex.getMessage());
+            tcpPort = firstNonBlank(
+                    properties.getProperty("tcp_port"),
+                    readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", ""),
+                    readWifiHeaderDefine(wifiDefaultConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT),
+                    DEFAULT_WIFI_PORT
+            );
+        }
         String boardName = normalizeWifiBoardName(firstNonBlank(
                 properties.getProperty("board_name"),
                 resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME),
@@ -1959,7 +1955,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private boolean syncWifiHeaderIntoLocalHeader(int tcpPort, String boardName, String targetHost, String targetHostname) {
         WifiSettingsSnapshot snapshot = loadSavedWifiSettings();
-        return saveWifiHeaderSettings(
+        boolean savedHeader = saveWifiHeaderSettings(
                 snapshot.ssid(),
                 snapshot.password(),
                 tcpPort,
@@ -1967,6 +1963,15 @@ public class UniversalMonitorControlCenter extends JFrame {
                 targetHost,
                 targetHostname
         );
+        boolean savedBackup = saveWifiSettingsBackup(
+                snapshot.ssid(),
+                snapshot.password(),
+                tcpPort,
+                boardName,
+                targetHost,
+                targetHostname
+        );
+        return savedHeader && savedBackup;
     }
 
     private void restartMonitorServiceForSettingsChange() {
