@@ -9,9 +9,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -22,19 +19,7 @@ import java.util.Map;
 public class JavaSerialFakeDisplay extends JFrame {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
-    private static final String APP_VERSION = loadAppVersion();
-
-    private static String loadAppVersion() {
-        Path versionFile = Paths.get(System.getProperty("user.dir")).toAbsolutePath().resolve("VERSION");
-        try {
-            String version = Files.readString(versionFile, StandardCharsets.UTF_8).trim();
-            if (!version.isEmpty()) {
-                return version;
-            }
-        } catch (Exception ignored) {
-        }
-        return "unknown version";
-    }
+    private static final String APP_VERSION = ProjectVersion.loadVersion(JavaSerialFakeDisplay.class);
 
     private final JComboBox<PortOption> portCombo = new JComboBox<>();
     private final JTextField manualPortField = new JTextField(22);

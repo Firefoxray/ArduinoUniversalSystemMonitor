@@ -7,8 +7,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERSION_FILE = REPO_ROOT / 'VERSION'
 ARDUINO_HEADER = REPO_ROOT / 'R4_WIFI35' / 'app_version.generated.h'
-JAVA_VERSION_PROPERTIES = REPO_ROOT / 'debug_tools' / 'FakeArduinoDisplay' / 'src' / 'main' / 'resources' / 'version.properties'
-
 
 def load_version() -> str:
     value = VERSION_FILE.read_text(encoding='utf-8').strip()
@@ -32,14 +30,11 @@ def sync_generated_files(version: str) -> list[str]:
     header = f'#pragma once\n\n#define APP_VERSION "{escaped}"\n'
     if write_if_changed(ARDUINO_HEADER, header):
         changed.append(str(ARDUINO_HEADER.relative_to(REPO_ROOT)))
-    props = f'app.version={version}\n'
-    if write_if_changed(JAVA_VERSION_PROPERTIES, props):
-        changed.append(str(JAVA_VERSION_PROPERTIES.relative_to(REPO_ROOT)))
     return changed
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Sync generated version files from the repo VERSION file.')
+    parser = argparse.ArgumentParser(description='Sync generated Arduino version files from the repo VERSION file.')
     parser.add_argument('--print-version', action='store_true')
     parser.add_argument('--sync', action='store_true')
     args = parser.parse_args()

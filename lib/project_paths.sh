@@ -38,6 +38,28 @@ find_repo_root() {
     return 1
 }
 
+project_version_file() {
+    local project_dir="${1:-$(pwd)}"
+    printf '%s\n' "$project_dir/VERSION"
+}
+
+read_project_version() {
+    local project_dir="${1:-$(pwd)}"
+    local version_file
+    version_file="$(project_version_file "$project_dir")"
+
+    if [[ -f "$version_file" ]]; then
+        local version
+        version="$(tr -d '\r' < "$version_file" | head -n 1)"
+        if [[ -n "$version" ]]; then
+            printf '%s\n' "$version"
+            return 0
+        fi
+    fi
+
+    printf 'unknown version\n'
+}
+
 config_dir() {
     local project_dir="${1:-$(pwd)}"
     printf '%s\n' "$project_dir/config"
