@@ -18,7 +18,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.StandardOpenOption;
-import java.util.Properties;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -26,12 +25,13 @@ import java.util.Enumeration;
 import java.util.Set;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
 
 public class UniversalMonitorControlCenter extends JFrame {
 
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
-    private static final String APP_VERSION = loadAppVersion();
+    private static final String APP_VERSION = ProjectVersion.loadVersion(UniversalMonitorControlCenter.class);
     private static final String APP_VERSION_DISPLAY = APP_VERSION;
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final String WIFI_SETTINGS_BACKUP_FILE = ".control_center_wifi_settings.properties";
@@ -277,19 +277,27 @@ public class UniversalMonitorControlCenter extends JFrame {
         repoRow.add(openFolderButton);
         panel.add(repoRow);
 
-        JPanel credentialsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel credentialsRow = new JPanel();
+        credentialsRow.setLayout(new BoxLayout(credentialsRow, BoxLayout.Y_AXIS));
         credentialsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        credentialsRow.add(new JLabel("sudo password:"));
-        credentialsRow.add(sudoPasswordField);
+
+        JPanel passwordRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        passwordRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        passwordRow.add(new JLabel("sudo password:"));
+        passwordRow.add(sudoPasswordField);
+        credentialsRow.add(passwordRow);
+
+        JPanel passwordActionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        passwordActionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         rememberPasswordToggle.setFocusable(false);
-        credentialsRow.add(rememberPasswordToggle);
-        credentialsRow.add(clearSavedPasswordButton);
+        passwordActionsRow.add(rememberPasswordToggle);
+        passwordActionsRow.add(clearSavedPasswordButton);
+        credentialsRow.add(passwordActionsRow);
+
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
         dashboardRememberPasswordToggle.setFocusable(false);
         alwaysShowFlashPreviewToggle.setFocusable(false);
         dashboardSudoPasswordField.setToolTipText("Optional duplicate sudo password field for quick access on Dashboard.");
-        credentialsRow.add(Box.createHorizontalStrut(12));
-        credentialsRow.add(versionLabel);
         panel.add(credentialsRow);
 
         return panel;
@@ -309,17 +317,22 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.add(buildDashboardStatusPanel());
         content.add(Box.createVerticalStrut(6));
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setResizeWeight(0.7);
+        splitPane.setResizeWeight(0.30);
+        splitPane.setContinuousLayout(true);
+        splitPane.setOneTouchExpandable(false);
         splitPane.setLeftComponent(buildPreviewPanel());
         splitPane.setRightComponent(buildDashboardSidePanel());
         splitPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        splitPane.setBorder(BorderFactory.createEmptyBorder());
+        splitPane.setDividerLocation(380);
+        splitPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, 900));
         content.add(splitPane);
 
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -338,7 +351,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -366,11 +379,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         buttonPanel.add(serviceIndicator);
         servicePanel.add(buttonPanel, BorderLayout.CENTER);
         lightModeToggle.setFocusable(false);
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        rightPanel.add(new JLabel("sudo:"));
-        rightPanel.add(dashboardSudoPasswordField);
-        rightPanel.add(dashboardRememberPasswordToggle);
-        rightPanel.add(buildVersionBadge());
+        JPanel rightPanel = new JPanel();
+        rightPanel.setLayout(new BoxLayout(rightPanel, BoxLayout.Y_AXIS));
+        rightPanel.setBorder(new EmptyBorder(6, 6, 6, 6));
+        JPanel sudoRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        sudoRow.add(new JLabel("sudo:"));
+        sudoRow.add(dashboardSudoPasswordField);
+        sudoRow.add(dashboardRememberPasswordToggle);
+        rightPanel.add(sudoRow);
+        JPanel versionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        versionRow.add(buildVersionBadge());
+        rightPanel.add(versionRow);
         servicePanel.add(rightPanel, BorderLayout.EAST);
         servicePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return servicePanel;
@@ -402,10 +421,22 @@ public class UniversalMonitorControlCenter extends JFrame {
         transportPanel.add(wifiModeOnButton);
         transportPanel.add(wifiModeOffButton);
         transportPanel.add(wifiModeRefreshButton);
-        transportPanel.add(new JLabel("Indicator:"));
+        transportPanel.add(new JLabel("Mode:"));
         transportPanel.add(transportIndicator);
-        transportPanel.add(Box.createHorizontalStrut(16));
-        transportPanel.add(buildVersionBadge());
+        flashTransportIndicator.setOpaque(true);
+        flashTransportIndicator.setPreferredSize(new Dimension(120, 30));
+        transportPanel.add(Box.createHorizontalStrut(12));
+        transportPanel.add(new JLabel("Wi-Fi:"));
+        transportPanel.add(flashTransportIndicator);
+        transportPanel.add(Box.createHorizontalStrut(12));
+        transportPanel.add(wifiCredentialsButton);
+        wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 8));
+        wifiCredentialsIndicator.setOpaque(true);
+        wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
+        wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
+        transportPanel.add(wifiCredentialsIndicator);
+        transportPanel.add(Box.createHorizontalStrut(12));
+        transportPanel.add(killRunningTaskButton);
         transportPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return transportPanel;
     }
@@ -438,41 +469,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         actionRow.add(flashButton);
         actionRow.add(flashPreviewButton);
         actionRow.add(customFlashButton);
-        rowTwo.add(actionRow);
-
-        JPanel indicatorRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        indicatorRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        indicatorRow.add(Box.createHorizontalStrut(flashButton.getPreferredSize().width
-                + flashPreviewButton.getPreferredSize().width + 20));
-        indicatorRow.add(customSketchIndicator);
-        rowTwo.add(indicatorRow);
+        actionRow.add(customSketchIndicator);
+        rowTwo.add(actionRow);
 
-        JPanel wifiControlsRow = new JPanel();
-        wifiControlsRow.setLayout(new BoxLayout(wifiControlsRow, BoxLayout.X_AXIS));
-        wifiControlsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        wifiControlsRow.setBorder(new EmptyBorder(6, 0, 0, 0));
-        flashTransportIndicator.setOpaque(true);
-        flashTransportIndicator.setPreferredSize(new Dimension(120, 30));
-        wifiControlsRow.add(new JLabel("Wi-Fi indicator:"));
-        wifiControlsRow.add(Box.createHorizontalStrut(8));
-        wifiControlsRow.add(flashTransportIndicator);
-        wifiControlsRow.add(Box.createHorizontalStrut(12));
-        wifiControlsRow.add(wifiCredentialsButton);
-        wifiControlsRow.add(Box.createHorizontalStrut(12));
-        wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
-        wifiCredentialsIndicator.setOpaque(true);
-        wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
-        wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
-        wifiControlsRow.add(wifiCredentialsIndicator);
-        wifiControlsRow.add(Box.createHorizontalStrut(12));
-        wifiControlsRow.add(killRunningTaskButton);
-        wifiControlsRow.add(Box.createHorizontalStrut(12));
-        wifiControlsRow.add(alwaysShowFlashPreviewToggle);
-        wifiControlsRow.add(Box.createHorizontalGlue());
-        wifiControlsRow.add(buildVersionBadge());
-        rowTwo.add(wifiControlsRow);
+        JPanel optionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        optionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        optionsRow.setBorder(new EmptyBorder(6, 0, 0, 0));
+        optionsRow.add(alwaysShowFlashPreviewToggle);
+        rowTwo.add(optionsRow);
 
         panel.add(rowTwo);
         return panel;
@@ -533,6 +539,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(buildAppManagementPanel());
         panel.add(Box.createVerticalStrut(6));
         panel.add(buildPreviewControlsPanel());
+        panel.setMinimumSize(new Dimension(560, 600));
+        panel.setPreferredSize(new Dimension(620, 720));
         return panel;
     }
 
@@ -602,6 +610,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildPreviewPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Arduino Preview (live from output port)"));
+        panel.setMinimumSize(new Dimension(320, 420));
+        panel.setPreferredSize(new Dimension(380, 620));
         panel.add(fakeDisplayPanel, BorderLayout.CENTER);
 
         JPanel footer = new JPanel();
@@ -616,7 +626,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildPreviewWifiPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 3, 8, 0));
+        JPanel panel = new JPanel(new GridLayout(0, 3, 8, 8));
         panel.setBorder(new EmptyBorder(8, 8, 4, 8));
         panel.add(buildInfoValuePanel("Preview Wi-Fi", previewWifiStateLabel));
         panel.add(buildInfoValuePanel("PC Hostname", previewWifiHostnameLabel));
@@ -3335,30 +3345,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private record ArduinoLibraryRequirement(String installName, String detectName, String headerName) {
-    }
-
-    private static String loadAppVersion() {
-        Properties properties = new Properties();
-        try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
-            if (input != null) {
-                properties.load(input);
-                String version = properties.getProperty("app.version", "").trim();
-                if (!version.isEmpty() && !version.contains("${")) {
-                    return version;
-                }
-            }
-        } catch (IOException ignored) {
-            // Fall back to a safe default below.
-        }
-        Path versionFile = Paths.get(System.getProperty("user.dir")).toAbsolutePath().resolve("VERSION");
-        try {
-            String version = Files.readString(versionFile, StandardCharsets.UTF_8).trim();
-            if (!version.isEmpty()) {
-                return version;
-            }
-        } catch (IOException ignored) {
-        }
-        return "unknown version";
     }
 
     private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,

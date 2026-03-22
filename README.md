@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett  
-**Version:** v9.5.0 beta  
+**Version:** v9.5.1  
 **Last Modified:** March 22, 2026  
 
 ---
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.5.0 beta Includes
+## What v9.5.1 Includes
 
-Release **v9.5.0 beta** rolls up all work completed since **v8.4**, including the former 9.x beta changes plus the latest monitor, dashboard, battery, and flashing improvements.
+Release **v9.5.1** rolls up all work completed since **v8.4**, including the former 9.x beta changes plus the latest monitor, dashboard, battery, and flashing improvements.
 
 ### Major highlights
 

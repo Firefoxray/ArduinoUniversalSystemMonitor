@@ -24,12 +24,6 @@ application {
     applicationName = "UniversalMonitorControlCenter"
 }
 
-tasks.processResources {
-    filesMatching("version.properties") {
-        expand("version" to project.version)
-    }
-}
-
 tasks.jar {
     manifest {
         attributes(mapOf(

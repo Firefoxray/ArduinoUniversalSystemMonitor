@@ -13,9 +13,12 @@ JAR_PATH="$JAVA_PROJECT_DIR/build/libs/UniversalMonitorControlCenter.jar"
 CURRENT_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 CURRENT_UID="$(id -u)"
 JAVA_HELPER="$REPO_ROOT/lib/java_control_center.sh"
+PROJECT_PATHS_HELPER="$REPO_ROOT/lib/project_paths.sh"
 
 # shellcheck source=lib/java_control_center.sh
 source "$JAVA_HELPER"
+# shellcheck source=lib/project_paths.sh
+source "$PROJECT_PATHS_HELPER"
 
 ensure_java() {
     java_control_center_ensure_jdks
@@ -88,7 +91,8 @@ ensure_java
 prime_gui_env
 build_jar_if_needed
 
-echo "Launching $JAR_PATH"
+APP_VERSION="$(read_project_version "$REPO_ROOT")"
+echo "Launching Universal Monitor Control Center $APP_VERSION from $JAR_PATH"
 echo "Using build JDK: $JAVA_CONTROL_CENTER_BUILD_JDK"
 echo "Using runtime JDK: $JAVA_CONTROL_CENTER_RUNTIME_JDK"
 echo "Using DISPLAY=${DISPLAY:-<empty>} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<empty>} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<empty>} XAUTHORITY=${XAUTHORITY:-<empty>}"

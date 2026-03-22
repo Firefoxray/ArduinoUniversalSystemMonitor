@@ -38,7 +38,7 @@ REQUIRED_LIBS=(
     "DIYables TFT Touch Shield|DIYables TFT Touch Shield|DIYables_TFT_Touch_Shield.h"
 )
 
-APP_VERSION="$(python3 "$PROJECT_DIR/scripts/sync_version.py" --print-version)"
+APP_VERSION="$(read_project_version "$PROJECT_DIR")"
 
 echo "==== Ray Co Arduino Auto Flasher $APP_VERSION ===="
 
