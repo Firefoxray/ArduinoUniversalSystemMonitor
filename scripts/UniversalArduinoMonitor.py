@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Universal Linux Arduino system monitor sender v9.1 beta.
+"""Universal Linux Arduino system monitor sender v9.2 BETA.
 
 Originally built on Fedora for an Arduino desktop monitor, but intended to run
 across Linux desktops in general.
@@ -30,11 +30,12 @@ import serial
 from serial import SerialException
 from serial.tools import list_ports
 
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("monitor_config.default.json")
-CONFIG_PATH = Path(__file__).with_name("monitor_config.json")
-LOCAL_CONFIG_PATH = Path(__file__).with_name("monitor_config.local.json")
-WIFI_LOCAL_CONFIG_PATH = Path(__file__).with_name("R4_WIFI35").joinpath("wifi_config.local.h")
-WIFI_DEFAULT_CONFIG_PATH = Path(__file__).with_name("R4_WIFI35").joinpath("wifi_config.h")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG_PATH = REPO_ROOT / "monitor_config.default.json"
+CONFIG_PATH = REPO_ROOT / "monitor_config.json"
+LOCAL_CONFIG_PATH = REPO_ROOT / "monitor_config.local.json"
+WIFI_LOCAL_CONFIG_PATH = REPO_ROOT / "R4_WIFI35" / "wifi_config.local.h"
+WIFI_DEFAULT_CONFIG_PATH = REPO_ROOT / "R4_WIFI35" / "wifi_config.h"
 LOCK_PATH = Path("/tmp/universal_arduino_monitor.lock")
 _LOCK_HANDLE = None
 
@@ -1292,7 +1293,7 @@ def main() -> None:
         return
 
     static = get_cached_static()
-    print("Running Universal Arduino Monitor 9.1 beta for Linux")
+    print("Running Universal Arduino Monitor v9.2 BETA for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
     print(f"Active network interface: {static['iface']}")
     print(f"OS: {static['os_name']}")

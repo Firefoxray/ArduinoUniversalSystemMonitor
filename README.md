@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 9.1 beta
+**Version:** 9.2 BETA
 **Last Modified:** March 21, 2026  
 
 ---
@@ -54,7 +54,7 @@ ArduinoUniversalSystemMonitor/
 ├── update.sh                               # Pull latest changes and refresh dependencies
 ├── uninstall_monitor.sh                    # Remove service and installed files
 ├── UniversalMonitorControlCenter.sh        # Root-level Java GUI launcher/build helper
-├── install_control_center_desktop.sh       # Optional Linux app-menu launcher installer
+├── scripts/install_control_center_desktop.sh       # Optional Linux app-menu launcher installer
 ├── R3_MonitorScreen28/              # Arduino UNO R3 2.8" TFT sketch
 ├── R3_MonitorScreen35/              # Placeholder for future Arduino UNO R3 3.5" TFT sketch
 ├── R3_MEGA_MonitorScreen35/         # Arduino Mega 2560 R3 3.5" TFT sketch
@@ -123,7 +123,7 @@ For now, keeping the install/update/uninstall scripts in the repository root is 
 8.12  - Added Control Center UNO R3 mode selection, moved the visible display toggles into the action area, and added monitor connection port settings directly in the Control Center
 8.13  - Removed duplicate nested R4 Wi-Fi monitor/sketch copies so the repo now uses one root Python monitor, one root monitor_config.json, and one canonical R4_WIFI35 sketch folder
 9.0 beta  - Added layered default/shared/local monitor config support for per-computer port overrides, refreshed README screenshots with the newer captures, and bumped the project/control-center release branding to version 9 beta
-9.1 beta  - Updated the Control Center/desktop launcher icon to use the existing arduinoPreview screenshot image and bumped all current project branding to v9.1 beta
+9.2 BETA - Updated project branding, Control Center version display, and flash preview/logging for the v9.2 BETA release
 ```
 
 ---
@@ -280,7 +280,7 @@ sudo nano /etc/systemd/system/arduino-monitor.service
 
 ```ini
 [Service]
-ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/scripts/UniversalArduinoMonitor.py
 WorkingDirectory=/home/YOUR_USERNAME/ArduinoUniversalSystemMonitor
 ```
 
@@ -319,15 +319,15 @@ So for normal testing, you can stay in the repo root and just run `./UniversalMo
 
 Inside the Control Center, **Update and Restart GUI** still pulls the newest repo files from GitHub first, then rebuilds the Java app and relaunches it.
 
-The Control Center also includes an **Install Monitor + Desktop Entry** button that reruns `install.sh` without pulling from GitHub, clears machine-local/generated files first (`monitor_config.json`, `monitor_config.local.json`, `R4_WIFI35/wifi_config.local.h`, saved sudo/Wi-Fi helper files, the desktop launcher, and Control Center build artifacts), refreshes the Linux desktop launcher with `screenshots/arduinoPreview1.png`, and then restarts the GUI so desktop/taskbar icon changes show up immediately.
+The Control Center also includes an **Reinstall Monitor** button that reruns `install.sh` without pulling from GitHub, clears machine-local/generated files first (`monitor_config.json`, `monitor_config.local.json`, `R4_WIFI35/wifi_config.local.h`, saved sudo/Wi-Fi helper files, the desktop launcher, and Control Center build artifacts), refreshes the Linux desktop launcher with `screenshots/arduinoPreview1.png`, and then restarts the GUI so desktop/taskbar icon changes show up immediately.
 
 ### Optional Linux app-menu launcher
 
 If you want a clickable launcher in KDE/GNOME/etc, run:
 
 ```bash
-chmod +x install_control_center_desktop.sh
-./install_control_center_desktop.sh
+chmod +x scripts/install_control_center_desktop.sh
+./scripts/install_control_center_desktop.sh
 ```
 
 That installs a `.desktop` entry into `~/.local/share/applications`, so the Control Center shows up in the desktop app menu as **Universal Monitor Control Center**.
@@ -360,7 +360,7 @@ Description=Arduino System Monitor
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/scripts/UniversalArduinoMonitor.py
 WorkingDirectory=/home/YOUR_USERNAME/ArduinoUniversalSystemMonitor
 Restart=always
 User=YOUR_USERNAME
