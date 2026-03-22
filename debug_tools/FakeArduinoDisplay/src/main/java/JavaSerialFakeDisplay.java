@@ -249,8 +249,9 @@ public class JavaSerialFakeDisplay extends JFrame {
     static class ParsedPacket {
         private static final int CPU_THREADS = 16;
         private static final int PROCESS_ROWS = 6;
-        private static final int STORAGE_LINES = 7;
-        private static final int FIELD_COUNT = 65;
+        private static final int STORAGE_LINES = 8;
+        private static final int EXTRA_BATTERY_SLOTS = 1;
+        private static final int FIELD_COUNT = 70;
 
         private final Map<String, String> values = new LinkedHashMap<>();
         private String raw = "";
@@ -299,6 +300,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             values.put("DNTOT", fields[idx++].trim());
             values.put("UPTOT", fields[idx++].trim());
             values.put("FREQ", fields[idx++].trim());
+            values.put("RAMGB", fields[idx++].trim());
             values.put("GPU", fields[idx++].trim());
             values.put("GPUTEMP", fields[idx++].trim());
             String vramUsed = fields[idx++].trim();
@@ -322,7 +324,13 @@ public class JavaSerialFakeDisplay extends JFrame {
             }
             values.put("BATTPCT", fields[idx++].trim());
             values.put("BATTSTATE", fields[idx++].trim());
-            values.put("BATTMODE", fields[idx].trim());
+            values.put("BATTMODE", fields[idx++].trim());
+            for (int i = 1; i <= EXTRA_BATTERY_SLOTS; i++) {
+                values.put("BATTDEV" + i, fields[idx++].trim());
+            }
+            for (int i = 1; i <= EXTRA_BATTERY_SLOTS; i++) {
+                values.put("BATTDEV" + i + "STATE", fields[idx++].trim());
+            }
             values.put("HEADER", "Ray Co. Universal System Monitor");
             return true;
         }
@@ -499,24 +507,45 @@ public class JavaSerialFakeDisplay extends JFrame {
             int ruleY = top + 24;
             String pageCounter = (pageIndex + 1) + "/7";
             String versionText = "v9.4";
-
-            g2.setColor(CYAN);
-            g2.setFont(fitFont(g2, title, Font.BOLD, 14, 10, Math.max(120, right - left - 62)));
-            FontMetrics titleMetrics = g2.getFontMetrics();
-            int titleBaseline = top + titleMetrics.getAscent();
-            g2.drawString(title, left, titleBaseline);
+            boolean homePage = pageIndex == 0;
+            String wifiText = previewWifiEnabled ? "WiFi On" : "WiFi Off";
 
             g2.setColor(WHITE);
             g2.setFont(new Font(MONO, Font.BOLD, 10));
             FontMetrics counterMetrics = g2.getFontMetrics();
             int counterX = right - counterMetrics.stringWidth(pageCounter);
-            int versionX = counterX - 56;
-            g2.drawString(versionText, versionX, titleBaseline);
-            g2.drawString(pageCounter, counterX, titleBaseline);
+            g2.drawString(pageCounter, counterX, top + 11);
 
-            g2.setFont(new Font(MONO, Font.PLAIN, 9));
-            g2.setColor(previewWifiEnabled ? LIME : ORANGE);
-            g2.drawString(previewWifiEnabled ? "WiFi On" : "WiFi Off", versionX - 72, titleBaseline);
+            if (homePage) {
+                String leftText = "Ray Co. System Monitor " + versionText;
+                g2.setFont(fitFont(g2, leftText, Font.BOLD, 11, 8, 220));
+                FontMetrics leftMetrics = g2.getFontMetrics();
+                int baseline = top + leftMetrics.getAscent() + 2;
+                g2.setColor(CYAN);
+                g2.drawString(leftText, left, baseline);
+
+                g2.setFont(fitFont(g2, wifiText, Font.PLAIN, 9, 8, 80));
+                FontMetrics wifiMetrics = g2.getFontMetrics();
+                int wifiX = Math.max(left + leftMetrics.stringWidth(leftText) + 12, (w - wifiMetrics.stringWidth(wifiText)) / 2);
+                wifiX = Math.min(wifiX, counterX - wifiMetrics.stringWidth(wifiText) - 12);
+                g2.setColor(previewWifiEnabled ? LIME : ORANGE);
+                g2.drawString(wifiText, wifiX, baseline);
+            } else {
+                g2.setColor(CYAN);
+                g2.setFont(fitFont(g2, title, Font.BOLD, 14, 10, Math.max(120, right - left - 62)));
+                FontMetrics titleMetrics = g2.getFontMetrics();
+                int titleBaseline = top + titleMetrics.getAscent();
+                g2.drawString(title, left, titleBaseline);
+
+                int versionX = counterX - 56;
+                g2.setColor(WHITE);
+                g2.setFont(new Font(MONO, Font.BOLD, 10));
+                g2.drawString(versionText, versionX, titleBaseline);
+
+                g2.setFont(new Font(MONO, Font.PLAIN, 9));
+                g2.setColor(previewWifiEnabled ? LIME : ORANGE);
+                g2.drawString(wifiText, versionX - 72, titleBaseline);
+            }
 
             g2.setColor(PANEL_LINE);
             g2.drawLine(m, ruleY, w - m, ruleY);
@@ -765,43 +794,58 @@ public class JavaSerialFakeDisplay extends JFrame {
                     packet.get("DRV4", "backup 2.2T"),
                     packet.get("DRV5", "media 31% media"),
                     packet.get("DRV6", "archive 78% archive"),
-                    packet.get("DRV7", "Storage: --")
+                    packet.get("DRV7", "scratch 14% data"),
+                    packet.get("DRV8", "Storage: --")
             };
 
             for (int i = 0; i < lines.length; i++) {
-                g2.drawString(truncate(lines[i], 34), 12, headerBottom + 34 + i * 22);
+                g2.drawString(truncate(lines[i], 31), 12, headerBottom + 30 + i * 20);
             }
 
+            int dividerX = 244;
+            int panelX = 258;
             g2.setColor(PANEL_LINE);
-            g2.drawLine(294, headerBottom + 12, 294, h - 54);
-            g2.drawRect(310, headerBottom + 18, 148, 148);
-            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.drawLine(dividerX, headerBottom + 12, dividerX, h - 12);
+            g2.setFont(new Font(MONO, Font.BOLD, 10));
             g2.setColor(YELLOW);
-            g2.drawString("Battery Status", 320, headerBottom + 34);
-            g2.setColor(PANEL_LINE);
-            g2.drawLine(320, headerBottom + 42, 446, headerBottom + 42);
+            g2.drawString("Battery", panelX, headerBottom + 18);
 
+            int lineY = headerBottom + 40;
             String batteryMode = packet.get("BATTMODE", "DESKTOP");
             String batteryPct = packet.get("BATTPCT", "N/A");
             String batteryState = packet.get("BATTSTATE", "DESKTOP");
+            g2.setFont(new Font(MONO, Font.PLAIN, 10));
+            g2.setColor(WHITE);
             if ("DESKTOP".equalsIgnoreCase(batteryMode)) {
-                g2.setFont(new Font(MONO, Font.BOLD, 14));
-                g2.setColor(ORANGE);
-                g2.drawString("Desktop", 346, headerBottom + 84);
-                g2.setFont(new Font(MONO, Font.BOLD, 10));
-                g2.setColor(WHITE);
-                g2.drawString("Battery: N/A (Desktop)", 320, headerBottom + 116);
+                g2.drawString("Battery: N/A (Desktop)", panelX, lineY);
+                lineY += 18;
+                if (!"DESKTOP".equalsIgnoreCase(batteryState) && !"--".equals(batteryState)) {
+                    g2.setColor(ORANGE);
+                    g2.drawString(truncate(batteryState, 24), panelX, lineY);
+                    lineY += 18;
+                }
             } else {
-                g2.setFont(new Font(MONO, Font.BOLD, 12));
-                g2.setColor(WHITE);
-                g2.drawString("Battery:", 322, headerBottom + 76);
+                g2.drawString("Battery: ", panelX, lineY);
                 g2.setColor(LIME);
-                g2.drawString(batteryPct + "%", 350, headerBottom + 102);
-                g2.setFont(new Font(MONO, Font.BOLD, 10));
+                g2.drawString(batteryPct + "%", panelX + 54, lineY);
+                lineY += 18;
                 g2.setColor("Charging".equalsIgnoreCase(batteryState) ? LIME : ORANGE);
-                g2.drawString(truncate(batteryState, 18), 322, headerBottom + 130);
+                g2.drawString(truncate(batteryState, 24), panelX, lineY);
+                lineY += 24;
             }
-            drawFooter(g2, w, h);
+
+            String extraBattery = packet.get("BATTDEV1", "--");
+            String extraBatteryState = packet.get("BATTDEV1STATE", "--");
+            if (!"--".equals(extraBattery)) {
+                g2.setFont(new Font(MONO, Font.PLAIN, 9));
+                g2.setColor(CYAN);
+                g2.drawString(truncate(extraBattery, 24), panelX, lineY);
+                lineY += 16;
+                if (!"--".equals(extraBatteryState)) {
+                    g2.setColor("Charging".equalsIgnoreCase(extraBatteryState) ? LIME : ORANGE);
+                    g2.drawString(truncate(extraBatteryState, 24), panelX, lineY);
+                }
+            }
         }
 
         private void drawGraph(Graphics2D g2, int w, int h, int m) {

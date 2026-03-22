@@ -90,8 +90,9 @@ const int GRAPH_POINTS = 62;
 const int TOTAL_PAGES = 7;
 const int CPU_THREADS = 16;
 const int PROCESS_ROWS = 6;
-const int STORAGE_LINES = 7;
-const int FIELD_COUNT = 65;
+const int STORAGE_LINES = 8;
+const int EXTRA_BATTERY_SLOTS = 1;
+const int FIELD_COUNT = 70;
 const char* APP_VERSION = "v9.4";
 
 int cpuHistory[GRAPH_POINTS];
@@ -128,11 +129,14 @@ String upStr = "--";
 String downTotalStr = "--";
 String upTotalStr = "--";
 String cpuFreqStr = "--";
+String ramUsageStr = "--";
 String gpuTemp = "--";
 String gpuName = "--";
 String batteryPctStr = "N/A";
 String batteryStateStr = "DESKTOP";
 String batteryModeStr = "DESKTOP";
+String batteryDeviceLabel[EXTRA_BATTERY_SLOTS];
+String batteryDeviceState[EXTRA_BATTERY_SLOTS];
 
 String procName[PROCESS_ROWS];
 String procCpu[PROCESS_ROWS];
@@ -451,25 +455,44 @@ void drawHeader(const char* title, int page) {
   tft.fillScreen(BLACK);
   refreshArduinoWifiIp();
 
-  tft.setTextSize(2);
-  tft.setTextColor(CYAN);
-  tft.setCursor(12, 10);
-  tft.print(title);
-
-  tft.setTextSize(1);
-  tft.setTextColor(wifiStateColor());
-  tft.setCursor(258, 18);
-  tft.print(wifiStateText());
-
-  tft.setTextColor(WHITE);
-  tft.setCursor(356, 18);
-  tft.print(APP_VERSION);
-
   String pageStr = String(page) + "/" + String(TOTAL_PAGES);
-  tft.setTextSize(2);
-  tft.setTextColor(WHITE);
-  tft.setCursor(430, 10);
-  tft.print(pageStr);
+
+  if (page == 1) {
+    tft.setTextSize(1);
+    tft.setTextColor(CYAN);
+    tft.setCursor(12, 18);
+    tft.print("Ray Co. System Monitor ");
+    tft.setTextColor(WHITE);
+    tft.print(APP_VERSION);
+
+    tft.setTextColor(wifiStateColor());
+    tft.setCursor(246, 18);
+    tft.print(wifiStateText());
+
+    tft.setTextSize(2);
+    tft.setTextColor(WHITE);
+    tft.setCursor(430, 10);
+    tft.print(pageStr);
+  } else {
+    tft.setTextSize(2);
+    tft.setTextColor(CYAN);
+    tft.setCursor(12, 10);
+    tft.print(title);
+
+    tft.setTextSize(1);
+    tft.setTextColor(wifiStateColor());
+    tft.setCursor(258, 18);
+    tft.print(wifiStateText());
+
+    tft.setTextColor(WHITE);
+    tft.setCursor(356, 18);
+    tft.print(APP_VERSION);
+
+    tft.setTextSize(2);
+    tft.setTextColor(WHITE);
+    tft.setCursor(430, 10);
+    tft.print(pageStr);
+  }
 
   tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
 }
@@ -558,6 +581,7 @@ void updateHome() {
   drawLabelBar(114, "Disk0", disk0Pct, MAGENTA);
   drawLabelBar(148, "Disk1", disk1Pct, ORANGE);
   drawInfoLine(184, "Freq", fitText(cpuFreqStr, 18), ORANGE, 95);
+  drawInfoLine(210, "RAM", fitText(ramUsageStr, 18), CYAN, 95);
   drawInfoLine(236, "Host", fitText(hostName, 24), GREEN, 95);
   drawDualInfoLine(262, "Up", fitText(uptimeStr, 18), WHITE, 95, "Link", fitText(linkType, 8), YELLOW, 245, 330);
   drawInfoLine(288, "OS", fitText(prettyOS(osName), 28), CYAN, 95);
@@ -708,58 +732,71 @@ void updateGpu() {
 void updateStorage() {
   clearArea(0, 42, SCREEN_W, 240);
   const int leftX = 12;
-  const int storageRight = 294;
-  const int rightPanelX = 312;
-  const int rightPanelW = 154;
-  const int panelTop = 56;
-  const int panelHeight = 154;
+  const int storageRight = 244;
+  const int rightPanelX = 258;
+  const int panelTop = 52;
 
   tft.setTextSize(2);
   tft.setTextColor(CYAN);
   tft.setCursor(leftX, 50);
   tft.print("Storage");
 
-  tft.drawFastVLine(storageRight, 48, 228, GRAY);
-  tft.drawRect(rightPanelX, panelTop, rightPanelW, panelHeight, GRAY);
+  tft.drawFastVLine(storageRight, 46, 234, GRAY);
 
   for (int i = 0; i < STORAGE_LINES; i++) {
-    clearArea(0, 78 + (i * 24), storageRight - 6, 20);
+    clearArea(0, 72 + (i * 22), storageRight - 4, 18);
     tft.setTextSize(1);
     tft.setTextColor(WHITE);
-    tft.setCursor(leftX, 84 + (i * 24));
-    tft.print(fitText(storageLine[i], 38));
+    tft.setCursor(leftX, 78 + (i * 22));
+    tft.print(fitText(storageLine[i], 32));
   }
 
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   tft.setTextColor(YELLOW);
-  tft.setCursor(rightPanelX + 12, panelTop + 14);
-  tft.print("Battery Status");
+  tft.setCursor(rightPanelX, panelTop);
+  tft.print("Battery");
 
-  tft.drawFastHLine(rightPanelX + 10, panelTop + 24, rightPanelW - 20, GRAY);
-
+  int lineY = panelTop + 22;
+  tft.setTextColor(WHITE);
   if (batteryModeStr == "DESKTOP") {
-    tft.setTextSize(2);
-    tft.setTextColor(ORANGE);
-    tft.setCursor(rightPanelX + 32, panelTop + 66);
-    tft.print("Desktop");
-    tft.setTextSize(1);
-    tft.setTextColor(WHITE);
-    tft.setCursor(rightPanelX + 12, panelTop + 102);
+    tft.setCursor(rightPanelX, lineY);
     tft.print("Battery: N/A (Desktop)");
+    lineY += 18;
+    if (batteryStateStr.length() > 0 && batteryStateStr != "DESKTOP" && batteryStateStr != "--") {
+      tft.setTextColor(ORANGE);
+      tft.setCursor(rightPanelX, lineY);
+      tft.print(fitText(batteryStateStr, 24));
+      lineY += 18;
+    }
   } else {
-    tft.setTextSize(2);
-    tft.setTextColor(WHITE);
-    tft.setCursor(rightPanelX + 12, panelTop + 58);
-    tft.print("Battery:");
+    tft.setCursor(rightPanelX, lineY);
+    tft.print("Battery: ");
     tft.setTextColor(GREEN);
-    tft.setCursor(rightPanelX + 34, panelTop + 88);
     tft.print(batteryPctStr);
     tft.print("%");
+    lineY += 18;
 
-    tft.setTextSize(1);
     tft.setTextColor((batteryStateStr == "Charging") ? GREEN : ORANGE);
-    tft.setCursor(rightPanelX + 12, panelTop + 122);
-    tft.print(fitText(batteryStateStr, 22));
+    tft.setCursor(rightPanelX, lineY);
+    tft.print(fitText(batteryStateStr, 24));
+    lineY += 24;
+  }
+
+  for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) {
+    if (batteryDeviceLabel[i].length() == 0 || batteryDeviceLabel[i] == "--") continue;
+    tft.setTextColor(CYAN);
+    tft.setCursor(rightPanelX, lineY);
+    tft.print(fitText(batteryDeviceLabel[i], 24));
+    lineY += 16;
+
+    if (batteryDeviceState[i].length() > 0 && batteryDeviceState[i] != "--") {
+      tft.setTextColor((batteryDeviceState[i] == "Charging") ? GREEN : ORANGE);
+      tft.setCursor(rightPanelX, lineY);
+      tft.print(fitText(batteryDeviceState[i], 24));
+      lineY += 22;
+    } else {
+      lineY += 10;
+    }
   }
 }
 
@@ -912,6 +949,7 @@ void parseIncomingLine(String s, const char* source) {
   downTotalStr = f[idx++];
   upTotalStr = f[idx++];
   cpuFreqStr = f[idx++];
+  ramUsageStr = f[idx++];
   gpuPct = parsePercent(f[idx++]);
   gpuTemp = f[idx++];
   gpuMemUsed = f[idx++].toInt();
@@ -927,6 +965,8 @@ void parseIncomingLine(String s, const char* source) {
   batteryPctStr = f[idx++];
   batteryStateStr = f[idx++];
   batteryModeStr = f[idx++];
+  for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) batteryDeviceLabel[i] = f[idx++];
+  for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) batteryDeviceState[i] = f[idx++];
 
   pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
   screenDirty = true;
@@ -1157,6 +1197,10 @@ void setup() {
   batteryPctStr = "N/A";
   batteryStateStr = "DESKTOP";
   batteryModeStr = "DESKTOP";
+  for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) {
+    batteryDeviceLabel[i] = "--";
+    batteryDeviceState[i] = "--";
+  }
 
   drawCurrentLayout();
   updateCurrentPage();
