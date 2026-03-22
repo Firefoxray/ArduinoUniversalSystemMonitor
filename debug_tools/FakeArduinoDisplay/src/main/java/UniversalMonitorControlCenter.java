@@ -31,6 +31,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = loadAppVersion();
+    private static final String APP_VERSION_DISPLAY = "v" + APP_VERSION;
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final String WIFI_SETTINGS_BACKUP_FILE = ".control_center_wifi_settings.properties";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
@@ -58,10 +59,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton connectPreviewButton = new JButton("Connect Preview Port");
     private final JButton disconnectPreviewButton = new JButton("Disconnect Preview Port");
 
-    private final JButton desktopInstallButton = new JButton("Install Monitor + Desktop Entry");
+    private final JButton desktopInstallButton = new JButton("Reinstall Monitor");
+    private final JButton desktopAppletButton = new JButton("Install Desktop Applet");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update and Restart GUI");
-    private final JButton flashButton = new JButton("Flash Arduino with Included Program");
+    private final JButton flashButton = new JButton("Flash Arduino with Default Sketch");
+    private final JButton flashPreviewButton = new JButton("Show Flash Diff");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
     private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
     private final JButton killRunningTaskButton = new JButton("Kill Running Flash/Task");
@@ -81,7 +84,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel transportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
-    private final JLabel versionLabel = new JLabel("Version " + APP_VERSION);
+    private final JLabel versionLabel = new JLabel(APP_VERSION_DISPLAY);
+    private final JCheckBox alwaysShowFlashPreviewToggle = new JCheckBox("Always show preview before flashing");
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> r4RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
@@ -103,6 +107,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel previewWifiStateLabel = new JLabel("Disabled");
     private final JLabel previewWifiHostnameLabel = new JLabel("--");
     private final JLabel previewWifiIpLabel = new JLabel("--");
+    private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
+    private final JCheckBox dashboardRememberPasswordToggle = new JCheckBox("Remember");
+    private final JButton scanNetworkButton = new JButton("Start Arduino Scan");
+    private final JButton stopNetworkScanButton = new JButton("Stop Scan");
+    private final DefaultListModel<String> networkScanResultsModel = new DefaultListModel<>();
+    private final JList<String> networkScanResultsList = new JList<>(networkScanResultsModel);
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -130,6 +140,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Boolean lastWifiEnabledState;
     private boolean debugStatusMissingLogged;
     private boolean transportStatusMissingLogged;
+    private volatile boolean networkScanRequested;
+    private Thread networkScanThread;
     private Path selectedCustomSketchPath;
 
 
@@ -208,6 +220,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         setServiceIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
         loadSavedSudoPassword();
+        dashboardSudoPasswordField.setText(new String(sudoPasswordField.getPassword()));
+        dashboardRememberPasswordToggle.setSelected(rememberPasswordToggle.isSelected());
         settingsOutputArea.setDocument(outputArea.getDocument());
         setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
@@ -256,6 +270,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         credentialsRow.add(rememberPasswordToggle);
         credentialsRow.add(clearSavedPasswordButton);
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.BOLD));
+        dashboardRememberPasswordToggle.setFocusable(false);
+        alwaysShowFlashPreviewToggle.setFocusable(false);
+        dashboardSudoPasswordField.setToolTipText("Optional duplicate sudo password field for quick access on Dashboard.");
         credentialsRow.add(Box.createHorizontalStrut(12));
         credentialsRow.add(versionLabel);
         panel.add(credentialsRow);
@@ -289,7 +306,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(buildRepoPanel());
-        content.add(Box.createVerticalStrut(10));
+        content.add(Box.createVerticalStrut(6));
         content.add(buildAppManagementPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
@@ -306,9 +323,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(buildTransportPanel());
-        content.add(Box.createVerticalStrut(10));
+        content.add(Box.createVerticalStrut(6));
         content.add(buildDisplayAndFlashPanel());
-        content.add(Box.createVerticalStrut(10));
+        content.add(Box.createVerticalStrut(6));
         content.add(buildMonitorSettingsPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
@@ -323,7 +340,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.add(buildServiceControlsPanel());
-        panel.add(Box.createVerticalStrut(10));
+        panel.add(Box.createVerticalStrut(6));
         panel.add(buildDebugPanel());
         return panel;
     }
@@ -343,7 +360,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         servicePanel.add(buttonPanel, BorderLayout.CENTER);
         lightModeToggle.setFocusable(false);
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        rightPanel.add(lightModeToggle);
+        rightPanel.add(new JLabel("sudo:"));
+        rightPanel.add(dashboardSudoPasswordField);
+        rightPanel.add(dashboardRememberPasswordToggle);
+        rightPanel.add(buildVersionBadge());
         servicePanel.add(rightPanel, BorderLayout.EAST);
         servicePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return servicePanel;
@@ -359,6 +379,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugPanel.add(debugRefreshButton);
         debugPanel.add(new JLabel("Indicator:"));
         debugPanel.add(debugIndicator);
+        debugPanel.add(Box.createHorizontalGlue());
+        lightModeToggle.setFocusable(false);
+        debugPanel.add(lightModeToggle);
 
         debugPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return debugPanel;
@@ -374,6 +397,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         transportPanel.add(wifiModeRefreshButton);
         transportPanel.add(new JLabel("Indicator:"));
         transportPanel.add(transportIndicator);
+        transportPanel.add(Box.createHorizontalStrut(16));
+        transportPanel.add(buildVersionBadge());
         transportPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return transportPanel;
     }
@@ -400,12 +425,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
         rowTwo.add(flashButton);
+        rowTwo.add(flashPreviewButton);
         rowTwo.add(customFlashButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         rowTwo.add(customSketchIndicator);
         rowTwo.add(wifiCredentialsButton);
         rowTwo.add(killRunningTaskButton);
+        rowTwo.add(alwaysShowFlashPreviewToggle);
         wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         wifiCredentialsIndicator.setOpaque(true);
         wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
@@ -420,6 +447,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder("Linux App Management (uses sudo when needed)"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(desktopInstallButton);
+        panel.add(desktopAppletButton);
         panel.add(uninstallButton);
         panel.add(updateButton);
         return panel;
@@ -431,7 +459,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder("Preview / Virtual Serial Ports (test bench only)"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel portsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel portsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
         portsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         portsRow.add(new JLabel("Input:"));
         portsRow.add(fakeInField);
@@ -439,13 +467,24 @@ public class UniversalMonitorControlCenter extends JFrame {
         portsRow.add(fakeOutField);
         panel.add(portsRow);
 
-        JPanel buttonsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel buttonsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
         buttonsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         buttonsRow.add(startFakePortsButton);
         buttonsRow.add(stopFakePortsButton);
         buttonsRow.add(connectPreviewButton);
         buttonsRow.add(disconnectPreviewButton);
         panel.add(buttonsRow);
+
+        JPanel networkRow = new JPanel(new BorderLayout(6, 6));
+        networkRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel networkButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        networkButtons.add(scanNetworkButton);
+        networkButtons.add(stopNetworkScanButton);
+        networkRow.add(networkButtons, BorderLayout.NORTH);
+        networkScanResultsList.setVisibleRowCount(6);
+        networkRow.add(new JScrollPane(networkScanResultsList), BorderLayout.CENTER);
+        networkRow.setBorder(BorderFactory.createTitledBorder("Arduino Network Scan"));
+        panel.add(networkRow);
         return panel;
     }
 
@@ -519,7 +558,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         footer.setLayout(new BoxLayout(footer, BoxLayout.Y_AXIS));
         footer.add(buildPreviewWifiPanel());
         JLabel helper = new JLabel("Preview listens live to the Output port path used by the fake serial pair.");
-        helper.setBorder(new EmptyBorder(4, 8, 8, 8));
+        helper.setBorder(new EmptyBorder(0, 8, 8, 8));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
         footer.add(helper);
         panel.add(footer, BorderLayout.SOUTH);
@@ -527,7 +566,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildPreviewWifiPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 3, 12, 0));
+        JPanel panel = new JPanel(new GridLayout(1, 3, 8, 0));
         panel.setBorder(new EmptyBorder(8, 8, 4, 8));
         panel.add(buildInfoValuePanel("Preview Wi-Fi", previewWifiStateLabel));
         panel.add(buildInfoValuePanel("PC Hostname", previewWifiHostnameLabel));
@@ -564,12 +603,15 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void wireActions() {
         desktopInstallButton.addActionListener(e -> runInstallAndDesktopWorkflow());
+        desktopAppletButton.addActionListener(e -> runRepoScript("scripts/install_control_center_desktop.sh", true));
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
         updateButton.addActionListener(e -> runUpdateWorkflow());
-        flashButton.addActionListener(e -> runRepoScript("arduino_install.sh", true));
+        flashButton.addActionListener(e -> runDefaultFlashWorkflow());
+        flashPreviewButton.addActionListener(e -> showFlashPreviewDialog());
         customFlashButton.addActionListener(e -> uploadCustomSketch());
         wifiCredentialsButton.addActionListener(e -> promptForWifiCredentials());
         clearSavedPasswordButton.addActionListener(e -> clearSavedSudoPassword(true));
+        dashboardRememberPasswordToggle.addActionListener(e -> rememberPasswordToggle.setSelected(dashboardRememberPasswordToggle.isSelected()));
         killRunningTaskButton.addActionListener(e -> killActiveCommand());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
@@ -585,6 +627,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiModeRefreshButton.addActionListener(e -> refreshTransportModeStatus(true));
 
         startFakePortsButton.addActionListener(e -> startFakePorts());
+        scanNetworkButton.addActionListener(e -> startNetworkScan());
+        stopNetworkScanButton.addActionListener(e -> stopNetworkScan());
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
         connectPreviewButton.addActionListener(e -> connectPreviewPort());
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
@@ -592,10 +636,193 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
+        dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
         lightModeToggle.addActionListener(e -> {
             darkMode = !lightModeToggle.isSelected();
             applyTheme();
         });
+    }
+
+
+    private JLabel buildVersionBadge() {
+        JLabel badge = new JLabel(APP_VERSION_DISPLAY);
+        badge.setFont(badge.getFont().deriveFont(Font.BOLD));
+        return badge;
+    }
+
+    private void syncDashboardSudoPassword() {
+        sudoPasswordField.setText(new String(dashboardSudoPasswordField.getPassword()));
+    }
+
+    private void runDefaultFlashWorkflow() {
+        syncDashboardSudoPassword();
+        if (alwaysShowFlashPreviewToggle.isSelected()) {
+            showFlashPreviewDialog();
+        }
+        runRepoScript("scripts/arduino_install.sh", true);
+    }
+
+    private void showFlashPreviewDialog() {
+        JTextArea previewArea = new JTextArea(buildFlashPreviewReport());
+        previewArea.setEditable(false);
+        previewArea.setCaretPosition(0);
+        previewArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        JScrollPane scrollPane = new JScrollPane(previewArea);
+        scrollPane.setPreferredSize(new Dimension(860, 420));
+        JButton copyButton = new JButton("Copy Diff");
+        copyButton.addActionListener(e -> {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(previewArea.getText()), null);
+            log("[INFO] Copied flash preview diff to the clipboard.");
+        });
+        JPanel content = new JPanel(new BorderLayout(8, 8));
+        content.add(scrollPane, BorderLayout.CENTER);
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        footer.add(copyButton);
+        content.add(footer, BorderLayout.SOUTH);
+        JOptionPane.showMessageDialog(this, content, "Board-specific flash preview / diff", JOptionPane.PLAIN_MESSAGE);
+        log("[INFO] Generated board-specific flash preview / diff before flashing.\n" + previewArea.getText());
+    }
+
+    private String buildFlashPreviewReport() {
+        String merged;
+        try {
+            merged = loadMergedMonitorConfigText();
+        } catch (IOException ex) {
+            merged = null;
+        }
+        int r4Rotation = resolveDisplayRotation(merged == null ? "" : merged, "r4_display_rotation");
+        int r3Rotation = resolveDisplayRotation(merged == null ? "" : merged, "r3_display_rotation");
+        int megaRotation = resolveDisplayRotation(merged == null ? "" : merged, "mega_display_rotation");
+        String boardName = normalizeWifiBoardName(wifiBoardNameField.getText().trim());
+        String targetHost = wifiTargetHostField.getText().trim();
+        String targetHostname = wifiTargetHostnameField.getText().trim();
+        StringBuilder out = new StringBuilder();
+        appendFlashBoardPreview(out, "R4 / UNO R4 WiFi", r4DisplayConfigPath(), r4Rotation, true, boardName, targetHost, targetHostname);
+        out.append("\n");
+        appendFlashBoardPreview(out, "R3 / UNO R3", r3DisplayConfig28Path(), r3Rotation, false, "N/A", "N/A", "N/A");
+        out.append("\n");
+        appendFlashBoardPreview(out, "Mega / 2560", megaDisplayConfigPath(), megaRotation, false, "N/A", "N/A", "N/A");
+        return out.toString();
+    }
+
+    private void appendFlashBoardPreview(StringBuilder out, String title, Path displayHeaderPath, int rotation, boolean includeWifi, String boardName, String targetHost, String targetHostname) {
+        out.append("Arduino Target: ").append(title).append("\n");
+        out.append("Rotation: ").append(currentDisplayHeaderValue(displayHeaderPath)).append(" -> ").append(rotation).append(" (").append(rotationLabel(rotation)).append(")\n");
+        if (includeWifi) {
+            out.append("Wi-Fi Enabled: ").append(lastWifiEnabledState == null ? "unknown" : lastWifiEnabledState).append(" -> true\n");
+            out.append("Wi-Fi Port: ").append(readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT)).append(" -> ").append(wifiPortField.getText().trim()).append("\n");
+            out.append("Board Name: ").append(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME)).append(" -> ").append(boardName).append("\n");
+            out.append("Target Host/IP: ").append(readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TARGET_HOST_VALUE", "")).append(" -> ").append(targetHost.isBlank() ? "<unset>" : targetHost).append("\n");
+            out.append("Target Hostname: ").append(readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TARGET_HOSTNAME_VALUE", "")).append(" -> ").append(targetHostname.isBlank() ? "<unset>" : targetHostname).append("\n");
+        } else {
+            out.append("Wi-Fi Enabled: not applicable\n");
+            out.append("Wi-Fi Port: not applicable\n");
+            out.append("Board Name: not applicable\n");
+            out.append("Target Host/IP: not applicable\n");
+            out.append("Target Hostname: not applicable\n");
+        }
+        out.append("Diff preview:\n");
+        out.append("- #define DISPLAY_ROTATION_VALUE ").append(currentDisplayHeaderValue(displayHeaderPath)).append("\n");
+        out.append("+ #define DISPLAY_ROTATION_VALUE ").append(rotation).append("\n");
+        if (includeWifi) {
+            out.append("- #define WIFI_TCP_PORT_VALUE ").append(readWifiHeaderDefine(wifiLocalConfigPath(), "WIFI_TCP_PORT_VALUE", DEFAULT_WIFI_PORT)).append("\n");
+            out.append("+ #define WIFI_TCP_PORT_VALUE ").append(wifiPortField.getText().trim()).append("\n");
+            out.append("- #define WIFI_DEVICE_NAME_VALUE \"").append(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME)).append("\"\n");
+            out.append("+ #define WIFI_DEVICE_NAME_VALUE \"").append(boardName).append("\"\n");
+        }
+    }
+
+    private String currentDisplayHeaderValue(Path path) {
+        try {
+            String text = Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "";
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("DISPLAY_ROTATION_VALUE\\s+(\\d+)").matcher(text);
+            if (m.find()) {
+                return m.group(1);
+            }
+        } catch (IOException ignored) {
+        }
+        return "1";
+    }
+
+    private void startNetworkScan() {
+        if (networkScanThread != null && networkScanThread.isAlive()) {
+            log("[INFO] Arduino network scan is already running.");
+            return;
+        }
+        networkScanRequested = true;
+        networkScanResultsModel.clear();
+        networkScanResultsModel.addElement("Scanning local network for Arduino UDP discovery replies...");
+        networkScanThread = new Thread(() -> {
+            while (networkScanRequested) {
+                performNetworkScanPass();
+                if (!networkScanRequested) {
+                    break;
+                }
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }, "arduino-network-scan");
+        networkScanThread.setDaemon(true);
+        networkScanThread.start();
+        log("[INFO] Started Arduino network scan. Scanning only while enabled.");
+    }
+
+    private void stopNetworkScan() {
+        networkScanRequested = false;
+        log("[INFO] Stopped Arduino network scan.");
+    }
+
+    private void performNetworkScanPass() {
+        List<String> results = new ArrayList<>();
+        String magic = "UAM_DISCOVER";
+        int port = 5001;
+        try {
+            String merged = loadMergedMonitorConfigText();
+            magic = readStringConfigValue(merged == null ? "" : merged, "wifi_discovery_magic", magic);
+            port = readIntConfigValue(merged == null ? "" : merged, "wifi_discovery_port", port);
+        } catch (Exception ignored) {
+        }
+        try (java.net.DatagramSocket sock = new java.net.DatagramSocket()) {
+            sock.setBroadcast(true);
+            sock.setSoTimeout(1200);
+            byte[] payload = magic.getBytes(StandardCharsets.UTF_8);
+            java.net.DatagramPacket packet = new java.net.DatagramPacket(payload, payload.length, java.net.InetAddress.getByName("255.255.255.255"), port);
+            sock.send(packet);
+            long deadline = System.currentTimeMillis() + 1200;
+            while (System.currentTimeMillis() < deadline) {
+                byte[] buffer = new byte[512];
+                java.net.DatagramPacket response = new java.net.DatagramPacket(buffer, buffer.length);
+                try {
+                    sock.receive(response);
+                } catch (java.net.SocketTimeoutException ex) {
+                    break;
+                }
+                String raw = new String(response.getData(), 0, response.getLength(), StandardCharsets.UTF_8).trim();
+                String[] parts = raw.split("\\|", -1);
+                if (parts.length >= 4 && "UAM_HERE".equals(parts[0])) {
+                    String ip = parts[1];
+                    String tcpPort = parts[2];
+                    String boardName = parts[3].isBlank() ? "unknown" : parts[3];
+                    String host = response.getAddress().getCanonicalHostName();
+                    results.add(ip + " | " + host + " | " + boardName + " | TCP " + tcpPort);
+                }
+            }
+        } catch (Exception ex) {
+            results.add("Scan failed: " + ex.getMessage());
+        }
+        if (results.isEmpty()) {
+            results.add("No Arduino UDP discovery replies received on this scan.");
+        }
+        List<String> finalResults = results;
+        SwingUtilities.invokeLater(() -> {
+            networkScanResultsModel.clear();
+            finalResults.forEach(networkScanResultsModel::addElement);
+        });
+        log("[INFO] Network scan pass complete: " + String.join("; ", results));
     }
 
     private void browseRepoPath() {
@@ -621,18 +848,18 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void runUpdateWorkflow() {
         Path repo = repoPath();
-        Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
-        String command = "cd " + escape(repo.toString()) + " && chmod +x update.sh UniversalMonitorControlCenter.sh && ./update.sh";
+        Path launcher = repo.resolve("scripts/UniversalMonitorControlCenter.sh");
+        String command = "cd " + escape(repo.toString()) + " && chmod +x scripts/update.sh scripts/UniversalMonitorControlCenter.sh && ./scripts/update.sh";
         runCommand(command, repo.toFile(), "Update and restart Control Center", true, true, () -> relaunchApplication(launcher));
     }
 
     private void runInstallAndDesktopWorkflow() {
         Path repo = repoPath();
-        Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
+        Path launcher = repo.resolve("scripts/UniversalMonitorControlCenter.sh");
         String command = "cd " + escape(repo.toString())
-                + " && chmod +x install.sh install_control_center_desktop.sh UniversalMonitorControlCenter.sh"
-                + " && RESET_LOCAL_STATE=1 SKIP_GIT_PULL=1 CONTROL_CENTER_NONINTERACTIVE=1 ./install.sh"
-                + " && ./install_control_center_desktop.sh";
+                + " && chmod +x scripts/install.sh scripts/install_control_center_desktop.sh scripts/UniversalMonitorControlCenter.sh"
+                + " && RESET_LOCAL_STATE=1 SKIP_GIT_PULL=1 CONTROL_CENTER_NONINTERACTIVE=1 ./scripts/install.sh"
+                + " && ./scripts/install_control_center_desktop.sh";
         runCommand(command, repo.toFile(), "Install monitor and desktop entry", true, true, () -> relaunchApplication(launcher));
     }
 
@@ -647,7 +874,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (command == null) {
             return;
         }
-        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true, null, "arduino_install.sh".equals(scriptName));
+        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true, null, "scripts/arduino_install.sh".equals(scriptName));
     }
 
     private String buildRepoScriptCommand(String scriptName) {
@@ -656,7 +883,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 .append(" && chmod +x ").append(escape(scriptName))
                 .append(" && ");
 
-        if ("arduino_install.sh".equals(scriptName)) {
+        if ("scripts/arduino_install.sh".equals(scriptName)) {
             String unoScreenSize = resolveUnoR3ScreenSizeForControlCenter();
             if ("".equals(unoScreenSize)) {
                 return null;
@@ -1783,7 +2010,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         final boolean credentialsSaved = saved;
         SwingUtilities.invokeLater(() -> {
-            wifiCredentialsIndicator.setText(credentialsSaved ? "Credentials saved" : "Credentials not saved");
+            wifiCredentialsIndicator.setText(credentialsSaved ? "Credentials Saved" : "Credentials not saved");
             wifiCredentialsIndicator.setBackground(credentialsSaved ? new Color(24, 170, 24) : new Color(170, 80, 24));
             wifiCredentialsIndicator.setForeground(Color.WHITE);
         });
@@ -2583,6 +2810,12 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private String resolveSudoPassword(boolean allowPrompt) {
         String fromField = new String(sudoPasswordField.getPassword());
+        if (fromField.isBlank()) {
+            fromField = new String(dashboardSudoPasswordField.getPassword());
+            if (!fromField.isBlank()) {
+                sudoPasswordField.setText(fromField);
+            }
+        }
         if (!fromField.trim().isEmpty()) {
             persistSudoPasswordIfRequested(fromField);
             return fromField;
@@ -2592,6 +2825,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (saved != null && !saved.isBlank()) {
             sudoPasswordField.setText(saved);
             rememberPasswordToggle.setSelected(true);
+            dashboardSudoPasswordField.setText(saved);
+            dashboardRememberPasswordToggle.setSelected(true);
             return saved;
         }
 
@@ -2611,6 +2846,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (result == JOptionPane.OK_OPTION) {
             String value = new String(passwordField.getPassword());
             sudoPasswordField.setText(value);
+            dashboardSudoPasswordField.setText(value);
             persistSudoPasswordIfRequested(value);
             return value;
         }
@@ -2624,6 +2860,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         sudoPasswordField.setText(saved);
         rememberPasswordToggle.setSelected(true);
+        dashboardSudoPasswordField.setText(saved);
+        dashboardRememberPasswordToggle.setSelected(true);
         log("[INFO] Loaded sudo password from " + passwordFilePath());
     }
 
@@ -2669,8 +2907,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         try {
             Files.deleteIfExists(path);
             rememberPasswordToggle.setSelected(false);
+            dashboardRememberPasswordToggle.setSelected(false);
             if (clearField) {
                 sudoPasswordField.setText("");
+                dashboardSudoPasswordField.setText("");
             }
             log("[INFO] Removed saved sudo password file: " + path);
         } catch (IOException ex) {
@@ -2718,7 +2958,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "9.1 beta").trim();
+                String version = properties.getProperty("app.version", "9.2 BETA").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -2726,7 +2966,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "9.1 beta";
+        return "9.2 BETA";
     }
 
     private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,
@@ -2788,14 +3028,18 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void setActionButtons(boolean enabled) {
         SwingUtilities.invokeLater(() -> {
             desktopInstallButton.setEnabled(enabled);
+            desktopAppletButton.setEnabled(enabled);
             uninstallButton.setEnabled(enabled);
             updateButton.setEnabled(enabled);
             flashButton.setEnabled(enabled);
+            flashPreviewButton.setEnabled(enabled);
             customFlashButton.setEnabled(enabled);
             wifiCredentialsButton.setEnabled(enabled);
             clearSavedPasswordButton.setEnabled(enabled);
             rememberPasswordToggle.setEnabled(enabled);
             startFakePortsButton.setEnabled(enabled && (fakePortsProcess == null || !fakePortsProcess.isAlive()));
+            scanNetworkButton.setEnabled(enabled && !networkScanRequested);
+            stopNetworkScanButton.setEnabled(enabled && networkScanRequested);
             stopFakePortsButton.setEnabled(enabled && fakePortsProcess != null && fakePortsProcess.isAlive());
             connectPreviewButton.setEnabled(enabled && previewPort == null);
             disconnectPreviewButton.setEnabled(enabled && previewPort != null);

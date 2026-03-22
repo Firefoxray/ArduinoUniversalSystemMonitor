@@ -23,14 +23,14 @@ find_repo_root() {
 
     cursor="$(cd -P "$start_dir" 2>/dev/null && pwd)" || return 1
     while [[ -n "$cursor" && "$cursor" != "/" ]]; do
-        if [[ -f "$cursor/install.sh" && -f "$cursor/update.sh" && -f "$cursor/README.md" ]]; then
+        if [[ -f "$cursor/README.md" && (( -f "$cursor/install.sh" && -f "$cursor/update.sh" ) || ( -f "$cursor/scripts/install.sh" && -f "$cursor/scripts/update.sh" )) ]]; then
             printf '%s\n' "$cursor"
             return 0
         fi
         cursor="$(dirname "$cursor")"
     done
 
-    if [[ -f "/install.sh" && -f "/update.sh" && -f "/README.md" ]]; then
+    if [[ -f "/README.md" && (( -f "/install.sh" && -f "/update.sh" ) || ( -f "/scripts/install.sh" && -f "/scripts/update.sh" )) ]]; then
         printf '/\n'
         return 0
     fi
