@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Universal Linux Arduino system monitor sender v9.4.
+"""Universal Linux Arduino system monitor sender.
 
 Originally built on Fedora for an Arduino desktop monitor, but intended to run
 across Linux desktops in general.
@@ -32,6 +32,20 @@ from serial.tools import list_ports
 
 REPO_ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = REPO_ROOT / "config"
+VERSION_FILE = REPO_ROOT / "VERSION"
+
+
+def load_app_version() -> str:
+    try:
+        value = VERSION_FILE.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    except Exception:
+        pass
+    return "unknown version"
+
+
+APP_VERSION = load_app_version()
 
 
 def config_path(name: str) -> Path:
@@ -265,7 +279,6 @@ WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
 WIFI_PAIRING_MAGIC = "UAM_PAIR"
 
-APP_VERSION = "v9.4"
 
 _gpu_cache = {"ts": 0.0, "data": None}
 _proc_cache = {"ts": 0.0, "data": None}
@@ -1020,9 +1033,10 @@ def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
             status_text = read_text(supply / "status").strip() or "Unknown"
             percent = "--" if cap is None else str(max(0, min(100, int(round(cap)))))
             status = "Charging" if status_text.lower() == "charging" else ("Not Charging" if status_text else "Unknown")
+            combined_label = label if percent == "--" else f"{label}: {percent}%"
             supplies.append({
                 "name": clean_field(name, 16),
-                "label": clean_field(label, 16),
+                "label": clean_field(combined_label, 24),
                 "percent": clean_field(percent, 6),
                 "status": clean_field(status, 18),
             })
@@ -1507,7 +1521,7 @@ def build_debug_payload(snapshot) -> str:
     for idx in range(EXTRA_BATTERY_SLOTS):
         if idx < len(snapshot["extra_batteries"]):
             entry = snapshot["extra_batteries"][idx]
-            add(f'BATTDEV{idx + 1}', f'{entry["label"]} {entry["percent"]}%', 24)
+            add(f'BATTDEV{idx + 1}', entry["label"], 24)
             add(f"BATTDEV{idx + 1}STATE", entry["status"], 18)
         else:
             add(f"BATTDEV{idx + 1}", "--")

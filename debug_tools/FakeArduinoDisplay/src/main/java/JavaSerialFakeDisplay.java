@@ -9,6 +9,9 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -19,6 +22,19 @@ import java.util.Map;
 public class JavaSerialFakeDisplay extends JFrame {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final String APP_VERSION = loadAppVersion();
+
+    private static String loadAppVersion() {
+        Path versionFile = Paths.get(System.getProperty("user.dir")).toAbsolutePath().resolve("VERSION");
+        try {
+            String version = Files.readString(versionFile, StandardCharsets.UTF_8).trim();
+            if (!version.isEmpty()) {
+                return version;
+            }
+        } catch (Exception ignored) {
+        }
+        return "unknown version";
+    }
 
     private final JComboBox<PortOption> portCombo = new JComboBox<>();
     private final JTextField manualPortField = new JTextField(22);
@@ -506,7 +522,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int top = m + 4;
             int ruleY = top + 24;
             String pageCounter = (pageIndex + 1) + "/7";
-            String versionText = "v9.4";
+            String versionText = APP_VERSION;
             boolean homePage = pageIndex == 0;
             String wifiText = previewWifiEnabled ? "WiFi On" : "WiFi Off";
 
@@ -518,7 +534,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             if (homePage) {
                 String leftText = "Ray Co. System Monitor " + versionText;
-                g2.setFont(fitFont(g2, leftText, Font.BOLD, 13, 9, 250));
+                g2.setFont(fitFont(g2, leftText, Font.BOLD, 16, 11, 320));
                 FontMetrics leftMetrics = g2.getFontMetrics();
                 int baseline = top + leftMetrics.getAscent() + 2;
                 g2.setColor(CYAN);
@@ -806,18 +822,18 @@ public class JavaSerialFakeDisplay extends JFrame {
             int panelX = 258;
             g2.setColor(PANEL_LINE);
             g2.drawLine(dividerX, headerBottom + 12, dividerX, h - 12);
-            g2.setFont(new Font(MONO, Font.BOLD, 10));
+            g2.setFont(new Font(MONO, Font.BOLD, 14));
             g2.setColor(YELLOW);
-            g2.drawString("Battery", panelX, headerBottom + 18);
+            g2.drawString("Battery / Devices", panelX, headerBottom + 20);
 
-            int lineY = headerBottom + 40;
+            int lineY = headerBottom + 42;
             String batteryMode = packet.get("BATTMODE", "DESKTOP");
             String batteryPct = packet.get("BATTPCT", "N/A");
             String batteryState = packet.get("BATTSTATE", "DESKTOP");
             g2.setFont(new Font(MONO, Font.PLAIN, 10));
             g2.setColor(WHITE);
             if ("DESKTOP".equalsIgnoreCase(batteryMode)) {
-                g2.drawString("Battery: N/A (Desktop)", panelX, lineY);
+                g2.drawString("System battery: N/A", panelX, lineY);
                 lineY += 18;
                 if (!"DESKTOP".equalsIgnoreCase(batteryState) && !"--".equals(batteryState)) {
                     g2.setColor(ORANGE);
@@ -825,9 +841,9 @@ public class JavaSerialFakeDisplay extends JFrame {
                     lineY += 18;
                 }
             } else {
-                g2.drawString("Battery: ", panelX, lineY);
+                g2.drawString("System battery: ", panelX, lineY);
                 g2.setColor(LIME);
-                g2.drawString(batteryPct + "%", panelX + 54, lineY);
+                g2.drawString(batteryPct + "%", panelX + 90, lineY);
                 lineY += 18;
                 g2.setColor("Charging".equalsIgnoreCase(batteryState) ? LIME : ORANGE);
                 g2.drawString(truncate(batteryState, 24), panelX, lineY);

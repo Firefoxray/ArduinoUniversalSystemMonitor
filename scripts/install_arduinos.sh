@@ -38,7 +38,7 @@ REQUIRED_LIBS=(
     "DIYables TFT Touch Shield|DIYables TFT Touch Shield|DIYables_TFT_Touch_Shield.h"
 )
 
-APP_VERSION="v9.4"
+APP_VERSION="$(python3 "$PROJECT_DIR/scripts/sync_version.py" --print-version)"
 
 echo "==== Ray Co Arduino Auto Flasher $APP_VERSION ===="
 
@@ -179,6 +179,10 @@ ensure_libraries() {
 }
 
 
+sync_generated_version_files() {
+    python3 "$PROJECT_DIR/scripts/sync_version.py" --sync
+}
+
 print_effective_flash_settings() {
     python3 - "$MONITOR_LOCAL_CONFIG_PATH" "$UNO_R3_SCREEN_SIZE" <<'PY2'
 import json, sys
@@ -299,6 +303,33 @@ detect_boards() {
     fi
 }
 
+wait_for_reenumerated_port() {
+    local previous_port="$1"
+    local board_name="$2"
+    local timeout_seconds="${3:-18}"
+    local start_seconds current_port
+
+    echo "Waiting for $board_name to re-enumerate after reset (previous port: $previous_port)..."
+    start_seconds="$(date +%s)"
+    while (( $(date +%s) - start_seconds < timeout_seconds )); do
+        current_port="$(arduino-cli board list | awk 'NR>1 && /Arduino UNO R4 WiFi|arduino:renesas_uno:unor4wifi|UNO R4 WiFi/ {print $1; exit}')"
+        if [[ -n "$current_port" ]]; then
+            if [[ "$current_port" != "$previous_port" ]]; then
+                echo "Detected UNO R4 WiFi on re-enumerated port $current_port."
+            else
+                echo "UNO R4 WiFi is still present on $current_port."
+            fi
+            printf '%s
+' "$current_port"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Timed out waiting for UNO R4 WiFi to reappear after reset."
+    return 1
+}
+
 upload_with_retry() {
     local port="$1"
     local fqbn="$2"
@@ -307,16 +338,18 @@ upload_with_retry() {
     local cli_path
     local upload_output
     local attempt
+    local active_port="$port"
+    local recovered_port=""
 
     cli_path="$(command -v arduino-cli)"
 
-    for attempt in 1 2; do
+    for attempt in 1 2 3; do
         if [[ $attempt -gt 1 ]]; then
-            echo "Retrying upload for $board_name on $port after a short delay..."
-            sleep 3
+            echo "Retrying upload for $board_name on $active_port (attempt $attempt/3)..."
+            sleep 2
         fi
 
-        if upload_output="$($cli_path upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+        if upload_output="$($cli_path upload -p "$active_port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
             printf '%s
 ' "$upload_output"
             return 0
@@ -326,25 +359,31 @@ upload_with_retry() {
 ' "$upload_output"
 
         if grep -Eqi '(permission denied|cannot perform port reset|no device found on tty|access is denied)' <<< "$upload_output"; then
-            echo "Upload hit a serial-port access/reset problem on $port."
-            echo "Retrying upload with sudo so Fedora can perform the reset cleanly..."
-
+            echo "Upload hit a serial-port access/reset problem on $active_port."
+            echo "Retrying upload with sudo so Linux can perform the reset cleanly..."
             sleep 2
-
-            if upload_output="$(run_cli_with_user_env "$cli_path" upload -p "$port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
+            if upload_output="$(run_cli_with_user_env "$cli_path" upload -p "$active_port" --fqbn "$fqbn" "$sketch" 2>&1)"; then
                 printf '%s
 ' "$upload_output"
-                echo "Upload succeeded after sudo retry for $board_name on $port."
+                echo "Upload succeeded after sudo retry for $board_name on $active_port."
                 return 0
             fi
-
             printf '%s
 ' "$upload_output"
-            echo "Upload still failed on $port after sudo retry."
+        fi
+
+        if [[ "$fqbn" == "$R4_FQBN" ]] && grep -Eqi '(no device found|unable to open serial port|port not found|cannot open|does not exist|ser_open|reset)' <<< "$upload_output"; then
+            echo "UNO R4 WiFi upload likely triggered a Linux port reset on $active_port."
+            recovered_port="$(wait_for_reenumerated_port "$active_port" "$board_name")" || recovered_port=""
+            if [[ -n "$recovered_port" ]]; then
+                active_port="$recovered_port"
+                echo "Retrying upload using re-detected port $active_port..."
+                continue
+            fi
         fi
     done
 
-    echo "Upload failed on $port after 2 attempt(s)."
+    echo "Upload failed on $active_port after 3 attempt(s)."
     return 1
 }
 
@@ -385,7 +424,8 @@ flash_boards() {
         compile_key="$fqbn|$sketch"
         if [[ -z "${compiled_sketches[$compile_key]:-}" ]]; then
             echo "      Compiling $(basename "$sketch") once for all matching boards..."
-            echo "      Verifying generated headers/config values before compile:"
+            echo "      Syncing generated version/config headers before compile:"
+            sync_generated_version_files
             print_effective_flash_settings
             arduino-cli compile --fqbn "$fqbn" "$sketch" || exit 1
             compiled_sketches[$compile_key]=1

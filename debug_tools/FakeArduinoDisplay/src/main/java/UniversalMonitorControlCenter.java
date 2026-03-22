@@ -32,7 +32,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = loadAppVersion();
-    private static final String APP_VERSION_DISPLAY = "v" + APP_VERSION;
+    private static final String APP_VERSION_DISPLAY = APP_VERSION;
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final String WIFI_SETTINGS_BACKUP_FILE = ".control_center_wifi_settings.properties";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
@@ -74,7 +74,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton desktopAppletButton = new JButton("Install Desktop Applet");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update and Restart GUI");
-    private final JButton flashButton = new JButton("Flash Arduino with Default Sketch");
+    private final JButton flashButton = new JButton("Flash Arduino(s) with Default Sketch");
     private final JButton flashPreviewButton = new JButton("Show Flash Diff");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
     private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
@@ -153,6 +153,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private boolean debugStatusMissingLogged;
     private boolean transportStatusMissingLogged;
     private volatile boolean networkScanRequested;
+    private volatile java.net.DatagramSocket activeNetworkScanSocket;
     private Thread networkScanThread;
     private Path selectedCustomSketchPath;
 
@@ -178,7 +179,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     public UniversalMonitorControlCenter() {
-        super(APP_NAME + " v" + APP_VERSION);
+        super(APP_NAME + " " + APP_VERSION);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(1500, 940);
         setLocationRelativeTo(null);
@@ -296,36 +297,32 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JTabbedPane buildMainTabs() {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Dashboard", buildDashboardTab());
-        tabs.addTab("Project", buildProjectTab());
         tabs.addTab("Flash", buildFlashTab());
         return tabs;
     }
 
     private JPanel buildDashboardTab() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.add(buildDashboardStatusPanel(), BorderLayout.NORTH);
-
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(buildDashboardStatusPanel());
+        content.add(Box.createVerticalStrut(6));
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
         splitPane.setResizeWeight(0.68);
         splitPane.setLeftComponent(buildPreviewPanel());
         splitPane.setRightComponent(buildPreviewControlsPanel());
-        panel.add(splitPane, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JPanel buildProjectTab() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        splitPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(splitPane);
+        content.add(Box.createVerticalStrut(6));
         content.add(buildRepoPanel());
         content.add(Box.createVerticalStrut(6));
         content.add(buildAppManagementPanel());
 
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
@@ -508,7 +505,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         networkButtons.add(scanNetworkButton);
         networkButtons.add(stopNetworkScanButton);
         networkRow.add(networkButtons, BorderLayout.NORTH);
-        networkScanResultsList.setVisibleRowCount(6);
+        networkScanResultsList.setVisibleRowCount(3);
         networkRow.add(new JScrollPane(networkScanResultsList), BorderLayout.CENTER);
         networkRow.setBorder(BorderFactory.createTitledBorder("Arduino Network Scan"));
         panel.add(networkRow);
@@ -775,20 +772,33 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
         networkScanRequested = true;
+        updateNetworkScanButtons();
         networkScanResultsModel.clear();
         networkScanResultsModel.addElement("Scanning local network for Arduino UDP discovery replies...");
         networkScanThread = new Thread(() -> {
-            while (networkScanRequested) {
-                performNetworkScanPass();
-                if (!networkScanRequested) {
-                    break;
+            try {
+                while (networkScanRequested) {
+                    performNetworkScanPass();
+                    if (!networkScanRequested) {
+                        break;
+                    }
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
-                try {
-                    Thread.sleep(5000);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+            } finally {
+                activeNetworkScanSocket = null;
+                networkScanRequested = false;
+                networkScanThread = null;
+                SwingUtilities.invokeLater(() -> {
+                    if (networkScanResultsModel.isEmpty()) {
+                        networkScanResultsModel.addElement("Network scan stopped.");
+                    }
+                    updateNetworkScanButtons();
+                });
             }
         }, "arduino-network-scan");
         networkScanThread.setDaemon(true);
@@ -798,6 +808,19 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void stopNetworkScan() {
         networkScanRequested = false;
+        java.net.DatagramSocket socket = activeNetworkScanSocket;
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+        if (networkScanThread != null) {
+            networkScanThread.interrupt();
+        }
+        SwingUtilities.invokeLater(() -> {
+            if (!networkScanResultsModel.isEmpty()) {
+                networkScanResultsModel.addElement("Scan stopped.");
+            }
+            updateNetworkScanButtons();
+        });
         log("[INFO] Stopped Arduino network scan.");
     }
 
@@ -812,6 +835,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (Exception ignored) {
         }
         try (java.net.DatagramSocket sock = new java.net.DatagramSocket()) {
+            activeNetworkScanSocket = sock;
             sock.setBroadcast(true);
             sock.setSoTimeout(1200);
             byte[] payload = magic.getBytes(StandardCharsets.UTF_8);
@@ -825,6 +849,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                     sock.receive(response);
                 } catch (java.net.SocketTimeoutException ex) {
                     break;
+                } catch (java.net.SocketException ex) {
+                    if (!networkScanRequested) {
+                        break;
+                    }
+                    throw ex;
                 }
                 String raw = new String(response.getData(), 0, response.getLength(), StandardCharsets.UTF_8).trim();
                 String[] parts = raw.split("\\|", -1);
@@ -838,16 +867,25 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         } catch (Exception ex) {
             results.add("Scan failed: " + ex.getMessage());
+        } finally {
+            activeNetworkScanSocket = null;
         }
         if (results.isEmpty()) {
-            results.add("No Arduino UDP discovery replies received on this scan.");
+            results.add("No Arduino UDP replies this scan.");
         }
         List<String> finalResults = results;
         SwingUtilities.invokeLater(() -> {
             networkScanResultsModel.clear();
             finalResults.forEach(networkScanResultsModel::addElement);
+            updateNetworkScanButtons();
         });
         log("[INFO] Network scan pass complete: " + String.join("; ", results));
+    }
+
+    private void updateNetworkScanButtons() {
+        boolean enabled = activeCommandProcess == null || !activeCommandProcess.isAlive();
+        scanNetworkButton.setEnabled(enabled && !networkScanRequested);
+        stopNetworkScanButton.setEnabled(enabled && networkScanRequested);
     }
 
     private void browseRepoPath() {
@@ -2785,13 +2823,32 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        String flashWork = escape(arduinoCli) + " compile --fqbn "
-                + escape(target.fqbn) + " " + escape(sketchPath.toString())
-                + " && sleep 2"
-                + " && " + escape(arduinoCli) + " upload -p "
-                + escape(target.port) + " --fqbn " + escape(target.fqbn) + " " + escape(sketchPath.toString());
+        String flashWork = buildCustomUploadCommand(arduinoCli, target, sketchPath);
         String command = buildManagedFlashCommand(flashWork);
         runCommand(command, repoPath().toFile(), "Upload custom sketch to " + target.port, true, true, null, true);
+    }
+
+    private String buildCustomUploadCommand(String arduinoCli, DetectedBoard target, Path sketchPath) {
+        String syncScript = repoPath().resolve("scripts/sync_version.py").toString();
+        return "python3 " + escape(syncScript) + " --sync"
+                + " && " + escape(arduinoCli) + " compile --fqbn "
+                + escape(target.fqbn) + " " + escape(sketchPath.toString())
+                + " && port=" + escape(target.port)
+                + " && fqbn=" + escape(target.fqbn)
+                + " && sketch=" + escape(sketchPath.toString())
+                + " && cli=" + escape(arduinoCli)
+                + " && upload_once() { \"$cli\" upload -p \"$port\" --fqbn \"$fqbn\" \"$sketch\"; }"
+                + " && if upload_once; then true"
+                + " elif [[ \"$fqbn\" == 'arduino:renesas_uno:unor4wifi' ]]; then "
+                + "echo 'UNO R4 WiFi upload reset detected; waiting for /dev/ttyACM* to re-enumerate...'; "
+                + "uploaded=0; "
+                + "for _ in $(seq 1 18); do "
+                + "new_port=$(\"$cli\" board list | awk 'NR>1 && /Arduino UNO R4 WiFi|arduino:renesas_uno:unor4wifi|UNO R4 WiFi/ {print $1; exit}'); "
+                + "if [[ -n \"$new_port\" ]]; then port=\"$new_port\"; echo \"Retrying upload on $port\"; if upload_once; then uploaded=1; break; fi; fi; "
+                + "sleep 1; "
+                + "done; "
+                + "[[ $uploaded -eq 1 ]] || { echo 'UNO R4 WiFi did not re-enumerate in time.'; exit 1; }"
+                + " else exit 1; fi";
     }
 
     private Path chooseSketchPath() {
@@ -3260,7 +3317,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "9.4").trim();
+                String version = properties.getProperty("app.version", "").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -3268,7 +3325,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "9.4";
+        Path versionFile = Paths.get(System.getProperty("user.dir")).toAbsolutePath().resolve("VERSION");
+        try {
+            String version = Files.readString(versionFile, StandardCharsets.UTF_8).trim();
+            if (!version.isEmpty()) {
+                return version;
+            }
+        } catch (IOException ignored) {
+        }
+        return "unknown version";
     }
 
     private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,
@@ -3340,8 +3405,6 @@ public class UniversalMonitorControlCenter extends JFrame {
             clearSavedPasswordButton.setEnabled(enabled);
             rememberPasswordToggle.setEnabled(enabled);
             startFakePortsButton.setEnabled(enabled && (fakePortsProcess == null || !fakePortsProcess.isAlive()));
-            scanNetworkButton.setEnabled(enabled && !networkScanRequested);
-            stopNetworkScanButton.setEnabled(enabled && networkScanRequested);
             stopFakePortsButton.setEnabled(enabled && fakePortsProcess != null && fakePortsProcess.isAlive());
             connectPreviewButton.setEnabled(enabled && previewPort == null);
             disconnectPreviewButton.setEnabled(enabled && previewPort != null);
@@ -3372,6 +3435,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             loadMonitorSettingsButton.setEnabled(enabled);
             saveMonitorSettingsButton.setEnabled(enabled);
             resetWifiPairingButton.setEnabled(enabled);
+            updateNetworkScanButtons();
             updateKillRunningTaskButton();
         });
     }
