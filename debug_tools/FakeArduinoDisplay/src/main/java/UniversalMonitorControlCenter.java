@@ -95,6 +95,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel transportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
+    private final JLabel flashTransportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel versionLabel = new JLabel(APP_VERSION_DISPLAY);
     private final JCheckBox alwaysShowFlashPreviewToggle = new JCheckBox("Always show preview before flashing");
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
@@ -308,15 +309,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.add(buildDashboardStatusPanel());
         content.add(Box.createVerticalStrut(6));
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setResizeWeight(0.68);
+        splitPane.setResizeWeight(0.7);
         splitPane.setLeftComponent(buildPreviewPanel());
-        splitPane.setRightComponent(buildPreviewControlsPanel());
+        splitPane.setRightComponent(buildDashboardSidePanel());
         splitPane.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(splitPane);
-        content.add(Box.createVerticalStrut(6));
-        content.add(buildRepoPanel());
-        content.add(Box.createVerticalStrut(6));
-        content.add(buildAppManagementPanel());
 
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         JScrollPane scrollPane = new JScrollPane(content);
@@ -441,9 +438,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         actionRow.add(flashButton);
         actionRow.add(flashPreviewButton);
         actionRow.add(customFlashButton);
-        actionRow.add(wifiCredentialsButton);
-        actionRow.add(killRunningTaskButton);
-        actionRow.add(alwaysShowFlashPreviewToggle);
         rowTwo.add(actionRow);
 
         JPanel indicatorRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
@@ -452,15 +446,33 @@ public class UniversalMonitorControlCenter extends JFrame {
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
         indicatorRow.add(Box.createHorizontalStrut(flashButton.getPreferredSize().width
                 + flashPreviewButton.getPreferredSize().width + 20));
-        indicatorRow.add(Box.createHorizontalStrut(customFlashButton.getPreferredSize().width / 6));
         indicatorRow.add(customSketchIndicator);
-        indicatorRow.add(Box.createHorizontalStrut(wifiCredentialsButton.getPreferredSize().width - 20));
+        rowTwo.add(indicatorRow);
+
+        JPanel wifiControlsRow = new JPanel();
+        wifiControlsRow.setLayout(new BoxLayout(wifiControlsRow, BoxLayout.X_AXIS));
+        wifiControlsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wifiControlsRow.setBorder(new EmptyBorder(6, 0, 0, 0));
+        flashTransportIndicator.setOpaque(true);
+        flashTransportIndicator.setPreferredSize(new Dimension(120, 30));
+        wifiControlsRow.add(new JLabel("Wi-Fi indicator:"));
+        wifiControlsRow.add(Box.createHorizontalStrut(8));
+        wifiControlsRow.add(flashTransportIndicator);
+        wifiControlsRow.add(Box.createHorizontalStrut(12));
+        wifiControlsRow.add(wifiCredentialsButton);
+        wifiControlsRow.add(Box.createHorizontalStrut(12));
         wifiCredentialsIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         wifiCredentialsIndicator.setOpaque(true);
         wifiCredentialsIndicator.setHorizontalAlignment(SwingConstants.CENTER);
         wifiCredentialsIndicator.setPreferredSize(new Dimension(150, wifiCredentialsIndicator.getPreferredSize().height + 6));
-        indicatorRow.add(wifiCredentialsIndicator);
-        rowTwo.add(indicatorRow);
+        wifiControlsRow.add(wifiCredentialsIndicator);
+        wifiControlsRow.add(Box.createHorizontalStrut(12));
+        wifiControlsRow.add(killRunningTaskButton);
+        wifiControlsRow.add(Box.createHorizontalStrut(12));
+        wifiControlsRow.add(alwaysShowFlashPreviewToggle);
+        wifiControlsRow.add(Box.createHorizontalGlue());
+        wifiControlsRow.add(buildVersionBadge());
+        rowTwo.add(wifiControlsRow);
 
         panel.add(rowTwo);
         return panel;
@@ -509,6 +521,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         networkRow.add(new JScrollPane(networkScanResultsList), BorderLayout.CENTER);
         networkRow.setBorder(BorderFactory.createTitledBorder("Arduino Network Scan"));
         panel.add(networkRow);
+        return panel;
+    }
+
+    private JPanel buildDashboardSidePanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(buildRepoPanel());
+        panel.add(Box.createVerticalStrut(6));
+        panel.add(buildAppManagementPanel());
+        panel.add(Box.createVerticalStrut(6));
+        panel.add(buildPreviewControlsPanel());
         return panel;
     }
 
@@ -2690,7 +2714,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             ));
             button.setOpaque(true);
         } else if (component instanceof JLabel label) {
-            if (label != serviceIndicator && label != debugIndicator && label != transportIndicator) {
+            if (label != serviceIndicator && label != debugIndicator
+                    && label != transportIndicator && label != flashTransportIndicator) {
                 label.setForeground(textColor);
             }
         } else if (component instanceof JComboBox<?> comboBox) {
@@ -3458,6 +3483,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             transportIndicator.setText(text);
             transportIndicator.setBackground(color);
             transportIndicator.setForeground(Color.WHITE);
+            flashTransportIndicator.setText(text);
+            flashTransportIndicator.setBackground(color);
+            flashTransportIndicator.setForeground(Color.WHITE);
         });
     }
 
