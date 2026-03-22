@@ -1,183 +1,148 @@
-# Ray Co. Linux / Windows Arduino Desktop System Monitor
+# Ray Co. Arduino Desktop System Monitor
 
-Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
+Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett  
-**Version:** 9.3 BETA
-**Last Modified:** March 21, 2026  
+**Version:** 9.4  
+**Last Modified:** March 22, 2026  
+
+---
+
+## Project Status
+
+This project is **built and tested on Linux** and is where active development happens.
+
+- Primary target: **Linux desktops**
+- Confirmed working distro family: **Fedora KDE** and **Linux Mint / Ubuntu-style systems**
+- **Windows support is legacy only**: some old Windows files are still included in the repository, but Windows is **not a current priority** and should be treated as experimental / unsupported for now.
+
+---
+
+## What v9.4 Includes
+
+Release **v9.4** rolls up all work completed since **v8.4**, including the former 9.x beta changes plus the latest monitor and flashing improvements.
+
+### Major highlights
+
+- **Wi-Fi pairing and persistence** for Arduino UNO R4 WiFi boards
+- **Reset Wi-Fi pairing** from the Control Center without reflashing
+- **Simultaneous USB + Wi-Fi monitor output** support
+- **Unified Wi-Fi TCP port persistence** across monitor config, Control Center, and flashed R4 settings
+- **Flash preview improvements** and safer flashing script organization
+- **Automatic Arduino dependency installation** before R4 WiFi reflashing
+- **UNO R3 mode selection** and better R3 flashing defaults
+- **Per-board display rotation controls** with persistence fixes
+- **Layered default/shared/local config support** for easier per-computer overrides
+- **Repo cleanup** around duplicate monitor/sketch copies and path handling
 
 ---
 
 ## Preview
 
-### Main Views
+### Main views
 <p align="center">
-  <img src="screenshots/home1.JPEG" width="420"/>
-  <img src="screenshots/home2.JPEG" width="420"/>
+  <img src="screenshots/home1.JPEG" width="420" alt="Main view 1"/>
+  <img src="screenshots/home2.JPEG" width="420" alt="Main view 2"/>
 </p>
 
-### Detail Pages
+### Detail pages
 <p align="center">
-  <img src="screenshots/cpu1.JPEG" width="160"/>
-  <img src="screenshots/cpu2.JPEG" width="160"/>
-  <img src="screenshots/gpu1.JPEG" width="160"/>
-  <img src="screenshots/network1.JPEG" width="160"/>
-  <img src="screenshots/storage1.JPEG" width="160"/>
-  <img src="screenshots/processes1.JPEG" width="160"/>
-  <img src="screenshots/graph1.JPEG" width="160"/>
-  <img src="screenshots/graph2.JPEG" width="160"/>
+  <img src="screenshots/cpu1.JPEG" width="160" alt="CPU page 1"/>
+  <img src="screenshots/cpu2.JPEG" width="160" alt="CPU page 2"/>
+  <img src="screenshots/gpu1.JPEG" width="160" alt="GPU page"/>
+  <img src="screenshots/network1.JPEG" width="160" alt="Network page"/>
+  <img src="screenshots/storage1.JPEG" width="160" alt="Storage page"/>
+  <img src="screenshots/processes1.JPEG" width="160" alt="Processes page"/>
+  <img src="screenshots/graph1.JPEG" width="160" alt="Graph page 1"/>
+  <img src="screenshots/graph2.JPEG" width="160" alt="Graph page 2"/>
 </p>
 
 ---
 
-## Important Notes
+## Supported Hardware
 
-- This project is **developed and tested on Fedora (KDE 43)**.
-- It is now designed to work across **most Linux distributions**.
-- GPU detection supports:
-  - NVIDIA (`nvidia-smi`)
-  - AMD (DRM/sysfs)
-  - Intel (DRM/sysfs / intel tools)
-- Behavior may vary depending on drivers and system configuration.
+### Recommended board targets
+- **Arduino UNO R4 WiFi + 3.5" TFT display**
+- **Arduino Mega 2560 R3 + 3.5" TFT display**
+- **Arduino UNO R3 + 2.8" TFT display**
 
-## Project Structure
+### GPU detection on Linux
+- NVIDIA via `nvidia-smi`
+- AMD via DRM/sysfs
+- Intel via DRM/sysfs / Intel tooling
+
+Behavior can still vary depending on your distro, driver stack, and permissions.
+
+---
+
+## Repository Layout
 
 ```text
 ArduinoUniversalSystemMonitor/
-├── UniversalArduinoMonitor.py              # Main desktop monitor sender
-├── config/                              # Centralized monitor config files
-│   ├── monitor_config.default.json         # Tracked baseline monitor settings
-│   ├── monitor_config.json                 # Shared runtime config template
-│   └── monitor_config.local.json           # Machine-local override (generated, git-ignored)
-├── requirements.txt                        # Python dependencies
-├── install.sh                              # Main Linux installer
-├── arduino_install.sh                      # Small entrypoint wrapper for Arduino flashing
-├── install_arduinos.sh                     # Arduino CLI setup + board flashing workflow
-├── update.sh                               # Pull latest changes and refresh dependencies
-├── uninstall_monitor.sh                    # Remove service and installed files
-├── UniversalMonitorControlCenter.sh        # Root-level Java GUI launcher/build helper
-├── install_control_center_desktop.sh       # Root-level desktop launcher wrapper
-├── scripts/                               # Implementation shell scripts
-├── R3_MonitorScreen28/              # Arduino UNO R3 2.8" TFT sketch
-├── R3_MonitorScreen35/              # Placeholder for future Arduino UNO R3 3.5" TFT sketch
-├── R3_MEGA_MonitorScreen35/         # Arduino Mega 2560 R3 3.5" TFT sketch
-├── R4_WIFI35/                       # Canonical Arduino UNO R4 WiFi USB + Wi-Fi 3.5" TFT sketch
-├── backups/                         # Backup copies of the previous desktop monitor/config
-├── debug_tools/FakeArduinoDisplay/         # Java fake display + Control Center
-├── legacy/Windows/                         # Older Windows-side monitor files
-└── screenshots/                            # README/device preview images
+├── UniversalArduinoMonitor.py                 # Main Linux desktop monitor sender
+├── config/
+│   ├── monitor_config.default.json            # Tracked baseline defaults
+│   ├── monitor_config.json                    # Shared runtime config
+│   └── monitor_config.local.json              # Machine-local overrides (git-ignored)
+├── requirements.txt                           # Python dependencies
+├── install.sh                                 # Main Linux installer
+├── arduino_install.sh                         # Stable wrapper for flashing workflow
+├── install_arduinos.sh                        # Arduino CLI setup + compile/flash flow
+├── update.sh                                  # Update helper
+├── uninstall_monitor.sh                       # Uninstall helper
+├── UniversalMonitorControlCenter.sh           # Root-level Java GUI launcher
+├── install_control_center_desktop.sh          # Optional desktop launcher installer
+├── scripts/                                   # Implementation shell scripts
+├── R3_MonitorScreen28/                        # Arduino UNO R3 2.8" TFT sketch
+├── R3_MonitorScreen35/                        # Arduino UNO R3 3.5" TFT sketch / placeholder
+├── R3_MEGA_MonitorScreen35/                   # Arduino Mega 2560 R3 3.5" TFT sketch
+├── R4_WIFI35/                                 # Canonical Arduino UNO R4 WiFi sketch
+├── backups/                                   # Backup copies of earlier monitor/config files
+├── debug_tools/FakeArduinoDisplay/            # Java fake display + Control Center
+├── legacy/Windows/                            # Legacy Windows-side files kept for reference
+└── screenshots/                               # README preview images
 ```
 
-The root shell scripts are intentionally kept as stable user-facing wrappers so the README commands stay short, while the implementation shell scripts continue to live in `scripts/`.
+The root shell scripts are kept as stable user-facing entrypoints so the commands stay short, while most implementation logic lives under `scripts/`.
 
 ---
 
 ## Requirements
 
-- Python 3.8+
-- Java OpenJDK 21 (build) + OpenJDK 25 (runtime for the Control Center launcher; auto-installed on supported Linux distros)
-- Arduino IDE 1.8.19+
-- **Option A:** Arduino UNO R4 (USB-C) + Arduino 3.5" TFT Display, or Arduino Mega 2560 R3 + 3.5" TFT Display
-- **Option B:** Arduino UNO R3 (USB-B) + 2.8" TFT UNO R3 Display
+### Linux host
+- Python **3.8+**
+- `git`
+- Java **OpenJDK 21** for builds
+- Java **OpenJDK 25** for the current Control Center launcher/runtime path
+- Arduino IDE **1.8.19+** or Arduino CLI workflow
 
-### Windows Only
-- LibreHardwareMonitor
-
----
-
-## Changelog
-
-```text
-4.0  - Initial
-4.1  - Fixed README
-4.2  - Enlarged text for OS and hostname, fixed Linux issues
-4.3  - Fixed OS naming
-4.4  - Faster polling and improved Windows logic
-4.5  - Re-added uptime
-5.0  - Major fixes, GPU page fully fixed
-5.1  - Timing tuning for Windows 7 & 10
-5.2  - Added R3 support
-5.3  - Backup versions + README fixes
-5.4  - Laptop support (no charging % yet)
-5.5  - Dropped Windows XP support
-6.0  - Stable release, Linux packages separated
-7.0  - Added Fedora KDE 43 support
-7.1  - Reorganized folder structure, separated Windows components
-7.2  - Made Linux universal, GPU detection for NVIDIA/AMD/Intel, reduced Fedora-specific dependencies
-7.3  - Added basic Java GUI debugger/emulator and config-driven debug output support for the Java fake display
-7.4  - Added install.sh improvements, config auto-generation, standardized install path (~/ArduinoUniversalSystemMonitor), and update.sh support
-7.5  - Re-added 2.8" TFT UNO R3 support, updated documentation, and clarified hardware requirements/options
-7.6  - Added Arduino CLI flashing workflow, automatic board/core/library setup, and install_arduinos.sh support
-7.7  - Added post-install Arduino flashing prompt, arduino_install.sh entrypoint, and updated install script documentation
-7.8  - Fixed Installer for Ubuntu/Mint machines due to Python restrictions
-7.9  - Reverted the Linux service back to the system Python install path and documented the Ubuntu/Mint working-directory workaround
-8.0  - Added Java Control Center with install/update/flash tooling, service controls, sudo prompt support, and live fake-port preview integration
-8.1  - Documented exact non-IntelliJ Java Control Center launch steps and Gradle fallback workflow
-8.2  - Refreshed README project layout and clarified the root-level install/update/uninstall helper scripts
-8.3  - Added a root-level Java Control Center launcher, runnable fat-jar build, and optional desktop-menu installer
-8.4  - Made Control Center updates rebuild/relaunch the Java app and added visible in-app version display
-8.5  - Refined the Control Center layout/theme, added custom-sketch selection status, cleaned 3.5" RAM/OS labels, normalized Fedora OS naming, and improved Mega touchscreen page switching
-8.6  - Removed the README release-notes section, updated project/control-center version metadata to 8.6, and refreshed the README modified date
-8.7  - Switched the default Linux monitor/config to the new R4 Wi-Fi build, added USB-only/Wi-Fi mode controls, and made the R4 Wi-Fi sketch the default flasher target
-8.8  - Made USB take priority over Wi-Fi for the R4 monitor path, cleaned up the R4 header/home layout, and reduced duplicate USB+Wi-Fi updates
-8.9  - Added committed Wi-Fi config templates and a Control Center button for saving R4 Wi-Fi credentials into wifi_config.h before flashing
-8.10  - Cleaned up .gitignore for tracked Wi-Fi templates and added a Control Center warning not to commit real Wi-Fi credentials
-8.11  - Switched real R4 Wi-Fi credentials to git-ignored wifi_config.local.h files so test pushes do not include passwords
-8.12  - Added Control Center UNO R3 mode selection, moved the visible display toggles into the action area, and added monitor connection port settings directly in the Control Center
-8.13  - Removed duplicate nested R4 Wi-Fi monitor/sketch copies so the repo now uses one root Python monitor, one shared monitor config flow, and one canonical R4_WIFI35 sketch folder
-9.0 beta  - Added layered default/shared/local monitor config support for per-computer port overrides, refreshed README screenshots with the newer captures, and bumped the project/control-center release branding to version 9 beta
-9.1 beta  - Updated the Control Center/desktop launcher icon to use the existing arduinoPreview screenshot image and bumped all current project branding to v9.1 beta
-9.2 beta  - Updated project branding, Control Center version display, and flash preview/logging for the v9.2 beta release
-9.3 beta  - Added Wi-Fi pairing handshake/persistence, an explicit Control Center pairing reset flow, and the no-reflash EEPROM reset path for moving R4 WiFi boards between PCs
-```
+### Arduino support
+- **Option A:** UNO R4 WiFi + 3.5" TFT, or Mega 2560 R3 + 3.5" TFT
+- **Option B:** UNO R3 + 2.8" TFT
 
 ---
 
-## TODO
+## Quick Start
 
-- Bundle Python, pip, and dependencies
+### 1) Install `git`
 
----
-
-## Confirmed Working Systems
-
-- Linux Mint 22.3  
-- Fedora KDE 43
-
-//LEGACY
-
-- Windows 11 Pro  
-- Windows 10 LTSC  
-- Windows 7 Ultimate  
- 
----
-
-# Installation
-
-## Linux Setup (Automatic - Recommended)
-
-First, make sure `git` is installed:
-
-### Ubuntu / Linux Mint / Debian
-
+#### Ubuntu / Linux Mint / Debian
 ```bash
 sudo apt update
 sudo apt install -y git
 ```
 
-### Fedora
-
+#### Fedora
 ```bash
 sudo dnf install -y git
 ```
 
-### Arch
-
+#### Arch
 ```bash
 sudo pacman -Sy --noconfirm git
 ```
 
-### Linux Automatic Install Snippet
+### 2) Clone and run the installer
 
 ```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
@@ -186,49 +151,100 @@ chmod +x install.sh
 ./install.sh
 ```
 
-or
+One-line version:
 
 ```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git && cd ArduinoUniversalSystemMonitor && chmod +x install.sh && ./install.sh
 ```
 
-During `./install.sh`, the script installs system packages, Python dependencies, config/service files, and then prompts:
+### What `install.sh` does
 
-`Would you like to install and flash your Arduino(s) now? [y/N]:`
+- Installs required Linux packages
+- Installs Python dependencies
+- Writes the monitor config files
+- Creates the machine-local override file
+- Writes and enables the systemd service
+- Prompts to install/flash supported Arduino boards
 
-- Typing `y` runs `./arduino_install.sh` (which calls `install_arduinos.sh`).
-- The Arduino installer ensures `arduino-cli` is installed, installs required board cores (`arduino:avr`, `arduino:renesas_uno`), installs required libraries/dependencies (`MCUFRIEND_kbv`, `Adafruit GFX Library`, `TouchScreen`, `DIYables TFT Touch Shield`), compiles each sketch once per board family, and flashes every supported connected board it detects.
-- With a single detected Arduino UNO R3, the flasher now defaults straight to the **2.8"** sketch unless you override it with `UNO_R3_SCREEN_SIZE=35`. When **multiple** Arduino UNO R3 boards are detected, the flasher asks which R3 sketch to use for that flashing run, because USB detection alone cannot distinguish whether the attached TFT shield is **2.8"** or **3.5"**. You can also preselect either screen size non-interactively with `UNO_R3_SCREEN_SIZE=28 ./install_arduinos.sh` or `UNO_R3_SCREEN_SIZE=35 ./install_arduinos.sh`. The Java Control Center follows the same rule: it defaults a single detected UNO R3 to **2.8"** and only shows a GUI choice when multiple UNO R3 boards are connected.
-- The Java Control Center now also includes an `Upload Custom Sketch` action so you can compile/upload your own sketch folder or `.ino` file to a selected connected board from the GUI.
-- The Java Control Center can optionally remember your sudo password in a local `.control_center_sudo_password` file in the repo root; that file is ignored by Git so it stays local to your machine.
-- On Fedora and other distros that gate `/dev/ttyACM*` access more aggressively, the flasher now automatically retries the upload with `sudo` if the Arduino UNO R4 WiFi reset/upload step reports `Permission denied` or a failed 1200-bps touch reset, while preserving the original user's Arduino CLI home/config paths so installed board cores remain visible during the retry.
-- Built-in board flashing now also does a short automatic retry for transient upload failures before giving up on a board, which helps when several boards are connected at the same time.
-- The Linux installer now runs the service with `/usr/bin/python3` again and installs Python dependencies with `pip` instead of pointing systemd at a project `.venv`.
-- On Ubuntu / Linux Mint, the installer automatically uses `pip --break-system-packages` when available so the required Python packages can still be installed on PEP 668 managed systems.
-- Install flow order is: dependency setup -> Arduino flash prompt -> systemd service start.
+During install you will be asked:
 
-Default/shared `config/monitor_config.default.json` + `config/monitor_config.json` files are created during installation, and a git-ignored `config/monitor_config.local.json` is also created for per-computer overrides such as serial port and Wi-Fi port changes.
+```text
+Would you like to install and flash your Arduino(s) now? [y/N]:
+```
 
-For the Wi-Fi TCP port specifically, the active monitor-side precedence is now:
+If you answer `y`, the installer runs `./arduino_install.sh`, which calls `install_arduinos.sh`.
 
-1. `ARDUINO_MONITOR_WIFI_PORT` environment override at monitor startup
-2. `config/monitor_config.local.json` machine-local override
-3. Shared JSON config (`config/monitor_config.json`, then `config/monitor_config.default.json`)
-4. Built-in JSON default (`5000`)
+---
 
-The Control Center treats the JSON monitor config as the single source of truth for the active Wi-Fi TCP port. When you save the port in the GUI, it also mirrors that same value into `R4_WIFI35/wifi_config.local.h` for the next flash and into the local backup helper file used to repopulate the Wi-Fi dialog, so the Python monitor, reopened GUI, flash preview, and flashed R4 sketch stay aligned automatically.
+## Flashing Workflow
 
-`install.sh` also writes the systemd service file with your real detected username and install path automatically. The service now points at the root `UniversalArduinoMonitor.py`, and the `YOUR_USERNAME` examples below are only for manual editing/troubleshooting.
+The built-in Arduino flasher now handles much more automatically than older releases.
 
-### Multi-board Wi-Fi pairing
+### It will:
+- Install `arduino-cli` if needed
+- Install required board cores
+- Install required libraries and dependencies
+- Compile sketches before upload
+- Detect supported connected boards
+- Stop the monitor service before flashing and restart it afterward
+- Auto-install missing Arduino dependencies before R4 WiFi reflashing
+- Retry certain transient upload failures automatically
 
-If you have more than one Arduino UNO R4 WiFi on the same network, the recommended rollout order is:
+### UNO R3 behavior
+- With **one detected UNO R3**, flashing defaults to the **2.8" sketch**
+- With **multiple UNO R3 boards**, the flasher asks which screen size to use
+- You can override non-interactively with:
 
-1. **Start with fixed IPs / no auto-discovery** so each PC points at one exact board.
-2. **Give each board a unique Wi-Fi device name** so discovery can later distinguish them cleanly.
-3. Optionally re-enable discovery after the board names and target-host values are set correctly.
+```bash
+UNO_R3_SCREEN_SIZE=28 ./install_arduinos.sh
+UNO_R3_SCREEN_SIZE=35 ./install_arduinos.sh
+```
 
-For the immediate fixed-IP setup on each computer, create or edit `config/monitor_config.local.json` and set:
+### Fedora / stricter serial permission handling
+On Fedora and similar systems, the flasher can retry uploads with `sudo` when needed while preserving the Arduino CLI paths used by the current user.
+
+### Upload your own sketch
+The Java Control Center includes an **Upload Custom Sketch** action so you can compile/upload your own sketch folder or `.ino` file to a selected board.
+
+---
+
+## Config Files
+
+The monitor now uses a layered config model.
+
+### Files
+- `config/monitor_config.default.json` → tracked defaults
+- `config/monitor_config.json` → shared runtime config
+- `config/monitor_config.local.json` → local machine-specific overrides
+
+This makes it easier to keep common settings in the repo while allowing each Linux machine to use its own:
+- serial port
+- Wi-Fi host
+- Wi-Fi TCP port
+- local monitor behavior
+
+### Wi-Fi TCP port precedence
+For the monitor, Wi-Fi TCP port precedence is:
+
+1. `ARDUINO_MONITOR_WIFI_PORT` environment variable
+2. `config/monitor_config.local.json`
+3. `config/monitor_config.json`
+4. `config/monitor_config.default.json`
+5. built-in fallback default (`5000`)
+
+The Control Center treats the JSON monitor config as the main source of truth and mirrors the Wi-Fi port into `R4_WIFI35/wifi_config.local.h` for the next flash so the flashed board and host monitor stay aligned.
+
+---
+
+## Multi-Board Wi-Fi Pairing
+
+If you have more than one UNO R4 WiFi on the same network, the recommended setup order is:
+
+1. Start with **manual / fixed IP mode**
+2. Give each board a **unique Wi-Fi device name**
+3. Optionally move back to discovery after pairing fields are correct
+
+### Example machine-local config
 
 ```json
 {
@@ -239,14 +255,7 @@ For the immediate fixed-IP setup on each computer, create or edit `config/monito
 }
 ```
 
-This example is **not** hard-coded globally by the project. The tracked configs still keep `wifi_host` blank and leave auto-discovery enabled by default; `config/monitor_config.local.json` is the machine-local place to override that for one PC at a time.
-
-Use the real IP of the intended Arduino on that machine. With two boards, a common layout would be:
-
-- Office PC -> `192.168.1.50`
-- Gaming PC -> `192.168.1.51`
-
-Each board can also advertise a unique identity from `R4_WIFI35/wifi_config.local.h` (or `wifi_config.h` if you are intentionally committing a shared template):
+### Example per-board R4 settings
 
 ```cpp
 #define WIFI_SSID_VALUE "YOUR_WIFI_SSID"
@@ -257,7 +266,7 @@ Each board can also advertise a unique identity from `R4_WIFI35/wifi_config.loca
 #define WIFI_TARGET_HOSTNAME_VALUE "office-desktop"
 ```
 
-Example second board:
+Second board example:
 
 ```cpp
 #define WIFI_DEVICE_NAME_VALUE "R4_GAMING"
@@ -265,106 +274,67 @@ Example second board:
 #define WIFI_TARGET_HOSTNAME_VALUE "gaming-desktop"
 ```
 
-The flashed R4 sketch includes the board name and optional target host / target hostname in its UDP discovery reply, and the Python monitor uses those values to decide whether a discovered board is meant for the current PC. This lets you start with fixed IPs now and later move back to discovery with much more control over which computer talks to which board.
+### Pairing reset without reflashing
+The Control Center includes a **Reset Wi-Fi Pairing** action that clears only the stored EEPROM pairing for a connected R4 WiFi board.
 
-#### GUI vs CLI workflow
-
-- **GUI / Control Center:** the Monitor Connection Settings panel now lets you choose **Auto Discovery (UDP)** or **Manual / Fixed IP**, including a machine-local `wifi_host` when manual mode is selected. The `Save Monitor Settings & Flash R4 WiFi` action writes those local monitor settings plus `R4_WIFI35/wifi_config.local.h`, then reflashes **every detected UNO R4 WiFi board** with that same local header. That is convenient when you want several boards to share one config, but for per-board identity it is best to connect and flash **one R4 at a time**. There is also a **Reset Wi-Fi Pairing** button that sends an explicit USB admin command to one connected UNO R4 WiFi and clears only the saved EEPROM pairing, so the next PC can claim that board without a reflash.
-- **CLI / manual flashing:** edit `config/monitor_config.local.json` on the PC that should talk to one board, edit `R4_WIFI35/wifi_config.local.h` with that board's name/target values, then flash only the specific R4 you currently have connected. Repeat for the next board with different values.
-
-If you need a manual fallback outside the GUI, connect the board over USB at `115200` baud and send:
+If you need the manual fallback, connect over USB at `115200` baud and send:
 
 ```text
 CMD|RESET_WIFI_PAIRING|CONFIRM
 ```
 
-That clears the stored EEPROM pairing only. If the flashed sketch still has explicit `WIFI_TARGET_HOST_VALUE` or `WIFI_TARGET_HOSTNAME_VALUE` values, those flashed targets still take precedence until you change them.
+That clears stored pairing only; flashed explicit target settings still win until changed.
 
-So if you want one board named `R4_OFFICE` and another named `R4_GAMING`, the safest current workflow is:
-
-1. Plug in only the office R4, set `R4_OFFICE` values, flash it.
-2. Plug in only the gaming R4, set `R4_GAMING` values, flash it.
-3. On each PC, choose whether you want fixed-IP mode (`wifi_auto_discovery: false` + `wifi_host`) or discovery mode with the flashed pairing fields.
-
-### Ubuntu / Linux Mint service workaround
-
-If your service still refuses to start on Ubuntu or Linux Mint after installation, re-open the systemd unit and make sure it uses the system Python plus the repo as the working directory:
-
-```bash
-sudo nano /etc/systemd/system/arduino-monitor.service
-```
-
-```ini
-[Service]
-ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py
-WorkingDirectory=/home/YOUR_USERNAME/ArduinoUniversalSystemMonitor
-```
-
-Then reload systemd and restart the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart arduino-monitor.service
-```
-
-This bypasses the Ubuntu/Mint `.venv` startup issue by running the monitor from the normal project folder instead of the virtual environment.
-
-If you used `./install.sh`, you do **not** need to hand-edit `YOUR_USERNAME` in the service file unless you are manually repairing a broken unit.
+### Current best practice for multiple R4 WiFi boards
+1. Plug in only one R4 at a time
+2. Set the board-specific Wi-Fi identity values
+3. Flash that board
+4. Repeat for the next board
+5. Then set each PC to either manual mode or discovery mode as needed
 
 ---
 
-## Java Control Center Launcher (Root-Level)
+## Control Center
 
-You can now launch the Java Control Center straight from the repository root without remembering the Gradle path:
+Launch from the repository root:
 
 ```bash
 chmod +x UniversalMonitorControlCenter.sh
 ./UniversalMonitorControlCenter.sh
 ```
 
-If `DISPLAY` is missing, the launcher now tries to infer it from the local desktop session before starting Swing. If no GUI session can be found, it exits with a clear error instead of a Java stack trace.
+### What the launcher does
+- Detects or installs the required Java versions on supported Linux distros
+- Rebuilds the Control Center when Java files/resources changed
+- Launches with the intended runtime instead of whichever `java` is first in `PATH`
+- Tries to recover `DISPLAY` automatically when possible
+- Exits cleanly with a readable message if no GUI session is available
 
-What the root launcher does:
+### Control Center features added across the 9.x work
+- Update and restart GUI workflow
+- Reinstall Monitor workflow that clears generated/local state first
+- Flash preview improvements
+- Better settings layout and connection help text
+- UNO R3 mode selection
+- Per-board display rotation controls
+- Arduino monitor preview support
+- Wi-Fi connection mode controls
+- Pairing reset support
 
-- Checks for OpenJDK 21 (build) and OpenJDK 25 (runtime) the first time you launch it
-- Automatically installs both JDKs on supported Linux distros (`apt`, `dnf`, `pacman`, `zypper`) when they are missing
-- Builds `debug_tools/FakeArduinoDisplay/build/libs/UniversalMonitorControlCenter.jar` automatically when Java files/resources changed
-- Launches the GUI with the detected OpenJDK 25 runtime instead of whichever `java` happens to be first in `PATH`
-
-So for normal testing, you can stay in the repo root and just run `./UniversalMonitorControlCenter.sh`.
-
-Inside the Control Center, **Update and Restart GUI** still pulls the newest repo files from GitHub first, then rebuilds the Java app and relaunches it.
-
-The Control Center also includes an **Reinstall Monitor** button that reruns `install.sh` without pulling from GitHub, clears machine-local/generated files first (`config/monitor_config.json`, `config/monitor_config.local.json`, `R4_WIFI35/wifi_config.local.h`, saved sudo/Wi-Fi helper files, the desktop launcher, and Control Center build artifacts), refreshes the Linux desktop launcher with `screenshots/arduinoPreview1.png`, and then restarts the GUI so desktop/taskbar icon changes show up immediately.
-
-### Optional Linux app-menu launcher
-
-If you want a clickable launcher in KDE/GNOME/etc, run:
+### Optional desktop app launcher
 
 ```bash
 chmod +x install_control_center_desktop.sh
 ./install_control_center_desktop.sh
 ```
 
-That installs a `.desktop` entry into `~/.local/share/applications`, so the Control Center shows up in the desktop app menu as **Universal Monitor Control Center**.
-
-## Arduino Flashing Script (Standalone)
-
-If you skip the prompt or want to reflash later:
-
-```bash
-cd ~/ArduinoUniversalSystemMonitor
-chmod +x arduino_install.sh install_arduinos.sh
-./arduino_install.sh
-```
-
-`arduino_install.sh` is just a stable wrapper entrypoint. The actual flashing logic lives in `install_arduinos.sh`, which installs `arduino-cli` if needed, checks cores/libraries, stops the monitor service before flashing, and restarts it afterward.
+This installs a `.desktop` launcher into `~/.local/share/applications`.
 
 ---
 
-## Linux Setup (Manual)
+## Manual Linux Setup
 
-### Create Service
+### Create the systemd service
 
 ```bash
 sudo nano /etc/systemd/system/arduino-monitor.service
@@ -385,9 +355,7 @@ User=YOUR_USERNAME
 WantedBy=multi-user.target
 ```
 
----
-
-### Enable
+### Enable it
 
 ```bash
 sudo systemctl daemon-reload
@@ -395,117 +363,106 @@ sudo systemctl enable arduino-monitor
 sudo systemctl start arduino-monitor
 ```
 
----
-
-### Serial Permissions (IMPORTANT)
+### Serial permissions
 
 ```bash
 sudo usermod -aG dialout $USER
 ```
 
-Log out and back in.
+Then log out and back in.
+
+### Ubuntu / Linux Mint service workaround
+If the service still refuses to start after installation, make sure the unit uses the system Python and the repo as `WorkingDirectory`:
+
+```ini
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py
+WorkingDirectory=/home/YOUR_USERNAME/ArduinoUniversalSystemMonitor
+```
+
+Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart arduino-monitor.service
+```
 
 ---
-# Running the Program
 
-## Linux
+## Daily Commands
 
+### Service control
 ```bash
 sudo systemctl start arduino-monitor
 sudo systemctl stop arduino-monitor
 sudo systemctl restart arduino-monitor
 sudo systemctl status arduino-monitor
 ```
-## Updating (Linux)
 
+### Update
 ```bash
 cd ~/ArduinoUniversalSystemMonitor
 chmod +x update.sh
 ./update.sh
 ```
 
-This will:
+### Reflash boards later
+```bash
+cd ~/ArduinoUniversalSystemMonitor
+chmod +x arduino_install.sh install_arduinos.sh
+./arduino_install.sh
+```
 
-- Pull the latest version from GitHub
-- Ensure the local `.venv` exists for update-time package management
-- Update Python dependencies
-- Re-apply executable bits to the helper scripts
-- Restart the system service
-
----
-
-## Uninstall (Linux)
-
-To completely remove the monitor, service, and installed files:
-
+### Uninstall
 ```bash
 cd ~/ArduinoUniversalSystemMonitor
 chmod +x uninstall_monitor.sh
 ./uninstall_monitor.sh
 ```
 
-This will:
-
-- Stop and disable the systemd service
-- Remove the service file
-- Remove installed monitor files and directories
-- Clean up previous install locations
-
-After uninstalling, you can reinstall cleanly using:
-
-`./install.sh`
-
 ---
 
-# Troubleshooting
+## Troubleshooting
 
-### Check Arduino Port
-
+### Check Arduino device nodes
 ```bash
 ls /dev/ttyACM* /dev/ttyUSB*
 ```
 
----
-
-### Detect Plug-In
-
+### Watch device detection live
 ```bash
 dmesg -w
 ```
 
----
-
-### Verify Permissions
-
+### Check serial permissions
 ```bash
 ls -l /dev/ttyACM0
 ```
 
----
-
-### Check Service
-
+### Check monitor service status
 ```bash
 sudo systemctl status arduino-monitor
 ```
 
+---
+
 ## Debug Tools
 
-This repository also includes a Java-based Fake Arduino Display tool for testing the serial output without requiring a physical Arduino.
+This repo includes a Java-based fake display tool for testing serial output without a physical Arduino.
 
 Location:
-`debug_tools/FakeArduinoDisplay`
 
-To launch the Java Control Center without IntelliJ:
+```text
+debug_tools/FakeArduinoDisplay
+```
 
+### Launch without IntelliJ
 ```bash
 cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
 chmod +x run_control_center.sh gradlew
 ./run_control_center.sh
 ```
 
-If `./gradlew run` crashes on your system, use the fallback launcher instead:
-
+### Fallback launcher
 ```bash
 cd ~/ArduinoUniversalSystemMonitor/debug_tools/FakeArduinoDisplay
 chmod +x gradlew
@@ -513,19 +470,45 @@ chmod +x gradlew
 ./build/install/FakeArduinoDisplay/bin/FakeArduinoDisplay
 ```
 
-For the full Java instructions, including JDK setup and launching only the fake display window, see:
-`debug_tools/FakeArduinoDisplay/README.md`
+For full Java-specific notes, see:
 
-Use it with a virtual serial pair such as:
-`/tmp/fakearduino_in` and `/tmp/fakearduino_out`
-
-Debug mirror is configured from the merged `config/monitor_config.default.json` / `config/monitor_config.json` / `config/monitor_config.local.json` settings, with local overrides taking precedence:
-
-```json
-{
-  "debug_enabled": false,
-  "debug_port": "/tmp/fakearduino_in"
-}
+```text
+debug_tools/FakeArduinoDisplay/README.md
 ```
 
-The main root-level `UniversalArduinoMonitor.py` still sends the original Arduino positional payload, and when debug mode is enabled it also emits the Java-compatible `KEY:VALUE` stream on `debug_port`.
+---
+
+## Confirmed Linux Test Systems
+
+- Fedora KDE 43
+- Linux Mint 22.3
+
+---
+
+## Changelog
+
+```text
+8.4  - Control Center updates rebuild/relaunch the Java app and visible in-app version display was added
+8.5  - Control Center layout/theme cleanup, custom-sketch status, improved labels, and Mega touchscreen improvements
+8.6  - Project/control-center version metadata cleanup and README refresh
+8.7  - R4 WiFi became the default Linux monitor/config path with USB-only and Wi-Fi mode controls
+8.8  - USB priority improvements, R4 layout cleanup, and reduced duplicate USB+Wi-Fi updates
+8.9  - Added committed Wi-Fi config templates and GUI save-to-header flow before flashing
+8.10 - Added warnings around committing real Wi-Fi credentials and cleaned .gitignore behavior
+8.11 - Switched real credentials to git-ignored local Wi-Fi config files
+8.12 - Added UNO R3 mode selection, visible display toggles in the action area, and monitor connection port settings
+8.13 - Removed duplicate nested R4 Wi-Fi monitor/sketch copies and consolidated to one canonical workflow
+9.0  - Added layered default/shared/local config support and refreshed 9.0 branding
+9.1  - Updated icons/branding using the existing Arduino preview art
+9.2  - Refined branding, Control Center version display, and flash preview/logging
+9.3  - Added Wi-Fi pairing handshake/persistence, pairing reset flow, and no-reflash EEPROM reset path
+9.4  - Added simultaneous USB + Wi-Fi monitor output, unified Wi-Fi TCP port persistence, automatic Arduino dependency install before R4 WiFi reflash, rotation persistence fixes, flash-path fixes, and broader README cleanup/documentation refresh
+```
+
+---
+
+## Roadmap
+
+- Bundle Python, pip, and dependencies more completely for easier first-time setup
+- Keep improving Linux-first install reliability across more distributions
+- Continue simplifying board setup and flashing for multi-board workflows
