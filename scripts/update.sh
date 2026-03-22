@@ -191,7 +191,7 @@ else
 fi
 
 echo "[5/7] Making sure scripts are executable..."
-chmod +x scripts/UniversalArduinoMonitor.py 2>/dev/null || true
+chmod +x UniversalArduinoMonitor.py scripts/UniversalArduinoMonitor.py 2>/dev/null || true
 chmod +x install.sh scripts/install.sh 2>/dev/null || true
 chmod +x update.sh scripts/update.sh 2>/dev/null || true
 chmod +x uninstall_monitor.sh scripts/uninstall_monitor.sh 2>/dev/null || true

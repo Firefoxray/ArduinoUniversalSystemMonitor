@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/project_paths.sh"
+PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$SCRIPT_DIR/..}" "${BASH_SOURCE[0]}")"
+MONITOR_LOCAL_CONFIG_PATH="$(monitor_local_config_path "$PROJECT_DIR")"
+
 SERVICE_NAME="arduino-monitor.service"
 RESTART_DELAY=2
 
@@ -175,12 +180,12 @@ ensure_libraries() {
 
 
 print_effective_flash_settings() {
-    python3 - "$PWD" "$UNO_R3_SCREEN_SIZE" <<'PY2'
+    python3 - "$MONITOR_LOCAL_CONFIG_PATH" "$UNO_R3_SCREEN_SIZE" <<'PY2'
 import json, sys
 from pathlib import Path
-repo = Path(sys.argv[1])
+config_path = Path(sys.argv[1])
+repo = config_path.parent.parent
 uno = sys.argv[2]
-config_path = repo / "monitor_config.local.json"
 config = {}
 if config_path.exists():
     try:
@@ -220,13 +225,13 @@ PY2
 }
 
 sync_display_rotation_headers() {
-    python3 - "$PWD" <<'PY'
+    python3 - "$MONITOR_LOCAL_CONFIG_PATH" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-repo = Path(sys.argv[1])
-config_path = repo / "monitor_config.local.json"
+config_path = Path(sys.argv[1])
+repo = config_path.parent.parent
 default_rotation = 1
 rotation_map = {
     "r4_display_rotation": [repo / "R4_WIFI35/display_config.local.h"],
