@@ -38,7 +38,7 @@ REQUIRED_LIBS=(
     "DIYables TFT Touch Shield|DIYables TFT Touch Shield|DIYables_TFT_Touch_Shield.h"
 )
 
-APP_VERSION="v9.2 BETA"
+APP_VERSION="v9.4"
 
 echo "==== Ray Co Arduino Auto Flasher $APP_VERSION ===="
 

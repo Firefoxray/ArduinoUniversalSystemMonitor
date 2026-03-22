@@ -3246,7 +3246,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "9.3 BETA").trim();
+                String version = properties.getProperty("app.version", "9.4").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -3254,7 +3254,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "9.3 BETA";
+        return "9.4";
     }
 
     private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,

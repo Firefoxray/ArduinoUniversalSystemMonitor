@@ -250,7 +250,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private static final int CPU_THREADS = 16;
         private static final int PROCESS_ROWS = 6;
         private static final int STORAGE_LINES = 7;
-        private static final int FIELD_COUNT = 64;
+        private static final int FIELD_COUNT = 65;
 
         private final Map<String, String> values = new LinkedHashMap<>();
         private String raw = "";
@@ -320,9 +320,9 @@ public class JavaSerialFakeDisplay extends JFrame {
             for (int i = 1; i <= STORAGE_LINES; i++) {
                 values.put("DRV" + i, fields[idx++].trim());
             }
-            values.put("OPTICAL", fields[idx++].trim());
-            values.put("OPT", values.get("OPTICAL"));
-            values.put("RAMGB", fields[idx].trim());
+            values.put("BATTPCT", fields[idx++].trim());
+            values.put("BATTSTATE", fields[idx++].trim());
+            values.put("BATTMODE", fields[idx].trim());
             values.put("HEADER", "Ray Co. Universal System Monitor");
             return true;
         }
@@ -498,6 +498,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int top = m + 4;
             int ruleY = top + 24;
             String pageCounter = (pageIndex + 1) + "/7";
+            String versionText = "v9.4";
 
             g2.setColor(CYAN);
             g2.setFont(fitFont(g2, title, Font.BOLD, 14, 10, Math.max(120, right - left - 62)));
@@ -509,7 +510,13 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setFont(new Font(MONO, Font.BOLD, 10));
             FontMetrics counterMetrics = g2.getFontMetrics();
             int counterX = right - counterMetrics.stringWidth(pageCounter);
+            int versionX = counterX - 56;
+            g2.drawString(versionText, versionX, titleBaseline);
             g2.drawString(pageCounter, counterX, titleBaseline);
+
+            g2.setFont(new Font(MONO, Font.PLAIN, 9));
+            g2.setColor(previewWifiEnabled ? LIME : ORANGE);
+            g2.drawString(previewWifiEnabled ? "WiFi On" : "WiFi Off", versionX - 72, titleBaseline);
 
             g2.setColor(PANEL_LINE);
             g2.drawLine(m, ruleY, w - m, ruleY);
@@ -731,11 +738,16 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             int y = headerBottom + 48;
             int row = 24;
-            drawLabelValue(g2, "Name", truncate(packet.get("GPUNAME", packet.get("NAME", "AMD RX 6600")), 28), 15, y, WHITE);
+            String gpuName = truncate(packet.get("GPUNAME", packet.get("NAME", "AMD RX 6600")), 28);
+            g2.setFont(fitFont(g2, gpuName, Font.BOLD, 15, 11, 310));
+            g2.setColor(WHITE);
+            g2.drawString("Name", 15, y);
+            g2.setColor(CYAN);
+            g2.drawString(gpuName, 102, y);
             drawLabelValue(g2, "Temp", packet.get("GPUTEMP", packet.get("TEMP", "56.0C")), 15, y + row, CYAN);
-            drawLabelValue(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "1936/8176M")), 15, y + row * 2, YELLOW);
-            drawLabelValue(g2, "VRAM%", packet.get("VRAMPCT", packet.get("VRAM_PERCENT", "24%")), 15, y + row * 3, LIME);
-            drawLabelValue(g2, "Clk", packet.get("GPUCLK", packet.get("CLK", "0MHz")), 15, y + row * 4, ORANGE);
+            drawLabelValue(g2, "Usage", packet.get("GPU", "0") + "%", 15, y + row * 2, LIME);
+            drawLabelValue(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "1936/8176M")), 15, y + row * 3, YELLOW);
+            drawLabelValue(g2, "CLK Speed", packet.get("GPUCLK", packet.get("CLK", "0MHz")), 15, y + row * 4, ORANGE);
             drawFooter(g2, w, h);
         }
 
@@ -747,13 +759,13 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setColor(WHITE);
 
             String[] lines = {
-                    packet.get("DRV1", "FireMain-Win 931.3G unmnt"),
-                    packet.get("DRV2", "SP SSD 953.9G unmnt"),
-                    packet.get("DRV3", "linux_storage 15% linux-st"),
-                    packet.get("DRV4", "Second HDD 2.2T unmnt"),
-                    packet.get("DRV5", "SD/MMC 0B unmnt"),
-                    packet.get("DRV6", "Compact Flas 0B unmnt"),
-                    packet.get("DRV7", "SM/xD-Pictur 0B unmnt")
+                    packet.get("DRV1", "fedora 42% root"),
+                    packet.get("DRV2", "linux_storage 15% home"),
+                    packet.get("DRV3", "games 68% steam"),
+                    packet.get("DRV4", "backup 2.2T"),
+                    packet.get("DRV5", "media 31% media"),
+                    packet.get("DRV6", "archive 78% archive"),
+                    packet.get("DRV7", "Storage: --")
             };
 
             for (int i = 0; i < lines.length; i++) {
@@ -761,41 +773,34 @@ public class JavaSerialFakeDisplay extends JFrame {
             }
 
             g2.setColor(PANEL_LINE);
-            g2.drawLine(304, headerBottom + 12, 304, h - 54);
-            g2.drawRect(318, headerBottom + 18, 136, 126);
+            g2.drawLine(294, headerBottom + 12, 294, h - 54);
+            g2.drawRect(310, headerBottom + 18, 148, 148);
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(YELLOW);
+            g2.drawString("Battery Status", 320, headerBottom + 34);
+            g2.setColor(PANEL_LINE);
+            g2.drawLine(320, headerBottom + 42, 446, headerBottom + 42);
 
             String batteryMode = packet.get("BATTMODE", "DESKTOP");
             String batteryPct = packet.get("BATTPCT", "N/A");
             String batteryState = packet.get("BATTSTATE", "DESKTOP");
-            g2.setFont(new Font(MONO, Font.BOLD, 12));
-            g2.setColor(YELLOW);
-            g2.drawString("Battery", 336, headerBottom + 34);
             if ("DESKTOP".equalsIgnoreCase(batteryMode)) {
+                g2.setFont(new Font(MONO, Font.BOLD, 14));
                 g2.setColor(ORANGE);
-                g2.drawString("DESKTOP", 340, headerBottom + 74);
+                g2.drawString("Desktop", 346, headerBottom + 84);
                 g2.setFont(new Font(MONO, Font.BOLD, 10));
                 g2.setColor(WHITE);
-                g2.drawString("Battery: N/A", 332, headerBottom + 102);
+                g2.drawString("Battery: N/A (Desktop)", 320, headerBottom + 116);
             } else {
+                g2.setFont(new Font(MONO, Font.BOLD, 12));
+                g2.setColor(WHITE);
+                g2.drawString("Battery:", 322, headerBottom + 76);
                 g2.setColor(LIME);
-                g2.drawString("Battery:", 330, headerBottom + 74);
-                g2.drawString(batteryPct + "%", 348, headerBottom + 102);
+                g2.drawString(batteryPct + "%", 350, headerBottom + 102);
                 g2.setFont(new Font(MONO, Font.BOLD, 10));
                 g2.setColor("Charging".equalsIgnoreCase(batteryState) ? LIME : ORANGE);
-                g2.drawString(truncate(batteryState, 16), 330, headerBottom + 128);
+                g2.drawString(truncate(batteryState, 18), 322, headerBottom + 130);
             }
-
-            g2.setFont(new Font(MONO, Font.BOLD, 12));
-            g2.setColor(CYAN);
-            g2.drawString("Opt", 12, h - 46);
-            g2.setColor(WHITE);
-            g2.setFont(fitFont(g2, packet.get("OPTICAL", packet.get("OPT", "Empty")), Font.BOLD, 12, 9, 390));
-            g2.drawString(packet.get("OPTICAL", packet.get("OPT", "Empty")), 52, h - 46);
-            g2.setFont(new Font(MONO, Font.BOLD, 12));
-            g2.setColor(MAGENTA);
-            g2.drawString("RAM", 250, h - 46);
-            g2.setColor(WHITE);
-            g2.drawString(packet.get("RAMGB", "0.0/0.0G"), 292, h - 46);
             drawFooter(g2, w, h);
         }
 

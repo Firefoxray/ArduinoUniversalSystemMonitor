@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett  
-**Version:** 9.4  
+**Version:** v9.4  
 **Last Modified:** March 22, 2026  
 
 ---
