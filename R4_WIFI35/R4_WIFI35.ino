@@ -10,6 +10,9 @@
 #include "wifi_config.h"
 #endif
 #include <WiFiS3.h>
+#if __has_include("app_version.generated.h")
+#include "app_version.generated.h"
+#endif
 #include <WiFiUdp.h>
 #include <EEPROM.h>
 #include <string.h>
@@ -93,7 +96,9 @@ const int PROCESS_ROWS = 6;
 const int STORAGE_LINES = 8;
 const int EXTRA_BATTERY_SLOTS = 1;
 const int FIELD_COUNT = 69;
-const char* APP_VERSION = "v9.4";
+#ifndef APP_VERSION
+#define APP_VERSION "unknown version"
+#endif
 
 int cpuHistory[GRAPH_POINTS];
 int ramHistory[GRAPH_POINTS];
@@ -458,15 +463,16 @@ void drawHeader(const char* title, int page) {
   String pageStr = String(page) + "/" + String(TOTAL_PAGES);
 
   if (page == 1) {
-    tft.setTextSize(1);
+    tft.setTextSize(2);
     tft.setTextColor(CYAN);
-    tft.setCursor(12, 18);
+    tft.setCursor(12, 14);
     tft.print("Ray Co. System Monitor ");
     tft.setTextColor(WHITE);
     tft.print(APP_VERSION);
 
+    tft.setTextSize(1);
     tft.setTextColor(wifiStateColor());
-    tft.setCursor(246, 18);
+    tft.setCursor(12, 34);
     tft.print(wifiStateText());
 
     tft.setTextSize(2);
@@ -751,16 +757,17 @@ void updateStorage() {
     tft.print(fitText(storageLine[i], 32));
   }
 
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setTextColor(YELLOW);
   tft.setCursor(rightPanelX, panelTop);
-  tft.print("Battery");
+  tft.print("Battery / Devices");
 
-  int lineY = panelTop + 22;
+  int lineY = panelTop + 28;
+  tft.setTextSize(1);
   tft.setTextColor(WHITE);
   if (batteryModeStr == "DESKTOP") {
     tft.setCursor(rightPanelX, lineY);
-    tft.print("Battery: N/A (Desktop)");
+    tft.print("System battery: N/A");
     lineY += 18;
     if (batteryStateStr.length() > 0 && batteryStateStr != "DESKTOP" && batteryStateStr != "--") {
       tft.setTextColor(ORANGE);
@@ -770,7 +777,7 @@ void updateStorage() {
     }
   } else {
     tft.setCursor(rightPanelX, lineY);
-    tft.print("Battery: ");
+    tft.print("System battery: ");
     tft.setTextColor(GREEN);
     tft.print(batteryPctStr);
     tft.print("%");

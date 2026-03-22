@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.firefoxray"
-version = "9.4"
+version = rootProject.file("../../VERSION").readText().trim().removePrefix("v")
 
 repositories {
     mavenCentral()
