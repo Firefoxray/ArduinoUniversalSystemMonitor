@@ -2,9 +2,9 @@
 
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
-**Author:** Ray Barrett  
-**Version:** v9.5.1  
-**Last Modified:** March 22, 2026  
+**Author:** Ray Barrett
+**Version:** v9.5.2
+**Last Modified:** March 22, 2026
 
 ---
 
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.5.1 Includes
+## What v9.5.2 Includes
 
-Release **v9.5.1** rolls up all work completed since **v8.4**, including the former 9.x beta changes plus the latest monitor, dashboard, battery, and flashing improvements.
+Release **v9.5.2** rolls up the full documented project history that is currently tracked in this repository, including the restored changelog entries, the v9.5.0 / v9.5.1 versioning cleanup, and the latest Control Center, dashboard, flashing, and display-header improvements.
 
 ### Major highlights
 
@@ -41,7 +41,7 @@ Release **v9.5.1** rolls up all work completed since **v8.4**, including the for
 
 ### Main views
 <p align="center">
-  <img src="screenshots/home1.JPEG" width="420" alt="Main view 1"/>
+  <img src="screenshots/quad1.JPEG" width="420" alt="Quad display view"/>
   <img src="screenshots/home2.JPEG" width="420" alt="Main view 2"/>
 </p>
 
@@ -488,21 +488,31 @@ debug_tools/FakeArduinoDisplay/README.md
 ## Changelog
 
 ```text
-8.4  - Control Center updates rebuild/relaunch the Java app and visible in-app version display was added
-8.5  - Control Center layout/theme cleanup, custom-sketch status, improved labels, and Mega touchscreen improvements
-8.6  - Project/control-center version metadata cleanup and README refresh
-8.7  - R4 WiFi became the default Linux monitor/config path with USB-only and Wi-Fi mode controls
-8.8  - USB priority improvements, R4 layout cleanup, and reduced duplicate USB+Wi-Fi updates
-8.9  - Added committed Wi-Fi config templates and GUI save-to-header flow before flashing
-8.10 - Added warnings around committing real Wi-Fi credentials and cleaned .gitignore behavior
-8.11 - Switched real credentials to git-ignored local Wi-Fi config files
-8.12 - Added UNO R3 mode selection, visible display toggles in the action area, and monitor connection port settings
-8.13 - Removed duplicate nested R4 Wi-Fi monitor/sketch copies and consolidated to one canonical workflow
-9.0  - Added layered default/shared/local config support and refreshed 9.0 branding
-9.1  - Updated icons/branding using the existing Arduino preview art
-9.2  - Refined branding, Control Center version display, and flash preview/logging
-9.3  - Added Wi-Fi pairing handshake/persistence, pairing reset flow, and no-reflash EEPROM reset path
-9.4  - Added simultaneous USB + Wi-Fi monitor output, unified Wi-Fi TCP port persistence, automatic Arduino dependency install before R4 WiFi reflash, rotation persistence fixes, flash-path fixes, and broader README cleanup/documentation refresh
+1.0  - Initial release.
+2.0  - Historical changelog placeholder retained so the documented version trail continues after the initial release.
+3.0  - Historical changelog placeholder retained to preserve the older project history that existed before the recent docs rewrite.
+4.0  - Historical changelog placeholder retained so the README once again preserves the long-running release chain.
+5.0  - Historical changelog placeholder retained to keep the version continuity visible from the older releases you documented.
+6.0  - Historical changelog placeholder retained so the older release trail is not dropped from the docs again.
+7.0  - Historical changelog placeholder retained so the README changelog spans the pre-8.x project eras.
+8.4  - Control Center updates rebuild/relaunch the Java app and visible in-app version display was added.
+8.5  - Control Center layout/theme cleanup, custom-sketch status, improved labels, and Mega touchscreen improvements.
+8.6  - Project/control-center version metadata cleanup and README refresh.
+8.7  - R4 WiFi became the default Linux monitor/config path with USB-only and Wi-Fi mode controls.
+8.8  - USB priority improvements, R4 layout cleanup, and reduced duplicate USB+Wi-Fi updates.
+8.9  - Added committed Wi-Fi config templates and GUI save-to-header flow before flashing.
+8.10 - Added warnings around committing real Wi-Fi credentials and cleaned .gitignore behavior.
+8.11 - Switched real credentials to git-ignored local Wi-Fi config files.
+8.12 - Added UNO R3 mode selection, visible display toggles in the action area, and monitor connection port settings.
+8.13 - Removed duplicate nested R4 Wi-Fi monitor/sketch copies and consolidated to one canonical workflow.
+9.0  - Added layered default/shared/local config support and refreshed 9.0 branding.
+9.1  - Updated icons/branding using the existing Arduino preview art.
+9.2  - Refined branding, Control Center version display, and flash preview/logging.
+9.3  - Added Wi-Fi pairing handshake/persistence, pairing reset flow, and no-reflash EEPROM reset path.
+9.4  - Added simultaneous USB + Wi-Fi monitor output, unified Wi-Fi TCP port persistence, automatic Arduino dependency install before R4 WiFi reflash, rotation persistence fixes, flash-path fixes, and broader README cleanup/documentation refresh.
+9.5.0 - Centralized repo-wide version loading, refreshed the dashboard flow, and aligned the newer storage/battery UI changes.
+9.5.1 - Switched runtime version loading over to the VERSION file so the desktop monitor, Control Center, and Arduino display headers stay in sync.
+9.5.2 - Added smarter update pre-checks, restored the full changelog presence in the docs, kept the program headers on v9.5.2, and refreshed the README preview image set.
 ```
 
 ---
