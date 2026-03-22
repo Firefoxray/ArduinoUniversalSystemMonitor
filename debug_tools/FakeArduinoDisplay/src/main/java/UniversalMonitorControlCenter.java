@@ -656,6 +656,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void runDefaultFlashWorkflow() {
         syncDashboardSudoPassword();
+        persistCurrentDisplayRotationSelections(true, true);
         if (alwaysShowFlashPreviewToggle.isSelected()) {
             showFlashPreviewDialog();
         }
@@ -684,15 +685,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String buildFlashPreviewReport() {
-        String merged;
-        try {
-            merged = loadMergedMonitorConfigText();
-        } catch (IOException ex) {
-            merged = null;
-        }
-        int r4Rotation = resolveDisplayRotation(merged == null ? "" : merged, "r4_display_rotation");
-        int r3Rotation = resolveDisplayRotation(merged == null ? "" : merged, "r3_display_rotation");
-        int megaRotation = resolveDisplayRotation(merged == null ? "" : merged, "mega_display_rotation");
+        int r4Rotation = selectedRotationValue(r4RotationSelector);
+        int r3Rotation = selectedRotationValue(r3RotationSelector);
+        int megaRotation = selectedRotationValue(megaRotationSelector);
         String boardName = normalizeWifiBoardName(wifiBoardNameField.getText().trim());
         String targetHost = wifiTargetHostField.getText().trim();
         String targetHostname = wifiTargetHostnameField.getText().trim();
@@ -1546,6 +1541,43 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + ", R3 rotation " + rotationLabel(r3Rotation)
                 + ", and Mega rotation " + rotationLabel(megaRotation) + " apply right away.");
         reflashWifiBoardsAndRestartMonitor(wifiPort);
+    }
+
+    private boolean persistCurrentDisplayRotationSelections(boolean verbose, boolean syncHeaders) {
+        int r4Rotation = selectedRotationValue(r4RotationSelector);
+        int r3Rotation = selectedRotationValue(r3RotationSelector);
+        int megaRotation = selectedRotationValue(megaRotationSelector);
+        Path configPath = monitorLocalConfigPath();
+        boolean saved = false;
+        try {
+            String text = ensureWritableLocalMonitorConfig();
+            String updated = upsertNumberConfigValue(text, "r4_display_rotation", r4Rotation);
+            updated = upsertNumberConfigValue(updated, "r3_display_rotation", r3Rotation);
+            updated = upsertNumberConfigValue(updated, "mega_display_rotation", megaRotation);
+            if (!updated.equals(text)) {
+                Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                if (verbose) {
+                    log("[INFO] Saved per-board display rotation settings to " + configPath
+                            + " (r4_display_rotation=" + r4Rotation
+                            + ", r3_display_rotation=" + r3Rotation
+                            + ", mega_display_rotation=" + megaRotation + ").");
+                }
+            } else if (verbose) {
+                log("[INFO] Per-board display rotation settings already matched in " + configPath + ".");
+            }
+            saved = true;
+        } catch (Exception ex) {
+            log("[WARN] Failed to persist display rotation settings to " + configPath + ": " + ex.getMessage());
+        }
+
+        if (syncHeaders) {
+            boolean synced = syncDisplayRotationHeaders(r4Rotation, r3Rotation, megaRotation);
+            if (verbose && synced) {
+                log("[INFO] Synced per-board display rotation headers from the current GUI selection for R4, R3, and Mega boards.");
+            }
+            return saved && synced;
+        }
+        return saved;
     }
 
     private int resolveDisplayRotation(String text, String key) {
