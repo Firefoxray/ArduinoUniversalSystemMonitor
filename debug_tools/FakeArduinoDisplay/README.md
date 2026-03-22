@@ -24,7 +24,7 @@ It includes:
   - Service Restart
   - Service Status
   - Green/Red status indicator
-- Manage Python debug mirror mode in `monitor_config.json`:
+- Manage Python debug mirror mode in `config/monitor_config.local.json` (with shared/default config fallback):
   - Enable Debug Mode (writes config + restarts service)
   - Disable Debug Mode (writes config + restarts service)
   - Refresh Debug Status
@@ -34,7 +34,7 @@ It includes:
   - Stop fake ports from the UI
 - Live preview feed in the embedded Arduino panel from the configured output port
   - Auto-sends a one-time probe packet after fake ports start (helps verify wiring)
-  - Auto-updates `monitor_config.json` to use debug mirror on the fake input path
+  - Auto-updates `config/monitor_config.local.json` to use debug mirror on the fake input path
 - Open the existing debug display app with one click
 - Stream command output logs in-app
 - Show the Java Control Center version directly in the window so it matches the packaged project version

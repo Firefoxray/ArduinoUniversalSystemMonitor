@@ -603,7 +603,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void wireActions() {
         desktopInstallButton.addActionListener(e -> runInstallAndDesktopWorkflow());
-        desktopAppletButton.addActionListener(e -> runRepoScript("scripts/install_control_center_desktop.sh", true));
+        desktopAppletButton.addActionListener(e -> runRepoScript("install_control_center_desktop.sh", true));
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
         updateButton.addActionListener(e -> runUpdateWorkflow());
         flashButton.addActionListener(e -> runDefaultFlashWorkflow());
@@ -659,7 +659,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (alwaysShowFlashPreviewToggle.isSelected()) {
             showFlashPreviewDialog();
         }
-        runRepoScript("scripts/arduino_install.sh", true);
+        runRepoScript("arduino_install.sh", true);
     }
 
     private void showFlashPreviewDialog() {
@@ -848,18 +848,18 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void runUpdateWorkflow() {
         Path repo = repoPath();
-        Path launcher = repo.resolve("scripts/UniversalMonitorControlCenter.sh");
-        String command = "cd " + escape(repo.toString()) + " && chmod +x scripts/update.sh scripts/UniversalMonitorControlCenter.sh && ./scripts/update.sh";
+        Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
+        String command = "cd " + escape(repo.toString()) + " && chmod +x update.sh UniversalMonitorControlCenter.sh && ./update.sh";
         runCommand(command, repo.toFile(), "Update and restart Control Center", true, true, () -> relaunchApplication(launcher));
     }
 
     private void runInstallAndDesktopWorkflow() {
         Path repo = repoPath();
-        Path launcher = repo.resolve("scripts/UniversalMonitorControlCenter.sh");
+        Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
         String command = "cd " + escape(repo.toString())
-                + " && chmod +x scripts/install.sh scripts/install_control_center_desktop.sh scripts/UniversalMonitorControlCenter.sh"
-                + " && RESET_LOCAL_STATE=1 SKIP_GIT_PULL=1 CONTROL_CENTER_NONINTERACTIVE=1 ./scripts/install.sh"
-                + " && ./scripts/install_control_center_desktop.sh";
+                + " && chmod +x install.sh install_control_center_desktop.sh UniversalMonitorControlCenter.sh"
+                + " && RESET_LOCAL_STATE=1 SKIP_GIT_PULL=1 CONTROL_CENTER_NONINTERACTIVE=1 ./install.sh"
+                + " && ./install_control_center_desktop.sh";
         runCommand(command, repo.toFile(), "Install monitor and desktop entry", true, true, () -> relaunchApplication(launcher));
     }
 
@@ -874,7 +874,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (command == null) {
             return;
         }
-        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true, null, "scripts/arduino_install.sh".equals(scriptName));
+        runCommand(command, repoPath().toFile(), scriptName, needsSudo, true, null, "arduino_install.sh".equals(scriptName));
     }
 
     private String buildRepoScriptCommand(String scriptName) {
@@ -883,7 +883,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 .append(" && chmod +x ").append(escape(scriptName))
                 .append(" && ");
 
-        if ("scripts/arduino_install.sh".equals(scriptName)) {
+        if ("arduino_install.sh".equals(scriptName)) {
             String unoScreenSize = resolveUnoR3ScreenSizeForControlCenter();
             if ("".equals(unoScreenSize)) {
                 return null;
@@ -1210,16 +1210,20 @@ public class UniversalMonitorControlCenter extends JFrame {
         return "No IPv4 address";
     }
 
+    private Path configDir() {
+        return repoPath().resolve("config");
+    }
+
     private Path monitorDefaultConfigPath() {
-        return repoPath().resolve("monitor_config.default.json");
+        return configDir().resolve("monitor_config.default.json");
     }
 
     private Path monitorSharedConfigPath() {
-        return repoPath().resolve("monitor_config.json");
+        return configDir().resolve("monitor_config.json");
     }
 
     private Path monitorLocalConfigPath() {
-        return repoPath().resolve("monitor_config.local.json");
+        return configDir().resolve("monitor_config.local.json");
     }
 
     private Path wifiSettingsBackupPath() {
@@ -1620,13 +1624,13 @@ public class UniversalMonitorControlCenter extends JFrame {
 
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                log("[INFO] Updated monitor_config.local.json: " + key + "=" + enabled);
+                log("[INFO] Updated config/monitor_config.local.json: " + key + "=" + enabled);
             } else {
-                log("[INFO] monitor_config.local.json already had " + key + "=" + enabled + ".");
+                log("[INFO] config/monitor_config.local.json already had " + key + "=" + enabled + ".");
             }
             return true;
         } catch (Exception ex) {
-            log("[WARN] Could not update monitor_config.local.json entry " + key + ": " + ex.getMessage());
+            log("[WARN] Could not update config/monitor_config.local.json entry " + key + ": " + ex.getMessage());
             return false;
         }
     }
@@ -1768,7 +1772,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         String localText = readConfigFileIfPresent(monitorLocalConfigPath());
         String localRawPort = localText == null ? null : findRawConfigValue(localText, "wifi_port");
         if (localRawPort != null && !localRawPort.isBlank()) {
-            return new WifiPortResolution(parseWifiPort(localRawPort, 5000), "monitor_config.local.json");
+            return new WifiPortResolution(parseWifiPort(localRawPort, 5000), "config/monitor_config.local.json");
         }
 
         for (Path path : List.of(monitorSharedConfigPath(), monitorDefaultConfigPath())) {
@@ -1943,7 +1947,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         String arduinoCli = ensureArduinoCliAvailable("reflash the UNO R4 WiFi monitor sketch");
         if (arduinoCli == null) {
             log("[WARN] Reflash skipped. TCP port " + wifiPort
-                    + " was still saved into monitor_config.local.json and wifi_config.local.h.");
+                    + " was still saved into config/monitor_config.local.json and wifi_config.local.h.");
             restartMonitorServiceForSettingsChange();
             return;
         }
@@ -1953,7 +1957,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 .toList();
         if (wifiBoards.isEmpty()) {
             log("[WARN] No Arduino UNO R4 WiFi boards were detected, so TCP port " + wifiPort
-                    + " was only saved into monitor_config.local.json and wifi_config.local.h.");
+                    + " was only saved into config/monitor_config.local.json and wifi_config.local.h.");
             restartMonitorServiceForSettingsChange();
             return;
         }
@@ -2131,13 +2135,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             String updated = upsertNumberConfigValue(text, "wifi_port", tcpPort);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                log("[INFO] Synced monitor_config.local.json to Wi-Fi TCP port " + tcpPort + ".");
+                log("[INFO] Synced config/monitor_config.local.json to Wi-Fi TCP port " + tcpPort + ".");
             } else {
-                log("[INFO] monitor_config.local.json already matched Wi-Fi TCP port " + tcpPort + ".");
+                log("[INFO] config/monitor_config.local.json already matched Wi-Fi TCP port " + tcpPort + ".");
             }
             savedMonitorConfig = true;
         } catch (IOException ex) {
-            log("[WARN] Failed to sync monitor_config.local.json Wi-Fi port: " + ex.getMessage());
+            log("[WARN] Failed to sync config/monitor_config.local.json Wi-Fi port: " + ex.getMessage());
         }
 
         if (savedHeader) {
@@ -2183,13 +2187,13 @@ public class UniversalMonitorControlCenter extends JFrame {
 
             if (!updated.equals(text)) {
                 Files.write(configPath, updated.getBytes(StandardCharsets.UTF_8), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                log("[INFO] Updated monitor_config.local.json: debug_enabled=" + enabled + (applyPort ? ", debug_port=" + fakeIn : ""));
+                log("[INFO] Updated config/monitor_config.local.json: debug_enabled=" + enabled + (applyPort ? ", debug_port=" + fakeIn : ""));
             } else {
-                log("[INFO] monitor_config.local.json already had requested debug settings.");
+                log("[INFO] config/monitor_config.local.json already had requested debug settings.");
             }
             return true;
         } catch (Exception ex) {
-            log("[WARN] Could not update monitor_config.local.json debug settings: " + ex.getMessage());
+            log("[WARN] Could not update config/monitor_config.local.json debug settings: " + ex.getMessage());
             return false;
         }
     }
@@ -3156,7 +3160,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Path findRepoWithInstallScript(Path start) {
         Path cursor = start;
         while (cursor != null) {
-            if (Files.exists(cursor.resolve("install.sh")) && Files.exists(cursor.resolve("README.md"))) {
+            if (Files.exists(cursor.resolve("README.md"))
+                    && (Files.exists(cursor.resolve("install.sh")) || Files.exists(cursor.resolve("scripts/install.sh")))) {
                 return cursor;
             }
             cursor = cursor.getParent();

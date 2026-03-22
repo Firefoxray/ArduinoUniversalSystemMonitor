@@ -18,7 +18,8 @@ if [ "$DEFAULT_PROJECT_DIR" = "$SCRIPT_DIR" ] && [ ! -d "$SCRIPT_DIR/.git" ]; th
 fi
 PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$DEFAULT_PROJECT_DIR}" "${BASH_SOURCE[0]}")"
 REPO_URL="https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git"
-SCRIPT_NAME="scripts/UniversalArduinoMonitor.py"
+SCRIPT_NAME="$(basename "$(monitor_runtime_script_path "$PROJECT_DIR")")"
+CONFIG_DIR_NAME="config"
 CONFIG_NAME="monitor_config.json"
 DEFAULT_CONFIG_NAME="monitor_config.default.json"
 LOCAL_CONFIG_NAME="monitor_config.local.json"
@@ -63,8 +64,8 @@ reset_local_state_if_requested() {
 
     echo "[reset] Removing local/generated files so this repo can reinstall cleanly..."
 
-    rm -f "$PROJECT_DIR/$CONFIG_NAME"
-    rm -f "$PROJECT_DIR/$LOCAL_CONFIG_NAME"
+    rm -f "$(monitor_shared_config_path "$PROJECT_DIR")"
+    rm -f "$(monitor_local_config_path "$PROJECT_DIR")"
     rm -f "$PROJECT_DIR/.control_center_sudo_password"
     rm -f "$PROJECT_DIR/.control_center_wifi_settings.properties"
     rm -f "$PROJECT_DIR/R4_WIFI35/wifi_config.local.h"
@@ -184,9 +185,21 @@ fix_serial_permissions() {
 ensure_config() {
     echo "[5/8] Ensuring config files exist..."
 
-    if [ ! -f "$PROJECT_DIR/$DEFAULT_CONFIG_NAME" ]; then
-        echo "Creating $DEFAULT_CONFIG_NAME..."
-        cat > "$PROJECT_DIR/$DEFAULT_CONFIG_NAME" <<'JSON'
+    local config_dir
+    local default_config_path
+    local shared_config_path
+    local local_config_path
+
+    config_dir="$(config_dir "$PROJECT_DIR")"
+    default_config_path="$(monitor_default_config_path "$PROJECT_DIR")"
+    shared_config_path="$(monitor_shared_config_path "$PROJECT_DIR")"
+    local_config_path="$(monitor_local_config_path "$PROJECT_DIR")"
+
+    mkdir -p "$config_dir"
+
+    if [ ! -f "$default_config_path" ]; then
+        echo "Creating $CONFIG_DIR_NAME/$DEFAULT_CONFIG_NAME..."
+        cat > "$default_config_path" <<'JSON'
 {
   "arduino_port": "AUTO",
   "baud": 115200,
@@ -210,17 +223,17 @@ ensure_config() {
 JSON
     fi
 
-    if [ ! -f "$PROJECT_DIR/$CONFIG_NAME" ]; then
-        echo "Copying $DEFAULT_CONFIG_NAME to $CONFIG_NAME..."
-        cp "$PROJECT_DIR/$DEFAULT_CONFIG_NAME" "$PROJECT_DIR/$CONFIG_NAME"
+    if [ ! -f "$shared_config_path" ]; then
+        echo "Copying $CONFIG_DIR_NAME/$DEFAULT_CONFIG_NAME to $CONFIG_DIR_NAME/$CONFIG_NAME..."
+        cp "$default_config_path" "$shared_config_path"
     fi
 
-    if [ ! -f "$PROJECT_DIR/$LOCAL_CONFIG_NAME" ]; then
-        echo "Creating machine-local override file $LOCAL_CONFIG_NAME..."
-        cp "$PROJECT_DIR/$CONFIG_NAME" "$PROJECT_DIR/$LOCAL_CONFIG_NAME"
+    if [ ! -f "$local_config_path" ]; then
+        echo "Creating machine-local override file $CONFIG_DIR_NAME/$LOCAL_CONFIG_NAME..."
+        cp "$shared_config_path" "$local_config_path"
     fi
 
-    chmod +x "$PROJECT_DIR/$SCRIPT_NAME" 2>/dev/null || true
+    chmod +x "$(monitor_runtime_script_path "$PROJECT_DIR")" 2>/dev/null || true
     chmod +x "$PROJECT_DIR"/*.sh 2>/dev/null || true
     chmod +x "$PROJECT_DIR/scripts"/*.sh 2>/dev/null || true
 }
@@ -234,7 +247,7 @@ Description=Arduino System Monitor
 After=network.target
 
 [Service]
-ExecStart=$PYTHON_BIN $PROJECT_DIR/$SCRIPT_NAME
+ExecStart=$PYTHON_BIN $(monitor_runtime_script_path "$PROJECT_DIR")
 WorkingDirectory=$PROJECT_DIR
 Restart=always
 User=$INSTALL_USER
@@ -282,7 +295,7 @@ finish_message() {
     echo "==== INSTALL COMPLETE ===="
     echo "Installed for user: $INSTALL_USER"
     echo "Project installed to: $PROJECT_DIR"
-    echo "Config file: $PROJECT_DIR/$CONFIG_NAME"
+    echo "Config file: $(monitor_shared_config_path "$PROJECT_DIR")"
     echo "Systemd service uses user/path: $INSTALL_USER -> $PROJECT_DIR"
     echo
     echo "IMPORTANT:"

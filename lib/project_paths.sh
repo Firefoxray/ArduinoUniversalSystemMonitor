@@ -38,6 +38,31 @@ find_repo_root() {
     return 1
 }
 
+config_dir() {
+    local project_dir="${1:-$(pwd)}"
+    printf '%s\n' "$project_dir/config"
+}
+
+monitor_default_config_path() {
+    local project_dir="${1:-$(pwd)}"
+    printf '%s\n' "$(config_dir "$project_dir")/monitor_config.default.json"
+}
+
+monitor_shared_config_path() {
+    local project_dir="${1:-$(pwd)}"
+    printf '%s\n' "$(config_dir "$project_dir")/monitor_config.json"
+}
+
+monitor_local_config_path() {
+    local project_dir="${1:-$(pwd)}"
+    printf '%s\n' "$(config_dir "$project_dir")/monitor_config.local.json"
+}
+
+monitor_runtime_script_path() {
+    local project_dir="${1:-$(pwd)}"
+    printf '%s\n' "$project_dir/UniversalArduinoMonitor.py"
+}
+
 resolve_project_dir() {
     local preferred_dir="${1:-}"
     local script_source="${2:-}"
