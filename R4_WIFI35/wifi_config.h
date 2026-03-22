@@ -12,7 +12,9 @@
 //   WIFI_TARGET_HOST_VALUE "192.168.1.100"
 //   WIFI_TARGET_HOSTNAME_VALUE "office-desktop"
 //
-// Leave the target host fields blank if you do not want discovery filtering.
+// Leave the target host fields blank if you want first-connect auto-pairing:
+// the flashed board will remember the first monitor PC that completes the
+// Wi-Fi handshake and will advertise/reject based on that saved pairing later.
 
 #define WIFI_SSID_VALUE "YOUR_WIFI_SSID"
 #define WIFI_PASS_VALUE "YOUR_WIFI_PASSWORD"

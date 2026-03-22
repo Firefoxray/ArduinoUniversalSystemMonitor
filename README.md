@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics (CPU, RAM, GPU, disks, network, and processes) on an Arduino touchscreen using a Python monitoring script.
 
 **Author:** Ray Barrett  
-**Version:** 9.2 BETA
+**Version:** 9.3 BETA
 **Last Modified:** March 21, 2026  
 
 ---
@@ -128,6 +128,7 @@ The root shell scripts are intentionally kept as stable user-facing wrappers so 
 9.0 beta  - Added layered default/shared/local monitor config support for per-computer port overrides, refreshed README screenshots with the newer captures, and bumped the project/control-center release branding to version 9 beta
 9.1 beta  - Updated the Control Center/desktop launcher icon to use the existing arduinoPreview screenshot image and bumped all current project branding to v9.1 beta
 9.2 beta  - Updated project branding, Control Center version display, and flash preview/logging for the v9.2 beta release
+9.3 beta  - Added Wi-Fi pairing handshake/persistence, an explicit Control Center pairing reset flow, and the no-reflash EEPROM reset path for moving R4 WiFi boards between PCs
 ```
 
 ---
@@ -268,8 +269,16 @@ The flashed R4 sketch includes the board name and optional target host / target 
 
 #### GUI vs CLI workflow
 
-- **GUI / Control Center:** the Monitor Connection Settings panel now lets you choose **Auto Discovery (UDP)** or **Manual / Fixed IP**, including a machine-local `wifi_host` when manual mode is selected. The `Save Monitor Settings & Flash R4 WiFi` action writes those local monitor settings plus `R4_WIFI35/wifi_config.local.h`, then reflashes **every detected UNO R4 WiFi board** with that same local header. That is convenient when you want several boards to share one config, but for per-board identity it is best to connect and flash **one R4 at a time**.
+- **GUI / Control Center:** the Monitor Connection Settings panel now lets you choose **Auto Discovery (UDP)** or **Manual / Fixed IP**, including a machine-local `wifi_host` when manual mode is selected. The `Save Monitor Settings & Flash R4 WiFi` action writes those local monitor settings plus `R4_WIFI35/wifi_config.local.h`, then reflashes **every detected UNO R4 WiFi board** with that same local header. That is convenient when you want several boards to share one config, but for per-board identity it is best to connect and flash **one R4 at a time**. There is also a **Reset Wi-Fi Pairing** button that sends an explicit USB admin command to one connected UNO R4 WiFi and clears only the saved EEPROM pairing, so the next PC can claim that board without a reflash.
 - **CLI / manual flashing:** edit `config/monitor_config.local.json` on the PC that should talk to one board, edit `R4_WIFI35/wifi_config.local.h` with that board's name/target values, then flash only the specific R4 you currently have connected. Repeat for the next board with different values.
+
+If you need a manual fallback outside the GUI, connect the board over USB at `115200` baud and send:
+
+```text
+CMD|RESET_WIFI_PAIRING|CONFIRM
+```
+
+That clears the stored EEPROM pairing only. If the flashed sketch still has explicit `WIFI_TARGET_HOST_VALUE` or `WIFI_TARGET_HOSTNAME_VALUE` values, those flashed targets still take precedence until you change them.
 
 So if you want one board named `R4_OFFICE` and another named `R4_GAMING`, the safest current workflow is:
 

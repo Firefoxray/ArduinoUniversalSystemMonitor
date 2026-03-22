@@ -102,6 +102,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
+    private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
     private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
     private final JLabel previewWifiStateLabel = new JLabel("Disabled");
@@ -204,6 +205,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
+        resetWifiPairingButton.setToolTipText("Explicitly clears the saved EEPROM Wi-Fi pairing on one connected UNO R4 WiFi over USB so the next PC can claim it without reflashing.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -535,13 +537,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowThree.add(wifiPortSourceLabel);
         rowThree.add(loadMonitorSettingsButton);
         rowThree.add(saveMonitorSettingsButton);
+        rowThree.add(resetWifiPairingButton);
         monitorSettingsPanel.add(rowThree);
 
         JLabel helper = new JLabel("<html><b>Easy setup:</b> choose <b>Auto Discovery</b> if this PC should automatically find its Arduino on your Wi-Fi. Choose <b>Manual / Fixed IP</b> only if you want this PC to always talk to one exact Arduino address.<br>"
                 + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC in Manual mode. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
                 + "If you have one Arduino per PC, give each board its own name and flash them <b>one at a time</b> so each one keeps the correct target PC info.<br>"
                 + "<b>Load Monitor Settings</b> reloads the saved config files from this computer, including your last local values if you already saved them. That lets you review them before flashing again.<br>"
-                + "<b>Save Monitor Settings & Flash R4 WiFi</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.</html>");
+                + "<b>Save Monitor Settings & Flash R4 WiFi</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.<br>"
+                + "<b>Reset Wi-Fi Pairing</b> uses a deliberate USB admin command to clear only the saved EEPROM pairing on one connected UNO R4 WiFi so you can move that board to another PC without reflashing.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -635,6 +639,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
+        resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
         lightModeToggle.addActionListener(e -> {
@@ -1541,6 +1546,153 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + ", R3 rotation " + rotationLabel(r3Rotation)
                 + ", and Mega rotation " + rotationLabel(megaRotation) + " apply right away.");
         reflashWifiBoardsAndRestartMonitor(wifiPort);
+    }
+
+    private void resetWifiPairing() {
+        syncDashboardSudoPassword();
+        List<DetectedBoard> wifiBoards = detectConnectedBoards().stream()
+                .filter(board -> "arduino:renesas_uno:unor4wifi".equals(board.fqbn))
+                .toList();
+        if (wifiBoards.isEmpty()) {
+            log("[WARN] No Arduino UNO R4 WiFi boards are connected over USB, so Wi-Fi pairing could not be reset.");
+            return;
+        }
+
+        DetectedBoard selectedBoard = chooseWifiBoardForPairingReset(wifiBoards);
+        if (selectedBoard == null) {
+            log("[INFO] Wi-Fi pairing reset canceled.");
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "<html><b>Reset Wi-Fi pairing for " + selectedBoard + "?</b><br>"
+                        + "This clears the saved EEPROM pairing only.<br>"
+                        + "The next PC that connects can become the new paired device.<br><br>"
+                        + "If the flashed sketch still has explicit target host/hostname values, those flashed values will still win until you clear or change them.</html>",
+                "Reset Wi-Fi Pairing",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (confirm != JOptionPane.OK_OPTION) {
+            log("[INFO] Wi-Fi pairing reset canceled before sending the reset command.");
+            return;
+        }
+
+        setActionButtons(false);
+        Thread worker = new Thread(() -> {
+            boolean resetSucceeded = false;
+            try {
+                if (!runShellCommandSync("systemctl stop " + SERVICE_NAME,
+                        "Stop monitor service for Wi-Fi pairing reset", true, true)) {
+                    return;
+                }
+                resetSucceeded = sendWifiPairingResetCommand(selectedBoard);
+            } finally {
+                runShellCommandSync("systemctl start " + SERVICE_NAME,
+                        "Start monitor service after Wi-Fi pairing reset", true, false);
+                refreshServiceStatus(false);
+                setActionButtons(true);
+            }
+
+            if (resetSucceeded) {
+                log("[INFO] Wi-Fi pairing reset finished for " + selectedBoard + ". The next monitor PC may claim the board without reflashing.");
+            }
+        }, "wifi-pairing-reset");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private DetectedBoard chooseWifiBoardForPairingReset(List<DetectedBoard> wifiBoards) {
+        if (wifiBoards.size() == 1) {
+            return wifiBoards.get(0);
+        }
+        Object choice = JOptionPane.showInputDialog(
+                this,
+                "Choose the UNO R4 WiFi board to reset pairing on:",
+                "Select Wi-Fi Board",
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                wifiBoards.toArray(),
+                wifiBoards.get(0)
+        );
+        if (choice instanceof DetectedBoard board) {
+            return board;
+        }
+        return null;
+    }
+
+    private boolean sendWifiPairingResetCommand(DetectedBoard board) {
+        SerialPort port = SerialPort.getCommPort(board.port);
+        port.setComPortParameters(115200, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
+        port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 700, 0);
+        if (!port.openPort()) {
+            log("[ERROR] Failed to open " + board.port + " for Wi-Fi pairing reset. Disconnect other apps/services from the board and try again.");
+            return false;
+        }
+
+        try {
+            log("[INFO] Opened " + board.port + " for explicit Wi-Fi pairing reset.");
+            Thread.sleep(1800L);
+            try {
+                port.flushIOBuffers();
+            } catch (Exception ignored) {
+                // Best effort only.
+            }
+
+            String command = "CMD|RESET_WIFI_PAIRING|CONFIRM\n";
+            byte[] bytes = command.getBytes(StandardCharsets.UTF_8);
+            int written = port.writeBytes(bytes, bytes.length);
+            if (written != bytes.length) {
+                log("[ERROR] Failed to send the Wi-Fi pairing reset command to " + board.port + ".");
+                return false;
+            }
+            log("[INFO] Sent explicit Wi-Fi pairing reset command over USB to " + board + ".");
+
+            long deadline = System.currentTimeMillis() + 6000L;
+            BufferedReader reader = new BufferedReader(new InputStreamReader(port.getInputStream(), StandardCharsets.UTF_8));
+            try {
+                while (System.currentTimeMillis() < deadline) {
+                    String line;
+                    try {
+                        line = reader.readLine();
+                    } catch (IOException ex) {
+                        log("[WARN] Waiting for Wi-Fi pairing reset response on " + board.port + ": " + ex.getMessage());
+                        continue;
+                    }
+                    if (line == null) {
+                        continue;
+                    }
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty()) {
+                        continue;
+                    }
+                    log("[PAIRING RESET] " + trimmed);
+                    if ("PAIRING_RESET:OK".equals(trimmed)) {
+                        return true;
+                    }
+                    if ("PAIRING_RESET:EEPROM_CLEARED_FLASH_TARGET_STILL_ACTIVE".equals(trimmed)) {
+                        log("[WARN] EEPROM pairing was cleared on " + board + ", but flashed WIFI_TARGET_* values are still set. Update those if you want a different PC to claim the board next.");
+                        return true;
+                    }
+                }
+            } finally {
+                try {
+                    reader.close();
+                } catch (IOException ignored) {
+                    // Port shutdown already handles the important cleanup.
+                }
+            }
+
+            log("[ERROR] Timed out waiting for Wi-Fi pairing reset confirmation from " + board + ".");
+            return false;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log("[ERROR] Wi-Fi pairing reset was interrupted: " + ex.getMessage());
+            return false;
+        } finally {
+            port.closePort();
+        }
     }
 
     private boolean persistCurrentDisplayRotationSelections(boolean verbose, boolean syncHeaders) {
@@ -2804,6 +2956,41 @@ public class UniversalMonitorControlCenter extends JFrame {
         t.start();
     }
 
+    private boolean runShellCommandSync(String shellCommand, String label, boolean needsSudo, boolean allowPrompt) {
+        CommandSpec spec = buildShellCommand(shellCommand, needsSudo, allowPrompt);
+        if (spec == null) {
+            log("[WARN] " + label + " canceled (no sudo password). Running as root avoids this.");
+            return false;
+        }
+
+        log("[RUN] " + label + " in " + repoPath().toAbsolutePath());
+        try {
+            ProcessBuilder pb = new ProcessBuilder(spec.command);
+            pb.directory(repoPath().toFile());
+            pb.redirectErrorStream(true);
+            if (spec.sudoPassword != null) {
+                pb.environment().put("SUDO_PASS", spec.sudoPassword);
+            }
+            Process process = pb.start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log("[" + label + "] " + line);
+                }
+            }
+            int code = process.waitFor();
+            if (code == 0) {
+                log("[DONE] " + label + " completed successfully.");
+                return true;
+            }
+            log("[FAIL] " + label + " exited with code " + code + ".");
+            return false;
+        } catch (Exception ex) {
+            log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
     private void relaunchApplication(Path launcherPath) {
         try {
             if (!Files.exists(launcherPath)) {
@@ -2999,7 +3186,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (var input = UniversalMonitorControlCenter.class.getResourceAsStream("/version.properties")) {
             if (input != null) {
                 properties.load(input);
-                String version = properties.getProperty("app.version", "9.2 BETA").trim();
+                String version = properties.getProperty("app.version", "9.3 BETA").trim();
                 if (!version.isEmpty() && !version.contains("${")) {
                     return version;
                 }
@@ -3007,7 +3194,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (IOException ignored) {
             // Fall back to a safe default below.
         }
-        return "9.2 BETA";
+        return "9.3 BETA";
     }
 
     private record WifiSettingsSnapshot(String ssid, String password, String tcpPort, String boardName,
@@ -3110,6 +3297,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             refreshMonitorPortsButton.setEnabled(enabled);
             loadMonitorSettingsButton.setEnabled(enabled);
             saveMonitorSettingsButton.setEnabled(enabled);
+            resetWifiPairingButton.setEnabled(enabled);
             updateKillRunningTaskButton();
         });
     }

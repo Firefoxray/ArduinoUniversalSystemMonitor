@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Universal Linux Arduino system monitor sender v9.2 BETA.
+"""Universal Linux Arduino system monitor sender v9.3 BETA.
 
 Originally built on Fedora for an Arduino desktop monitor, but intended to run
 across Linux desktops in general.
@@ -250,6 +250,7 @@ WIFI_DISCOVERY_MAGIC = str(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_MAGIC"
 WIFI_DEVICE_NAME = normalize_identity_value(read_wifi_header_define("WIFI_DEVICE_NAME_VALUE", "R4_WIFI35"), 32) or "R4_WIFI35"
 WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOST_VALUE", ""), 64)
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
+WIFI_PAIRING_MAGIC = "UAM_PAIR"
 
 _gpu_cache = {"ts": 0.0, "data": None}
 _proc_cache = {"ts": 0.0, "data": None}
@@ -566,6 +567,11 @@ def connect_wifi_socket(host: str, port: int, quiet: bool = False, device_name: 
             print(f"Trying Wi-Fi monitor at {target_label}...")
         sock = socket.create_connection((host, port), timeout=3.0)
         sock.settimeout(2.0)
+        if not perform_wifi_pairing_handshake(sock):
+            if not quiet:
+                print(f"Wi-Fi pairing rejected by {target_label}")
+            close_socket(sock)
+            return None
         print(f"Connected to Arduino over Wi-Fi at {target_label}")
         return sock
     except OSError as exc:
@@ -581,6 +587,21 @@ def close_socket(sock: Optional[socket.socket]) -> None:
         sock.close()
     except Exception:
         pass
+
+
+def perform_wifi_pairing_handshake(sock: socket.socket) -> bool:
+    try:
+        local_hostname = normalize_identity_value(socket.gethostname(), 64) or "--"
+    except Exception:
+        local_hostname = normalize_identity_value(get_hostname(), 64) or "--"
+    local_host_ip = normalize_identity_value(get_ip(), 64) or "--"
+    hello = f"{WIFI_PAIRING_MAGIC}|{local_hostname}|{local_host_ip}\n"
+    try:
+        sock.sendall(hello.encode("utf-8"))
+        response = sock.recv(128).decode("utf-8", errors="ignore").strip()
+    except OSError:
+        return False
+    return response == "PAIR_OK"
 
 
 
@@ -1299,7 +1320,7 @@ def main() -> None:
         return
 
     static = get_cached_static()
-    print("Running Universal Arduino Monitor v9.2 BETA for Linux")
+    print("Running Universal Arduino Monitor v9.3 BETA for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
     print(f"Active network interface: {static['iface']}")
     print(f"OS: {static['os_name']}")
