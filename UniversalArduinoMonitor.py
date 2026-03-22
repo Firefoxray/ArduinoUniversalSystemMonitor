@@ -228,9 +228,10 @@ SECONDARY_MOUNT_CANDIDATES = [
     "/mnt/data",
     "/home",
 ]
-STORAGE_LINES = 7
+STORAGE_LINES = 8
 PROCESS_ROWS = 6
 CPU_THREADS_TO_SEND = 16
+EXTRA_BATTERY_SLOTS = 1
 
 DEBUG_MIRROR_PORT = str(os.environ.get("ARDUINO_MONITOR_DEBUG_PORT") or CONFIG.get("debug_port") or "").strip()
 DEBUG_MIRROR_BAUD = to_int(os.environ.get("ARDUINO_MONITOR_DEBUG_BAUD"), BAUD)
@@ -832,6 +833,26 @@ def load_lsblk() -> dict:
         return {}
 
 
+def looks_generic_storage_name(value: str) -> bool:
+    cleaned = re.sub(r"[^a-z0-9]", "", (value or "").strip().lower())
+    if not cleaned:
+        return True
+    generic_patterns = (
+        r"nvme\d+(n\d+)?(p\d+)?",
+        r"sd[a-z]+\d*",
+        r"hd[a-z]+\d*",
+        r"vd[a-z]+\d*",
+        r"xvd[a-z]+\d*",
+        r"mmcblk\d+(p\d+)?",
+        r"dm\d+",
+        r"md\d+",
+        r"loop\d+",
+        r"disk\d*",
+        r"part\d*",
+    )
+    return any(re.fullmatch(pattern, cleaned) for pattern in generic_patterns)
+
+
 def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
     data = load_lsblk()
     lines: List[str] = []
@@ -868,23 +889,23 @@ def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
     def friendly_label(node: dict, parent_label: str = "disk") -> str:
         mountpoint = (node.get("mountpoint") or "").strip()
         raw_label = str(node.get("label") or "").strip()
-        if raw_label and raw_label.lower() not in {"rootfs", "none"}:
+        if raw_label and raw_label.lower() not in {"rootfs", "none"} and not looks_generic_storage_name(raw_label):
             return clean_field(raw_label, 14)
 
         alias = clean_field(mount_alias(mountpoint), 14)
         if alias != "--" and alias not in hidden_aliases and alias not in {"root", "home"}:
             return alias
 
-        path_name = cleaned_path(node).replace("/dev/", "").strip()
-        if path_name and path_name.lower() not in ignored_names:
-            return clean_field(path_name, 14)
-
         model = clean_field(node.get("model") or "", 14)
-        if model != "--":
+        if model != "--" and not looks_generic_storage_name(model):
             return model
 
+        path_name = cleaned_path(node).replace("/dev/", "").strip()
+        if path_name and path_name.lower() not in ignored_names and not looks_generic_storage_name(path_name):
+            return clean_field(path_name, 14)
+
         parent = clean_field(parent_label, 14)
-        if parent != "--":
+        if parent != "--" and not looks_generic_storage_name(parent):
             return parent
 
         name = clean_field(cleaned_name(node) or "disk", 14)
@@ -976,7 +997,27 @@ def get_cached_storage_lines() -> List[str]:
     return _storage_cache["data"]
 
 
-def get_battery_status() -> Tuple[str, str, str]:
+def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
+    supplies: List[Dict[str, str]] = []
+    for supply in sorted(Path("/sys/class/power_supply").glob("*")):
+        try:
+            if read_text(supply / "type").lower() != "battery":
+                continue
+            name = supply.name.strip() or "Battery"
+            label = read_text(supply / "model_name").strip() or read_text(supply / "manufacturer").strip() or name
+            cap = extract_first_number(read_text(supply / "capacity"))
+            status_text = read_text(supply / "status").strip() or "Unknown"
+            percent = "--" if cap is None else str(max(0, min(100, int(round(cap)))))
+            status = "Charging" if status_text.lower() == "charging" else ("Not Charging" if status_text else "Unknown")
+            supplies.append({
+                "name": clean_field(name, 16),
+                "label": clean_field(label, 16),
+                "percent": clean_field(percent, 6),
+                "status": clean_field(status, 18),
+            })
+        except Exception:
+            continue
+
     try:
         batt = psutil.sensors_battery()
     except Exception:
@@ -985,25 +1026,21 @@ def get_battery_status() -> Tuple[str, str, str]:
     if batt is not None and batt.percent is not None:
         percent = max(0, min(100, int(round(batt.percent))))
         charging = "Charging" if batt.power_plugged else "Not Charging"
-        return str(percent), charging, "LAPTOP"
+        extra_devices = [
+            entry for entry in supplies
+            if entry["name"].upper() not in {"BAT0", "BAT1", "BATC", "MACSMC-BATTERY"}
+        ]
+        return str(percent), charging, "LAPTOP", extra_devices[:EXTRA_BATTERY_SLOTS]
 
-    for supply in Path("/sys/class/power_supply").glob("*"):
-        try:
-            if read_text(supply / "type").lower() != "battery":
-                continue
-            cap = extract_first_number(read_text(supply / "capacity"))
-            status_text = read_text(supply / "status").strip() or "Unknown"
-            if cap is not None:
-                charging = "Charging" if status_text.lower() == "charging" else "Not Charging"
-                return str(max(0, min(100, int(round(cap))))), charging, "LAPTOP"
-            return "--", status_text[:18] or "Unknown", "LAPTOP"
-        except Exception:
-            continue
+    if supplies:
+        primary = next((entry for entry in supplies if entry["name"].upper().startswith("BAT")), supplies[0])
+        extra_devices = [entry for entry in supplies if entry is not primary]
+        return primary["percent"], primary["status"], "LAPTOP", extra_devices[:EXTRA_BATTERY_SLOTS]
 
-    return "N/A", "DESKTOP", "DESKTOP"
+    return "N/A", "DESKTOP", "DESKTOP", []
 
 
-def get_cached_battery_status() -> Tuple[str, str, str]:
+def get_cached_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
     now = time.time()
     if _battery_cache["data"] is None or (now - _battery_cache["ts"]) >= BATTERY_CACHE_TTL:
         _battery_cache["data"] = get_battery_status()
@@ -1321,7 +1358,7 @@ def build_snapshot(last_net, last_time):
     gpu_util, gpu_temp, gpu_mem_used, gpu_mem_total, gpu_mem_pct, gpu_clock, gpu_name = get_cached_gpu_stats()
     procs = get_cached_top_processes()
     storage_lines = get_cached_storage_lines()
-    battery_pct, battery_state, battery_mode = get_cached_battery_status()
+    battery_pct, battery_state, battery_mode, extra_batteries = get_cached_battery_status()
 
     snapshot = {
         "cpu_total": int(round(cpu_total_val)),
@@ -1339,6 +1376,7 @@ def build_snapshot(last_net, last_time):
         "down_total": clean_field(format_total_bytes(now_net.bytes_recv), 18),
         "up_total": clean_field(format_total_bytes(now_net.bytes_sent), 18),
         "cpu_freq": clean_field(get_cpu_freq(), 18),
+        "ram_usage_text": clean_field(format_ram_usage_gb(), 18),
         "gpu_util": clean_field(gpu_util, 4),
         "gpu_temp": clean_field(gpu_temp, 12),
         "gpu_mem_used": clean_field(gpu_mem_used, 8),
@@ -1353,6 +1391,7 @@ def build_snapshot(last_net, last_time):
         "battery_pct": clean_field(battery_pct, 6),
         "battery_state": clean_field(battery_state, 18),
         "battery_mode": clean_field(battery_mode, 10),
+        "extra_batteries": extra_batteries,
     }
 
     return snapshot, now_net, now_time
@@ -1376,6 +1415,7 @@ def build_arduino_payload(snapshot) -> str:
         snapshot["down_total"],
         snapshot["up_total"],
         snapshot["cpu_freq"],
+        snapshot["ram_usage_text"],
         snapshot["gpu_util"],
         snapshot["gpu_temp"],
         snapshot["gpu_mem_used"],
@@ -1394,6 +1434,14 @@ def build_arduino_payload(snapshot) -> str:
     fields.append(snapshot["battery_pct"])
     fields.append(snapshot["battery_state"])
     fields.append(snapshot["battery_mode"])
+    for idx in range(EXTRA_BATTERY_SLOTS):
+        if idx < len(snapshot["extra_batteries"]):
+            entry = snapshot["extra_batteries"][idx]
+            fields.append(clean_field(f'{entry["label"]} {entry["percent"]}%', 22))
+            fields.append(clean_field(entry["status"], 18))
+        else:
+            fields.append("--")
+            fields.append("--")
     return "|".join(fields) + "\n"
 
 
@@ -1409,6 +1457,7 @@ def build_debug_payload(snapshot) -> str:
     add("DISK0", snapshot["disk0_pct"])
     add("DISK1", snapshot["disk1_pct"])
     add("FREQ", snapshot["cpu_freq"])
+    add("RAMGB", snapshot["ram_usage_text"])
     add("TEMP", snapshot["cpu_temp"])
     add("UPTIME", snapshot["uptime"])
     add("OS", snapshot["os_name"])
@@ -1439,6 +1488,14 @@ def build_debug_payload(snapshot) -> str:
     add("BATTPCT", snapshot["battery_pct"])
     add("BATTSTATE", snapshot["battery_state"])
     add("BATTMODE", snapshot["battery_mode"])
+    for idx in range(EXTRA_BATTERY_SLOTS):
+        if idx < len(snapshot["extra_batteries"]):
+            entry = snapshot["extra_batteries"][idx]
+            add(f'BATTDEV{idx + 1}', f'{entry["label"]} {entry["percent"]}%', 24)
+            add(f"BATTDEV{idx + 1}STATE", entry["status"], 18)
+        else:
+            add(f"BATTDEV{idx + 1}", "--")
+            add(f"BATTDEV{idx + 1}STATE", "--")
 
     return "|".join(pairs) + "\n"
 
