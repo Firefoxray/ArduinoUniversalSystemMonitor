@@ -216,6 +216,7 @@ PROC_CACHE_TTL = 1.0
 STATIC_CACHE_TTL = 30.0
 TEMP_CACHE_TTL = 1.0
 STORAGE_CACHE_TTL = 10.0
+BATTERY_CACHE_TTL = 10.0
 
 ROOT_MOUNT = str(CONFIG.get("root_mount") or os.environ.get("ARDUINO_MONITOR_ROOT") or "/")
 CONFIG_SECONDARY_MOUNT = str(CONFIG.get("secondary_mount") or "").strip()
@@ -257,6 +258,7 @@ _proc_cache = {"ts": 0.0, "data": None}
 _static_cache = {"ts": 0.0, "data": None}
 _temp_cache = {"ts": 0.0, "data": None}
 _storage_cache = {"ts": 0.0, "data": None}
+_battery_cache = {"ts": 0.0, "data": None}
 
 
 def clean_field(text: object, max_len: int = 32) -> str:
@@ -831,46 +833,99 @@ def load_lsblk() -> dict:
 def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
     data = load_lsblk()
     lines: List[str] = []
+    seen_keys = set()
+
+    def mount_alias(mountpoint: str) -> str:
+        mountpoint = (mountpoint or "").strip()
+        if mountpoint == "/":
+            return "root"
+        if mountpoint == "/home":
+            return "home"
+        if mountpoint.startswith("/mnt/"):
+            return mountpoint[5:] or "mnt"
+        if mountpoint.startswith("/media/"):
+            return mountpoint[7:] or "media"
+        if mountpoint.startswith("/run/media/"):
+            return mountpoint[11:] or "media"
+        if mountpoint.startswith("/boot/efi"):
+            return "bootefi"
+        if mountpoint.startswith("/boot"):
+            return "boot"
+        tail = mountpoint.rstrip("/").split("/")[-1]
+        return tail or mountpoint or "unmnt"
+
+    def friendly_label(node: dict, fallback: str = "disk") -> str:
+        label = clean_field(node.get("label") or "", 12)
+        if label != "--":
+            return label
+        mountpoint = (node.get("mountpoint") or "").strip()
+        alias = clean_field(mount_alias(mountpoint), 12)
+        if alias != "--" and alias not in {"root", "home", "boot", "bootefi", "unmnt"}:
+            return alias
+        model = clean_field(node.get("model") or "", 12)
+        if model != "--":
+            return model
+        name = clean_field(node.get("name") or fallback, 12)
+        if name != "--":
+            return name
+        return fallback
 
     def add_line(label: str, mountpoint: str, size: str, percent: Optional[int]) -> None:
         base = clean_field(label, 12)
-        mount_short = mountpoint or "unmnt"
-        if mount_short.startswith("/mnt/"):
-            mount_short = mount_short[5:]
-        elif mount_short.startswith("/media/"):
-            mount_short = mount_short[7:]
-        elif mount_short.startswith("/run/media/"):
-            mount_short = mount_short[11:]
-        if mount_short == "/":
-            mount_short = "root"
-        mount_short = clean_field(mount_short, 8)
+        mount_short = clean_field(mount_alias(mountpoint), 8)
         if percent is None:
             line = f"{base} {size} {mount_short}"
         else:
             line = f"{base} {percent}% {mount_short}"
         lines.append(clean_field(line, 30))
 
-    for disk in data.get("blockdevices", []):
-        if disk.get("type") != "disk":
-            continue
-        model = clean_field(disk.get("label") or disk.get("model") or disk.get("name") or "disk", 12)
-        size = clean_field(disk.get("size") or "", 8)
-        children = disk.get("children") or []
-        interesting_child = None
-        for child in children:
-            if child.get("fstype") in ("ext4", "btrfs", "xfs", "ntfs", "exfat", "vfat"):
-                interesting_child = child
-                if child.get("mountpoint") in (ROOT_MOUNT, pick_secondary_mount()):
-                    break
-        if interesting_child:
-            label = interesting_child.get("label") or model
-            mountpoint = interesting_child.get("mountpoint") or ""
+    secondary_mount = pick_secondary_mount()
+    candidates: List[Tuple[int, str, str, str, Optional[int]]] = []
+
+    def visit(node: dict, parent_label: str = "") -> None:
+        node_type = (node.get("type") or "").strip()
+        mountpoint = (node.get("mountpoint") or "").strip()
+        fstype = (node.get("fstype") or "").strip().lower()
+        size = clean_field(node.get("size") or "", 8)
+        label = friendly_label(node, parent_label or "disk")
+
+        score = 0
+        if mountpoint:
+            score += 200
+            if mountpoint == ROOT_MOUNT:
+                score += 80
+            if mountpoint == secondary_mount:
+                score += 40
+            if mountpoint == "/home":
+                score += 20
+            if mountpoint.startswith(("/mnt/", "/media/", "/run/media/")):
+                score += 30
+        if node.get("label"):
+            score += 40
+        if fstype in ("ext4", "btrfs", "xfs", "ntfs", "exfat", "vfat", "swap"):
+            score += 25
+        if node_type in ("part", "lvm", "crypt"):
+            score += 10
+        if node_type == "disk" and mountpoint:
+            score += 5
+
+        include_unmounted_disk = node_type == "disk" and not mountpoint
+        include_node = bool(mountpoint) or include_unmounted_disk or fstype == "swap"
+        key = f"{label}|{mountpoint}|{size}|{fstype}"
+        if include_node and key not in seen_keys:
+            seen_keys.add(key)
             percent = get_mount_percent(mountpoint) if mountpoint else None
-            add_line(label, mountpoint, size, percent)
-        else:
-            add_line(model, "", size, None)
-        if len(lines) >= max_lines:
-            break
+            candidates.append((score, label, mountpoint, size, percent))
+
+        for child in node.get("children") or []:
+            visit(child, label)
+
+    for disk in data.get("blockdevices", []):
+        visit(disk)
+
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2], item[3]))
+    for _, label, mountpoint, size, percent in candidates[:max_lines]:
+        add_line(label, mountpoint, size, percent)
 
     while len(lines) < max_lines:
         lines.append(f"Disk{len(lines)+1}: --")
@@ -883,6 +938,41 @@ def get_cached_storage_lines() -> List[str]:
         _storage_cache["data"] = build_storage_lines(STORAGE_LINES)
         _storage_cache["ts"] = now
     return _storage_cache["data"]
+
+
+def get_battery_status() -> Tuple[str, str, str]:
+    try:
+        batt = psutil.sensors_battery()
+    except Exception:
+        batt = None
+
+    if batt is not None and batt.percent is not None:
+        percent = max(0, min(100, int(round(batt.percent))))
+        charging = "Charging" if batt.power_plugged else "Not Charging"
+        return str(percent), charging, "LAPTOP"
+
+    for supply in Path("/sys/class/power_supply").glob("*"):
+        try:
+            if read_text(supply / "type").lower() != "battery":
+                continue
+            cap = extract_first_number(read_text(supply / "capacity"))
+            status_text = read_text(supply / "status").strip() or "Unknown"
+            if cap is not None:
+                charging = "Charging" if status_text.lower() == "charging" else "Not Charging"
+                return str(max(0, min(100, int(round(cap))))), charging, "LAPTOP"
+            return "--", status_text[:18] or "Unknown", "LAPTOP"
+        except Exception:
+            continue
+
+    return "N/A", "DESKTOP", "DESKTOP"
+
+
+def get_cached_battery_status() -> Tuple[str, str, str]:
+    now = time.time()
+    if _battery_cache["data"] is None or (now - _battery_cache["ts"]) >= BATTERY_CACHE_TTL:
+        _battery_cache["data"] = get_battery_status()
+        _battery_cache["ts"] = now
+    return _battery_cache["data"]
 
 
 def get_optical_status() -> str:
@@ -1195,6 +1285,7 @@ def build_snapshot(last_net, last_time):
     gpu_util, gpu_temp, gpu_mem_used, gpu_mem_total, gpu_mem_pct, gpu_clock, gpu_name = get_cached_gpu_stats()
     procs = get_cached_top_processes()
     storage_lines = get_cached_storage_lines()
+    battery_pct, battery_state, battery_mode = get_cached_battery_status()
 
     snapshot = {
         "cpu_total": int(round(cpu_total_val)),
@@ -1225,6 +1316,9 @@ def build_snapshot(last_net, last_time):
         "iface": clean_field(iface, 18),
         "ram_usage_text": clean_field(format_ram_usage_gb(), 18),
         "secondary_mount": clean_field(static["secondary_mount"], 24),
+        "battery_pct": clean_field(battery_pct, 6),
+        "battery_state": clean_field(battery_state, 18),
+        "battery_mode": clean_field(battery_mode, 10),
     }
 
     return snapshot, now_net, now_time
@@ -1265,6 +1359,9 @@ def build_arduino_payload(snapshot) -> str:
     fields.extend(snapshot["storage_lines"])
     fields.append(snapshot["optical"])
     fields.append(snapshot["ram_usage_text"])
+    fields.append(snapshot["battery_pct"])
+    fields.append(snapshot["battery_state"])
+    fields.append(snapshot["battery_mode"])
     return "|".join(fields) + "\n"
 
 
@@ -1310,6 +1407,9 @@ def build_debug_payload(snapshot) -> str:
     add("OPTICAL", snapshot["optical"])
     add("OPT", snapshot["optical"])
     add("RAMGB", snapshot["ram_usage_text"])
+    add("BATTPCT", snapshot["battery_pct"])
+    add("BATTSTATE", snapshot["battery_state"])
+    add("BATTMODE", snapshot["battery_mode"])
 
     return "|".join(pairs) + "\n"
 

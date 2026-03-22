@@ -740,8 +740,10 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawStorage(Graphics2D g2, int w, int h, int m) {
-            int headerBottom = drawHeader(g2, "Storage Inventory", w, m);
+            int headerBottom = drawHeader(g2, "Extra Statistics", w, m);
             g2.setFont(new Font(MONO, Font.BOLD, 9));
+            g2.setColor(CYAN);
+            g2.drawString("Storage", 12, headerBottom + 12);
             g2.setColor(WHITE);
 
             String[] lines = {
@@ -755,7 +757,32 @@ public class JavaSerialFakeDisplay extends JFrame {
             };
 
             for (int i = 0; i < lines.length; i++) {
-                g2.drawString(truncate(lines[i], 44), 12, headerBottom + 22 + i * 22);
+                g2.drawString(truncate(lines[i], 34), 12, headerBottom + 34 + i * 22);
+            }
+
+            g2.setColor(PANEL_LINE);
+            g2.drawLine(304, headerBottom + 12, 304, h - 54);
+            g2.drawRect(318, headerBottom + 18, 136, 126);
+
+            String batteryMode = packet.get("BATTMODE", "DESKTOP");
+            String batteryPct = packet.get("BATTPCT", "N/A");
+            String batteryState = packet.get("BATTSTATE", "DESKTOP");
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(YELLOW);
+            g2.drawString("Battery", 336, headerBottom + 34);
+            if ("DESKTOP".equalsIgnoreCase(batteryMode)) {
+                g2.setColor(ORANGE);
+                g2.drawString("DESKTOP", 340, headerBottom + 74);
+                g2.setFont(new Font(MONO, Font.BOLD, 10));
+                g2.setColor(WHITE);
+                g2.drawString("Battery: N/A", 332, headerBottom + 102);
+            } else {
+                g2.setColor(LIME);
+                g2.drawString("Battery:", 330, headerBottom + 74);
+                g2.drawString(batteryPct + "%", 348, headerBottom + 102);
+                g2.setFont(new Font(MONO, Font.BOLD, 10));
+                g2.setColor("Charging".equalsIgnoreCase(batteryState) ? LIME : ORANGE);
+                g2.drawString(truncate(batteryState, 16), 330, headerBottom + 128);
             }
 
             g2.setFont(new Font(MONO, Font.BOLD, 12));
@@ -764,6 +791,11 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setColor(WHITE);
             g2.setFont(fitFont(g2, packet.get("OPTICAL", packet.get("OPT", "Empty")), Font.BOLD, 12, 9, 390));
             g2.drawString(packet.get("OPTICAL", packet.get("OPT", "Empty")), 52, h - 46);
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(MAGENTA);
+            g2.drawString("RAM", 250, h - 46);
+            g2.setColor(WHITE);
+            g2.drawString(packet.get("RAMGB", "0.0/0.0G"), 292, h - 46);
             drawFooter(g2, w, h);
         }
 

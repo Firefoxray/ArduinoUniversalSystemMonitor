@@ -91,7 +91,7 @@ const int TOTAL_PAGES = 7;
 const int CPU_THREADS = 16;
 const int PROCESS_ROWS = 6;
 const int STORAGE_LINES = 7;
-const int FIELD_COUNT = 64;
+const int FIELD_COUNT = 67;
 
 int cpuHistory[GRAPH_POINTS];
 int ramHistory[GRAPH_POINTS];
@@ -131,6 +131,9 @@ String gpuTemp = "--";
 String gpuName = "--";
 String opticalStr = "--";
 String ramUsageStr = "--";
+String batteryPctStr = "N/A";
+String batteryStateStr = "DESKTOP";
+String batteryModeStr = "DESKTOP";
 
 String procName[PROCESS_ROWS];
 String procCpu[PROCESS_ROWS];
@@ -543,7 +546,7 @@ void drawCpuLayout()     { drawHeader("CPU Threads", 2); }
 void drawProcLayout()    { drawHeader("Processes", 3); }
 void drawNetLayout()     { drawHeader("Network", 4); }
 void drawGpuLayout()     { drawHeader("GPU", 5); }
-void drawStorageLayout() { drawHeader("Storage Inventory", 6); }
+void drawStorageLayout() { drawHeader("Extra Statistics", 6); }
 void drawGraphLayout()   { drawHeader("Usage Graph", 7); }
 
 void updateHome() {
@@ -698,12 +701,51 @@ void updateGpu() {
 
 void updateStorage() {
   clearArea(0, 42, SCREEN_W, 240);
+  const int leftX = 12;
+  const int rightPanelX = 318;
+  const int rightPanelW = 150;
+
+  tft.setTextSize(2);
+  tft.setTextColor(CYAN);
+  tft.setCursor(leftX, 48);
+  tft.print("Storage");
+
   for (int i = 0; i < STORAGE_LINES; i++) {
-    clearArea(0, 48 + (i * 26), SCREEN_W, 22);
+    clearArea(0, 78 + (i * 24), 304, 20);
     tft.setTextSize(1);
     tft.setTextColor(WHITE);
-    tft.setCursor(12, 56 + (i * 26));
-    tft.print(storageLine[i]);
+    tft.setCursor(leftX, 84 + (i * 24));
+    tft.print(fitText(storageLine[i], 40));
+  }
+
+  tft.drawFastVLine(304, 48, 232, GRAY);
+  tft.drawRect(rightPanelX, 54, rightPanelW, 126, GRAY);
+
+  tft.setTextSize(2);
+  tft.setTextColor(YELLOW);
+  tft.setCursor(rightPanelX + 14, 68);
+  tft.print("Battery");
+
+  tft.setTextSize(2);
+  if (batteryModeStr == "DESKTOP") {
+    tft.setTextColor(ORANGE);
+    tft.setCursor(rightPanelX + 18, 108);
+    tft.print("DESKTOP");
+    tft.setTextSize(1);
+    tft.setTextColor(WHITE);
+    tft.setCursor(rightPanelX + 12, 138);
+    tft.print("Battery: N/A");
+  } else {
+    tft.setTextColor(GREEN);
+    tft.setCursor(rightPanelX + 12, 104);
+    tft.print("Battery:");
+    tft.setCursor(rightPanelX + 32, 130);
+    tft.print(batteryPctStr);
+    tft.print("%");
+    tft.setTextSize(1);
+    tft.setTextColor((batteryStateStr == "Charging") ? GREEN : ORANGE);
+    tft.setCursor(rightPanelX + 18, 156);
+    tft.print(fitText(batteryStateStr, 18));
   }
 
   tft.setTextSize(2);
@@ -713,6 +755,13 @@ void updateStorage() {
   tft.setTextColor(WHITE);
   tft.setCursor(80, 236);
   tft.print(fitText(opticalStr, 18));
+
+  tft.setTextColor(MAGENTA);
+  tft.setCursor(250, 236);
+  tft.print("RAM");
+  tft.setTextColor(WHITE);
+  tft.setCursor(314, 236);
+  tft.print(fitText(ramUsageStr, 14));
 }
 
 void updateGraph() {
@@ -878,6 +927,9 @@ void parseIncomingLine(String s, const char* source) {
   for (int i = 0; i < STORAGE_LINES; i++) storageLine[i] = f[idx++];
   opticalStr = f[idx++];
   ramUsageStr = f[idx++];
+  batteryPctStr = f[idx++];
+  batteryStateStr = f[idx++];
+  batteryModeStr = f[idx++];
 
   pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
   screenDirty = true;
@@ -1105,6 +1157,9 @@ void setup() {
   for (int i = 0; i < STORAGE_LINES; i++) {
     storageLine[i] = "Disk: --";
   }
+  batteryPctStr = "N/A";
+  batteryStateStr = "DESKTOP";
+  batteryModeStr = "DESKTOP";
 
   drawCurrentLayout();
   updateCurrentPage();
