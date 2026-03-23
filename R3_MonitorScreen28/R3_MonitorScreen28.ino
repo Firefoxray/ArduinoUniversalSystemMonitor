@@ -50,7 +50,7 @@ const int SCREEN_W = 320;
 const int SCREEN_H = 240;
 const uint8_t TOTAL_PAGES = 5;
 const uint8_t GRAPH_POINTS = 16;
-const uint8_t FIELD_COUNT = 69;
+const uint8_t FIELD_COUNT = 73;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
@@ -438,6 +438,15 @@ static void applyField(uint8_t idx, const char* value) {
     case 56: safeCopy(storage1, sizeof(storage1), value); break;
     case 57: safeCopy(storage2, sizeof(storage2), value); break;
     case 58: safeCopy(storage3, sizeof(storage3), value); break;
+    case 64: break; // battery_pct ignored on 2.8 layout
+    case 65: break; // battery_state ignored on 2.8 layout
+    case 66: break; // battery_mode ignored on 2.8 layout
+    case 67: break; // extra battery label 0 ignored
+    case 68: break; // extra battery label 1 ignored
+    case 69: break; // extra battery label 2 ignored
+    case 70: break; // extra battery state 0 ignored
+    case 71: break; // extra battery state 1 ignored
+    case 72: break; // extra battery state 2 ignored
     default: break;
   }
 }

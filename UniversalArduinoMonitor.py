@@ -1024,9 +1024,9 @@ def get_cached_storage_lines() -> List[str]:
 def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
     def normalize_status(status_text: str) -> str:
         lowered = status_text.strip().lower()
-        if lowered == "charging":
+        if lowered in {"charging", "pending-charge"}:
             return "Charging"
-        if lowered in {"discharging", "not charging", "full", "unknown"}:
+        if lowered in {"discharging", "not charging", "full", "unknown", "pending-discharge", "fully-charged"}:
             return "Not Charging"
         return "Unknown"
 
@@ -1034,38 +1034,115 @@ def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
         upper_name = name.upper()
         return upper_name.startswith("BAT") or upper_name in {"CMB0", "MACSMC-BATTERY"}
 
+    def looks_like_peripheral(label_text: str) -> bool:
+        lowered = label_text.lower()
+        return any(token in lowered for token in {
+            "headset", "headphone", "earbud", "speaker", "controller", "gamepad",
+            "mouse", "keyboard", "pen", "stylus", "joystick", "remote", "bluetooth",
+            "dualsense", "dualshock", "playstation", "ps5", "ps4", "xbox"
+        })
+
+    def prettify_label(label_text: str, fallback_name: str) -> str:
+        label = re.sub(r"[_-]+", " ", str(label_text or "")).strip() or fallback_name
+        lowered = label.lower()
+        if any(token in lowered for token in {"dualsense", "dualshock", "playstation", "ps5", "ps4"}):
+            return "PlayStation Controller"
+        if "xbox" in lowered:
+            return "Xbox Controller"
+        if "headset" in lowered or "headphone" in lowered or "earbud" in lowered:
+            return "Bluetooth Audio"
+        if "speaker" in lowered:
+            return "Bluetooth Speaker"
+        if "gamepad" in lowered or "controller" in lowered:
+            return "Game Controller"
+        return label
+
+    def make_entry(name: str, label_text: str, percent_value: Optional[float], status_text: str) -> Optional[Dict[str, str]]:
+        label = prettify_label(label_text, name)
+        percent = "--" if percent_value is None else str(max(0, min(100, int(round(percent_value)))))
+        if percent == "--" and normalize_status(status_text) == "Unknown":
+            return None
+        return {
+            "name": clean_field(name, 32),
+            "label": clean_field(label, 28),
+            "percent": clean_field(percent, 6),
+            "status": clean_field(normalize_status(status_text), 18),
+        }
+
+    def append_unique(target: List[Dict[str, str]], entry: Optional[Dict[str, str]]) -> None:
+        if not entry:
+            return
+        key = (entry["name"].lower(), entry["label"].lower())
+        for existing in target:
+            if (existing["name"].lower(), existing["label"].lower()) == key:
+                if existing.get("percent") in {"", "--", "N/A"} and entry.get("percent") not in {"", "--", "N/A"}:
+                    existing["percent"] = entry["percent"]
+                if existing.get("status") in {"", "--", "Unknown"} and entry.get("status") not in {"", "--", "Unknown"}:
+                    existing["status"] = entry["status"]
+                return
+        target.append(entry)
+
     system_supplies: List[Dict[str, str]] = []
     extra_supplies: List[Dict[str, str]] = []
     for supply in sorted(Path("/sys/class/power_supply").glob("*")):
         try:
-            if read_text(supply / "type").lower() != "battery":
+            supply_type = read_text(supply / "type").strip().lower()
+            if supply_type not in {"battery", "ups"}:
                 continue
             name = supply.name.strip() or "Battery"
             scope = read_text(supply / "scope").strip().lower()
             model_name = read_text(supply / "model_name").strip()
             manufacturer = read_text(supply / "manufacturer").strip()
-            label_base = model_name or manufacturer or name
-            if any(token in label_base.lower() for token in {"dualsense", "playstation", "ps5"}):
-                label_base = "PlayStation Controller Battery"
-            elif "speaker" in label_base.lower() and not label_base.lower().endswith("battery"):
-                label_base = f"{label_base} Battery"
+            serial = read_text(supply / "serial_number").strip()
+            label_base = model_name or manufacturer or serial or name
             cap = extract_first_number(read_text(supply / "capacity"))
-            status = normalize_status(read_text(supply / "status"))
-            percent = "--" if cap is None else str(max(0, min(100, int(round(cap)))))
-            entry = {
-                "name": clean_field(name, 32),
-                "label": clean_field(label_base, 28),
-                "percent": clean_field(percent, 6),
-                "status": clean_field(status, 18),
-            }
-            if scope == "device" and not is_system_battery_name(name):
-                extra_supplies.append(entry)
-            elif scope == "system" or is_system_battery_name(name):
-                system_supplies.append(entry)
+            status_raw = read_text(supply / "status")
+            entry = make_entry(name, label_base, cap, status_raw)
+            if not entry:
+                continue
+            if scope == "system" or is_system_battery_name(name):
+                append_unique(system_supplies, entry)
+            elif scope == "device" or looks_like_peripheral(f"{name} {label_base} {manufacturer}"):
+                append_unique(extra_supplies, entry)
             else:
-                extra_supplies.append(entry)
+                append_unique(extra_supplies, entry)
         except Exception:
             continue
+
+    try:
+        upower_paths = run_command(["upower", "-e"]).splitlines()
+    except Exception:
+        upower_paths = []
+
+    for raw_path in upower_paths:
+        device_path = raw_path.strip()
+        if not device_path or "/battery_" not in device_path and not any(token in device_path.lower() for token in ("headset", "speaker", "mouse", "keyboard", "controller", "device")):
+            continue
+        try:
+            details = run_command(["upower", "-i", device_path])
+        except Exception:
+            continue
+        details_map: Dict[str, str] = {}
+        for line in details.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            details_map[key.strip().lower()] = value.strip()
+        percent_value = extract_first_number(details_map.get("percentage", ""))
+        state_value = details_map.get("state", "")
+        model = details_map.get("model", "")
+        vendor = details_map.get("vendor", "")
+        native_path = details_map.get("native-path", "")
+        name = native_path or Path(device_path).name
+        label_text = " ".join(part for part in [vendor, model, name] if part).strip()
+        category_hint = " ".join(part for part in [device_path, label_text] if part)
+        entry = make_entry(name, label_text, percent_value, state_value)
+        if not entry:
+            continue
+        if looks_like_peripheral(category_hint) or not is_system_battery_name(name):
+            append_unique(extra_supplies, entry)
+        else:
+            append_unique(system_supplies, entry)
 
     try:
         batt = psutil.sensors_battery()

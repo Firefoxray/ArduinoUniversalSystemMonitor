@@ -355,6 +355,45 @@ String fitText(String s, int maxLen) {
   return s.substring(0, maxLen);
 }
 
+String ellipsizeText(String s, int maxLen) {
+  s.trim();
+  if (maxLen <= 0) return "";
+  if (s.length() <= maxLen) return s;
+  if (maxLen <= 3) return s.substring(0, maxLen);
+  return s.substring(0, maxLen - 3) + "...";
+}
+
+void splitBatteryLabel(String input, int firstMax, int secondMax, String &line1, String &line2) {
+  String s = input;
+  s.trim();
+  line1 = "";
+  line2 = "";
+  if (s.length() <= firstMax) {
+    line1 = s;
+    return;
+  }
+
+  int splitAt = -1;
+  int limit = min(firstMax, (int)s.length() - 1);
+  for (int i = limit; i >= 0; --i) {
+    if (s.charAt(i) == ' ') {
+      splitAt = i;
+      break;
+    }
+  }
+
+  if (splitAt <= 0) {
+    line1 = ellipsizeText(s, firstMax);
+    return;
+  }
+
+  line1 = s.substring(0, splitAt);
+  line1.trim();
+  line2 = s.substring(splitAt + 1);
+  line2.trim();
+  line2 = ellipsizeText(line2, secondMax);
+}
+
 String prettyGPU(String s) {
   s.trim();
   s.replace("(TM)", "");
@@ -390,7 +429,7 @@ void drawBar(int x, int y, int w, int h, int percent, uint16_t color) {
 }
 
 String wifiStateText() {
-  return WiFi.status() == WL_CONNECTED ? "WIFI OK" : "WIFI OFF";
+  return WiFi.status() == WL_CONNECTED ? "WiFi On" : "WiFi Off";
 }
 
 uint16_t wifiStateColor() {
@@ -465,28 +504,51 @@ void drawHeader(const char* title, int page) {
   String versionStr = String(APP_VERSION);
   String wifiStr = wifiStateText();
 
-  const int pageX = 424;
-  const int versionX = 176;
-  const int wifiX = 302;
+  if (page == 1) {
+    const int titleX = 12;
+    const int wifiX = 170;
+    const int versionX = 244;
+    const int pageX = 432;
 
-  tft.setTextSize(2);
-  tft.setTextColor(CYAN);
-  tft.setCursor(12, 10);
-  tft.print(fitText(pageTitle, 17));
+    tft.setTextSize(1);
+    tft.setTextColor(CYAN);
+    tft.setCursor(titleX, 16);
+    tft.print(pageTitle);
 
-  tft.setTextSize(1);
-  tft.setTextColor(WHITE);
-  tft.setCursor(versionX, 18);
-  tft.print(versionStr);
+    tft.setTextColor(wifiStateColor());
+    tft.setCursor(wifiX, 16);
+    tft.print(fitText(wifiStr, 8));
 
-  tft.setTextColor(wifiStateColor());
-  tft.setCursor(wifiX, 18);
-  tft.print(wifiStr);
+    tft.setTextColor(WHITE);
+    tft.setCursor(versionX, 16);
+    tft.print(fitText(versionStr, 10));
 
-  tft.setTextSize(2);
-  tft.setTextColor(WHITE);
-  tft.setCursor(pageX, 10);
-  tft.print(pageStr);
+    tft.setCursor(pageX, 16);
+    tft.print(pageStr);
+  } else {
+    const int pageX = 424;
+    const int versionX = 176;
+    const int wifiX = 302;
+
+    tft.setTextSize(2);
+    tft.setTextColor(CYAN);
+    tft.setCursor(12, 10);
+    tft.print(fitText(pageTitle, 17));
+
+    tft.setTextSize(1);
+    tft.setTextColor(WHITE);
+    tft.setCursor(versionX, 18);
+    tft.print(versionStr);
+
+    tft.setTextColor(wifiStateColor());
+    tft.setCursor(wifiX, 18);
+    tft.print(wifiStr);
+
+    tft.setTextSize(2);
+    tft.setTextColor(WHITE);
+    tft.setCursor(pageX, 10);
+    tft.print(pageStr);
+  }
 
   tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
 }
@@ -755,7 +817,7 @@ void updateStorage() {
   tft.setTextColor(WHITE);
   tft.setCursor(rightPanelX, lineY);
   if (batteryModeStr == "DESKTOP") {
-    tft.print("System Battery: N/A");
+    tft.print("System Battery: N/A (Desktop)");
     lineY += 24;
   } else {
     tft.print("System Battery: ");
@@ -774,18 +836,29 @@ void updateStorage() {
 
   for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) {
     if (batteryDeviceLabel[i].length() == 0 || batteryDeviceLabel[i] == "--") continue;
+
+    String labelLine1;
+    String labelLine2;
+    splitBatteryLabel(batteryDeviceLabel[i], 24, 24, labelLine1, labelLine2);
+
     tft.setTextColor(CYAN);
     tft.setCursor(rightPanelX, lineY);
-    tft.print(fitText(batteryDeviceLabel[i], 30));
-    lineY += 16;
+    tft.print(labelLine1);
+    lineY += 14;
+
+    if (labelLine2.length() > 0) {
+      tft.setCursor(rightPanelX + 10, lineY);
+      tft.print(labelLine2);
+      lineY += 14;
+    }
 
     if (batteryDeviceState[i].length() > 0 && batteryDeviceState[i] != "--") {
       tft.setTextColor((batteryDeviceState[i] == "Charging") ? GREEN : ORANGE);
-      tft.setCursor(rightPanelX, lineY);
-      tft.print(fitText(batteryDeviceState[i], 28));
-      lineY += 22;
+      tft.setCursor(rightPanelX + 10, lineY);
+      tft.print(ellipsizeText(batteryDeviceState[i], 26));
+      lineY += 20;
     } else {
-      lineY += 10;
+      lineY += 8;
     }
   }
 }

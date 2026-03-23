@@ -45,7 +45,7 @@ const int SCREEN_W = 480;
 const int SCREEN_H = 320;
 const uint8_t TOTAL_PAGES = 5;
 const uint8_t GRAPH_POINTS = 20;
-const uint8_t FIELD_COUNT = 69;
+const uint8_t FIELD_COUNT = 73;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
@@ -416,6 +416,12 @@ static void applyField(uint8_t idx, const char* value) {
     case 64: safeCopy(batteryPctStr, sizeof(batteryPctStr), value); break;
     case 65: safeCopy(batteryStateStr, sizeof(batteryStateStr), value); break;
     case 66: safeCopy(batteryModeStr, sizeof(batteryModeStr), value); break;
+    case 67: break; // extra battery label 0 ignored on compact layout
+    case 68: break; // extra battery label 1 ignored on compact layout
+    case 69: break; // extra battery label 2 ignored on compact layout
+    case 70: break; // extra battery state 0 ignored on compact layout
+    case 71: break; // extra battery state 1 ignored on compact layout
+    case 72: break; // extra battery state 2 ignored on compact layout
     default: break;
   }
 }
