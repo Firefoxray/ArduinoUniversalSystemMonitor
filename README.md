@@ -191,13 +191,13 @@ The built-in Arduino flasher now handles much more automatically than older rele
 - Retry certain transient upload failures automatically
 
 ### UNO R3 behavior
-- With **one detected UNO R3**, flashing defaults to the **2.8" sketch**
+- With **one detected UNO R3**, flashing defaults to the **3.5" sketch**
 - With **multiple UNO R3 boards**, the flasher asks which screen size to use
 - You can override non-interactively with:
 
 ```bash
-UNO_R3_SCREEN_SIZE=28 ./install_arduinos.sh
 UNO_R3_SCREEN_SIZE=35 ./install_arduinos.sh
+UNO_R3_SCREEN_SIZE=28 ./install_arduinos.sh
 ```
 
 ### Fedora / stricter serial permission handling

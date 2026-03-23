@@ -94,8 +94,8 @@ const int TOTAL_PAGES = 7;
 const int CPU_THREADS = 16;
 const int PROCESS_ROWS = 6;
 const int STORAGE_LINES = 8;
-const int EXTRA_BATTERY_SLOTS = 1;
-const int FIELD_COUNT = 69;
+const int EXTRA_BATTERY_SLOTS = 3;
+const int FIELD_COUNT = 73;
 #ifndef APP_VERSION
 #define APP_VERSION "unknown version"
 #endif
@@ -460,45 +460,33 @@ void drawHeader(const char* title, int page) {
   tft.fillScreen(BLACK);
   refreshArduinoWifiIp();
 
+  String pageTitle = (page == 1) ? String("Ray Co. System Monitor") : String(title);
   String pageStr = String(page) + "/" + String(TOTAL_PAGES);
+  String versionStr = String(APP_VERSION);
+  String wifiStr = wifiStateText();
 
-  if (page == 1) {
-    tft.setTextSize(2);
-    tft.setTextColor(CYAN);
-    tft.setCursor(12, 14);
-    tft.print("Ray Co. System Monitor ");
-    tft.setTextColor(WHITE);
-    tft.print(APP_VERSION);
+  const int pageX = 424;
+  const int versionX = 176;
+  const int wifiX = 302;
 
-    tft.setTextSize(1);
-    tft.setTextColor(wifiStateColor());
-    tft.setCursor(12, 34);
-    tft.print(wifiStateText());
+  tft.setTextSize(2);
+  tft.setTextColor(CYAN);
+  tft.setCursor(12, 10);
+  tft.print(fitText(pageTitle, 17));
 
-    tft.setTextSize(2);
-    tft.setTextColor(WHITE);
-    tft.setCursor(430, 10);
-    tft.print(pageStr);
-  } else {
-    tft.setTextSize(2);
-    tft.setTextColor(CYAN);
-    tft.setCursor(12, 10);
-    tft.print(title);
+  tft.setTextSize(1);
+  tft.setTextColor(WHITE);
+  tft.setCursor(versionX, 18);
+  tft.print(versionStr);
 
-    tft.setTextSize(1);
-    tft.setTextColor(wifiStateColor());
-    tft.setCursor(258, 18);
-    tft.print(wifiStateText());
+  tft.setTextColor(wifiStateColor());
+  tft.setCursor(wifiX, 18);
+  tft.print(wifiStr);
 
-    tft.setTextColor(WHITE);
-    tft.setCursor(356, 18);
-    tft.print(APP_VERSION);
-
-    tft.setTextSize(2);
-    tft.setTextColor(WHITE);
-    tft.setCursor(430, 10);
-    tft.print(pageStr);
-  }
+  tft.setTextSize(2);
+  tft.setTextColor(WHITE);
+  tft.setCursor(pageX, 10);
+  tft.print(pageStr);
 
   tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
 }
@@ -765,27 +753,22 @@ void updateStorage() {
   int lineY = panelTop + 28;
   tft.setTextSize(1);
   tft.setTextColor(WHITE);
+  tft.setCursor(rightPanelX, lineY);
   if (batteryModeStr == "DESKTOP") {
-    tft.setCursor(rightPanelX, lineY);
-    tft.print("System battery: N/A");
-    lineY += 18;
-    if (batteryStateStr.length() > 0 && batteryStateStr != "DESKTOP" && batteryStateStr != "--") {
-      tft.setTextColor(ORANGE);
-      tft.setCursor(rightPanelX, lineY);
-      tft.print(fitText(batteryStateStr, 24));
-      lineY += 18;
-    }
+    tft.print("System Battery: N/A");
+    lineY += 24;
   } else {
-    tft.setCursor(rightPanelX, lineY);
-    tft.print("System battery: ");
+    tft.print("System Battery: ");
     tft.setTextColor(GREEN);
     tft.print(batteryPctStr);
-    tft.print("%");
+    if (batteryPctStr != "N/A" && batteryPctStr != "--") {
+      tft.print("%");
+    }
     lineY += 18;
 
     tft.setTextColor((batteryStateStr == "Charging") ? GREEN : ORANGE);
     tft.setCursor(rightPanelX, lineY);
-    tft.print(fitText(batteryStateStr, 24));
+    tft.print(fitText(batteryStateStr, 28));
     lineY += 24;
   }
 
@@ -793,13 +776,13 @@ void updateStorage() {
     if (batteryDeviceLabel[i].length() == 0 || batteryDeviceLabel[i] == "--") continue;
     tft.setTextColor(CYAN);
     tft.setCursor(rightPanelX, lineY);
-    tft.print(fitText(batteryDeviceLabel[i], 24));
+    tft.print(fitText(batteryDeviceLabel[i], 30));
     lineY += 16;
 
     if (batteryDeviceState[i].length() > 0 && batteryDeviceState[i] != "--") {
       tft.setTextColor((batteryDeviceState[i] == "Charging") ? GREEN : ORANGE);
       tft.setCursor(rightPanelX, lineY);
-      tft.print(fitText(batteryDeviceState[i], 24));
+      tft.print(fitText(batteryDeviceState[i], 28));
       lineY += 22;
     } else {
       lineY += 10;

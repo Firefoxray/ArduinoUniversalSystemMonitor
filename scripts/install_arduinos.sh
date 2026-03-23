@@ -11,7 +11,7 @@ RESTART_DELAY=2
 
 R3_FQBN="arduino:avr:uno"
 R3_MEGA_FQBN="arduino:avr:mega"
-UNO_R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-28}"
+UNO_R3_SCREEN_SIZE="${UNO_R3_SCREEN_SIZE:-35}"
 
 case "$UNO_R3_SCREEN_SIZE" in
     28)
