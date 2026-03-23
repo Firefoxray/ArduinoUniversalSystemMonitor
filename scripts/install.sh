@@ -72,7 +72,8 @@ reset_local_state_if_requested() {
     rm -f "$PROJECT_DIR/R4_WIFI35/display_config.local.h" \
           "$PROJECT_DIR/R3_MonitorScreen28/display_config.local.h" \
           "$PROJECT_DIR/R3_MonitorScreen35/display_config.local.h" \
-          "$PROJECT_DIR/R3_MEGA_MonitorScreen35/display_config.local.h"
+          "$PROJECT_DIR/R3_MEGA_MonitorScreen35/display_config.local.h" \
+          "$PROJECT_DIR/R3_MEGA_MonitorScreen28/display_config.local.h"
     rm -f "$DESKTOP_FILE"
     rm -rf "$PROJECT_DIR/.venv"
     rm -rf "$PROJECT_DIR/debug_tools/FakeArduinoDisplay/build"

@@ -63,6 +63,7 @@ Release **v9.5.2** rolls up the full documented project history that is currentl
 
 ### Recommended board targets
 - **Arduino UNO R4 WiFi + 3.5" TFT display**
+- **Arduino Mega 2560 R3 + 2.8" MCUFRIEND TFT display**
 - **Arduino Mega 2560 R3 + 3.5" TFT display**
 - **Arduino UNO R3 + 2.8" TFT display**
 
@@ -95,6 +96,7 @@ ArduinoUniversalSystemMonitor/
 ├── scripts/                                   # Implementation shell scripts
 ├── R3_MonitorScreen28/                        # Arduino UNO R3 2.8" TFT sketch
 ├── R3_MonitorScreen35/                        # Arduino UNO R3 3.5" TFT sketch / placeholder
+├── R3_MEGA_MonitorScreen28/                   # Arduino Mega 2560 R3 2.8" MCUFRIEND TFT sketch
 ├── R3_MEGA_MonitorScreen35/                   # Arduino Mega 2560 R3 3.5" TFT sketch
 ├── R4_WIFI35/                                 # Canonical Arduino UNO R4 WiFi sketch
 ├── backups/                                   # Backup copies of earlier monitor/config files
@@ -117,8 +119,9 @@ The root shell scripts are kept as stable user-facing entrypoints so the command
 - Arduino IDE **1.8.19+** or Arduino CLI workflow
 
 ### Arduino support
-- **Option A:** UNO R4 WiFi + 3.5" TFT, or Mega 2560 R3 + 3.5" TFT
-- **Option B:** UNO R3 + 2.8" TFT
+- **Option A:** UNO R4 WiFi + 3.5" TFT
+- **Option B:** Mega 2560 R3 + 2.8" MCUFRIEND TFT or 3.5" TFT
+- **Option C:** UNO R3 + 2.8" TFT
 
 ---
 
@@ -198,7 +201,11 @@ The built-in Arduino flasher now handles much more automatically than older rele
 ```bash
 UNO_R3_SCREEN_SIZE=35 ./install_arduinos.sh
 UNO_R3_SCREEN_SIZE=28 ./install_arduinos.sh
+MEGA_SCREEN_SIZE=35 ./install_arduinos.sh
+MEGA_SCREEN_SIZE=28 ./install_arduinos.sh
 ```
+
+If `MEGA_SCREEN_SIZE` is not set, Mega boards now follow `UNO_R3_SCREEN_SIZE`. That means `UNO_R3_SCREEN_SIZE=28` gives you the Mega 2.8 sketch by default, and `UNO_R3_SCREEN_SIZE=35` gives you the Mega 3.5 sketch by default unless you explicitly override `MEGA_SCREEN_SIZE`.
 
 ### Fedora / stricter serial permission handling
 On Fedora and similar systems, the flasher can retry uploads with `sudo` when needed while preserving the Arduino CLI paths used by the current user.
