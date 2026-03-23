@@ -509,7 +509,8 @@ void drawHeader(const char* title, int page) {
     const int titleY = 8;
     const int secondLineY = 28;
     const int pageX = 424;
-    const int versionX = 248;
+    const int versionX = 12;
+    const int wifiX = 74;
 
     tft.setTextSize(2);
     tft.setTextColor(CYAN);
@@ -517,13 +518,13 @@ void drawHeader(const char* title, int page) {
     tft.print(pageTitle);
 
     tft.setTextSize(1);
-    tft.setTextColor(wifiStateColor());
-    tft.setCursor(titleX, secondLineY);
-    tft.print(wifiStr);
-
     tft.setTextColor(WHITE);
     tft.setCursor(versionX, secondLineY);
     tft.print(versionStr);
+
+    tft.setTextColor(wifiStateColor());
+    tft.setCursor(wifiX, secondLineY);
+    tft.print(wifiStr);
 
     tft.setCursor(pageX, secondLineY);
     tft.print(pageStr);
@@ -531,13 +532,14 @@ void drawHeader(const char* title, int page) {
     tft.drawLine(0, 42, SCREEN_W, 42, WHITE);
   } else {
     const int pageX = 424;
-    const int versionX = 176;
-    const int wifiX = 302;
+    const bool compactStatsHeader = (page == 6);
+    const int versionX = compactStatsHeader ? 152 : 176;
+    const int wifiX = compactStatsHeader ? 214 : 302;
 
     tft.setTextSize(2);
     tft.setTextColor(CYAN);
     tft.setCursor(12, 10);
-    tft.print(fitText(pageTitle, 17));
+    tft.print(compactStatsHeader ? String("Extra Stats") : fitText(pageTitle, 17));
 
     tft.setTextSize(1);
     tft.setTextColor(WHITE);
