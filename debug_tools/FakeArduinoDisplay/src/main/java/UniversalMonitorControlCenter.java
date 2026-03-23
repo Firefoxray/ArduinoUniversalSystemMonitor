@@ -451,7 +451,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowOne.setAlignmentX(Component.LEFT_ALIGNMENT);
         rowOne.add(new JLabel("UNO R3 mode:"));
-        unoR3ScreenSizeSelector.setSelectedIndex(0);
+        unoR3ScreenSizeSelector.setSelectedIndex(1);
         rowOne.add(unoR3ScreenSizeSelector);
         rowOne.add(new JLabel("R4 rotation:"));
         rowOne.add(r4RotationSelector);

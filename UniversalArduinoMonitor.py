@@ -245,7 +245,7 @@ SECONDARY_MOUNT_CANDIDATES = [
 STORAGE_LINES = 8
 PROCESS_ROWS = 6
 CPU_THREADS_TO_SEND = 16
-ARDUINO_PAYLOAD_FIELD_COUNT = 69
+ARDUINO_PAYLOAD_FIELD_COUNT = 73
 ARDUINO_PAYLOAD_LAYOUT = (
     "0=cpu_total, 1-16=per_core, 17=ram_pct, 18=disk0_pct, 19=disk1_pct, "
     "20=cpu_temp, 21=os_name, 22=host_name, 23=ip, 24=uptime, 25=down_rate, "
@@ -253,10 +253,10 @@ ARDUINO_PAYLOAD_LAYOUT = (
     "31=gpu_util, 32=gpu_temp, 33=gpu_mem_used, 34=gpu_mem_total, "
     "35=gpu_mem_pct, 36=gpu_clock, 37=gpu_name, 38-43=proc_names, "
     "44-49=proc_cpu, 50-55=proc_ram, 56-63=storage_lines, 64=battery_pct, "
-    "65=battery_state, 66=battery_mode, 67=extra_battery_label, "
-    "68=extra_battery_state"
+    "65=battery_state, 66=battery_mode, 67-69=extra_battery_label, "
+    "70-72=extra_battery_state"
 )
-EXTRA_BATTERY_SLOTS = 1
+EXTRA_BATTERY_SLOTS = 3
 
 DEBUG_MIRROR_PORT = str(os.environ.get("ARDUINO_MONITOR_DEBUG_PORT") or CONFIG.get("debug_port") or "").strip()
 DEBUG_MIRROR_BAUD = to_int(os.environ.get("ARDUINO_MONITOR_DEBUG_BAUD"), BAUD)
@@ -1022,24 +1022,48 @@ def get_cached_storage_lines() -> List[str]:
 
 
 def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
-    supplies: List[Dict[str, str]] = []
+    def normalize_status(status_text: str) -> str:
+        lowered = status_text.strip().lower()
+        if lowered == "charging":
+            return "Charging"
+        if lowered in {"discharging", "not charging", "full", "unknown"}:
+            return "Not Charging"
+        return "Unknown"
+
+    def is_system_battery_name(name: str) -> bool:
+        upper_name = name.upper()
+        return upper_name.startswith("BAT") or upper_name in {"CMB0", "MACSMC-BATTERY"}
+
+    system_supplies: List[Dict[str, str]] = []
+    extra_supplies: List[Dict[str, str]] = []
     for supply in sorted(Path("/sys/class/power_supply").glob("*")):
         try:
             if read_text(supply / "type").lower() != "battery":
                 continue
             name = supply.name.strip() or "Battery"
-            label = read_text(supply / "model_name").strip() or read_text(supply / "manufacturer").strip() or name
+            scope = read_text(supply / "scope").strip().lower()
+            model_name = read_text(supply / "model_name").strip()
+            manufacturer = read_text(supply / "manufacturer").strip()
+            label_base = model_name or manufacturer or name
+            if any(token in label_base.lower() for token in {"dualsense", "playstation", "ps5"}):
+                label_base = "PlayStation Controller Battery"
+            elif "speaker" in label_base.lower() and not label_base.lower().endswith("battery"):
+                label_base = f"{label_base} Battery"
             cap = extract_first_number(read_text(supply / "capacity"))
-            status_text = read_text(supply / "status").strip() or "Unknown"
+            status = normalize_status(read_text(supply / "status"))
             percent = "--" if cap is None else str(max(0, min(100, int(round(cap)))))
-            status = "Charging" if status_text.lower() == "charging" else ("Not Charging" if status_text else "Unknown")
-            combined_label = label if percent == "--" else f"{label}: {percent}%"
-            supplies.append({
-                "name": clean_field(name, 16),
-                "label": clean_field(combined_label, 24),
+            entry = {
+                "name": clean_field(name, 32),
+                "label": clean_field(label_base, 28),
                 "percent": clean_field(percent, 6),
                 "status": clean_field(status, 18),
-            })
+            }
+            if scope == "device" and not is_system_battery_name(name):
+                extra_supplies.append(entry)
+            elif scope == "system" or is_system_battery_name(name):
+                system_supplies.append(entry)
+            else:
+                extra_supplies.append(entry)
         except Exception:
             continue
 
@@ -1048,21 +1072,17 @@ def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
     except Exception:
         batt = None
 
-    if batt is not None and batt.percent is not None:
+    if system_supplies:
+        primary = system_supplies[0]
+        percent = primary["percent"] if primary["percent"] != "--" else "N/A"
+        return percent, primary["status"], "LAPTOP", extra_supplies[:EXTRA_BATTERY_SLOTS]
+
+    if batt is not None and batt.percent is not None and not extra_supplies:
         percent = max(0, min(100, int(round(batt.percent))))
         charging = "Charging" if batt.power_plugged else "Not Charging"
-        extra_devices = [
-            entry for entry in supplies
-            if entry["name"].upper() not in {"BAT0", "BAT1", "BATC", "MACSMC-BATTERY"}
-        ]
-        return str(percent), charging, "LAPTOP", extra_devices[:EXTRA_BATTERY_SLOTS]
+        return str(percent), charging, "LAPTOP", []
 
-    if supplies:
-        primary = next((entry for entry in supplies if entry["name"].upper().startswith("BAT")), supplies[0])
-        extra_devices = [entry for entry in supplies if entry is not primary]
-        return primary["percent"], primary["status"], "LAPTOP", extra_devices[:EXTRA_BATTERY_SLOTS]
-
-    return "N/A", "DESKTOP", "DESKTOP", []
+    return "N/A", "DESKTOP", "DESKTOP", extra_supplies[:EXTRA_BATTERY_SLOTS]
 
 
 def get_cached_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
@@ -1462,7 +1482,10 @@ def build_arduino_payload(snapshot) -> str:
     for idx in range(EXTRA_BATTERY_SLOTS):
         if idx < len(snapshot["extra_batteries"]):
             entry = snapshot["extra_batteries"][idx]
-            fields.append(clean_field(f'{entry["label"]} {entry["percent"]}%', 22))
+            label = entry["label"]
+            if entry["percent"] not in {"", "--", "N/A"}:
+                label = f'{label}: {entry["percent"]}%'
+            fields.append(clean_field(label, 28))
             fields.append(clean_field(entry["status"], 18))
         else:
             fields.append("--")
