@@ -11,6 +11,7 @@ ARDUINO_HEADERS = [
     REPO_ROOT / 'R3_MonitorScreen28' / 'app_version.generated.h',
     REPO_ROOT / 'R3_MonitorScreen35' / 'app_version.generated.h',
     REPO_ROOT / 'R3_MEGA_MonitorScreen35' / 'app_version.generated.h',
+    REPO_ROOT / 'R3_MEGA_MonitorScreen28' / 'app_version.generated.h',
 ]
 
 def load_version() -> str:

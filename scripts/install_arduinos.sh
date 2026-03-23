@@ -26,7 +26,21 @@ case "$UNO_R3_SCREEN_SIZE" in
         ;;
 esac
 
-R3_MEGA_SKETCH_DIR="$PROJECT_DIR/R3_MEGA_MonitorScreen35"
+MEGA_SCREEN_SIZE="${MEGA_SCREEN_SIZE:-$UNO_R3_SCREEN_SIZE}"
+
+case "$MEGA_SCREEN_SIZE" in
+    28)
+        R3_MEGA_SKETCH_DIR="$PROJECT_DIR/R3_MEGA_MonitorScreen28"
+        ;;
+    35)
+        R3_MEGA_SKETCH_DIR="$PROJECT_DIR/R3_MEGA_MonitorScreen35"
+        ;;
+    *)
+        echo "Invalid MEGA_SCREEN_SIZE: $MEGA_SCREEN_SIZE (expected 28 or 35)" >&2
+        exit 1
+        ;;
+esac
+
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
 R4_SKETCH_DIR="$PROJECT_DIR/R4_WIFI35"
@@ -184,12 +198,13 @@ sync_generated_version_files() {
 }
 
 print_effective_flash_settings() {
-    python3 - "$MONITOR_LOCAL_CONFIG_PATH" "$UNO_R3_SCREEN_SIZE" <<'PY2'
+    python3 - "$MONITOR_LOCAL_CONFIG_PATH" "$UNO_R3_SCREEN_SIZE" "$MEGA_SCREEN_SIZE" <<'PY2'
 import json, sys
 from pathlib import Path
 config_path = Path(sys.argv[1])
 repo = config_path.parent.parent
 uno = sys.argv[2]
+mega = sys.argv[3]
 config = {}
 if config_path.exists():
     try:
@@ -220,6 +235,7 @@ print("Applied flash settings preview:")
 print(f"  UNO R3 screen size: {uno}")
 print(f"  R4 rotation => {rotation('r4_display_rotation')}")
 print(f"  R3 rotation => {rotation('r3_display_rotation')}")
+print(f"  Mega screen size => {mega} (defaults to UNO_R3_SCREEN_SIZE when unset)")
 print(f"  Mega rotation => {rotation('mega_display_rotation')}")
 print(f"  R4 Wi-Fi TCP port => {read_define(repo/'R4_WIFI35'/'wifi_config.local.h', 'WIFI_TCP_PORT_VALUE', '5000')}")
 print(f"  R4 board name => {read_define(repo/'R4_WIFI35'/'wifi_config.local.h', 'WIFI_DEVICE_NAME_VALUE', 'R4_WIFI35')}")
@@ -243,7 +259,10 @@ rotation_map = {
         repo / "R3_MonitorScreen28/display_config.local.h",
         repo / "R3_MonitorScreen35/display_config.local.h",
     ],
-    "mega_display_rotation": [repo / "R3_MEGA_MonitorScreen35/display_config.local.h"],
+    "mega_display_rotation": [
+        repo / "R3_MEGA_MonitorScreen35/display_config.local.h",
+        repo / "R3_MEGA_MonitorScreen28/display_config.local.h",
+    ],
 }
 
 config = {}
@@ -473,7 +492,7 @@ if [[ "$R3_MEGA_BOARD_COUNT" -gt 0 ]]; then
     echo
     echo "Detected $R3_MEGA_BOARD_COUNT Arduino UNO R3 / Mega board(s)."
     echo "Arduino UNO R3 boards will use $(basename "$R3_SKETCH_DIR") based on UNO_R3_SCREEN_SIZE=$UNO_R3_SCREEN_SIZE."
-    echo "Arduino Mega boards will use $(basename "$R3_MEGA_SKETCH_DIR")."
+    echo "Arduino Mega boards will use $(basename "$R3_MEGA_SKETCH_DIR") based on MEGA_SCREEN_SIZE=$MEGA_SCREEN_SIZE (defaults to UNO_R3_SCREEN_SIZE when unset)."
 fi
 
 flash_boards
