@@ -135,12 +135,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color darkText = new Color(232, 240, 252);
     private final Color darkFieldBackground = new Color(18, 29, 48);
     private final Color darkButtonBackground = new Color(70, 109, 171);
+    private final Color darkCriticalButtonBackground = new Color(176, 58, 58);
     private final Color lightBackground = new Color(236, 242, 252);
     private final Color lightPanelBackground = new Color(248, 251, 255);
     private final Color lightAccent = new Color(125, 160, 219);
     private final Color lightText = new Color(31, 46, 71);
     private final Color lightFieldBackground = Color.WHITE;
     private final Color lightButtonBackground = new Color(214, 226, 245);
+    private final Color lightCriticalButtonBackground = new Color(221, 92, 92);
 
     private boolean darkMode;
 
@@ -2731,9 +2733,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             Color accent = darkMode ? darkAccent : lightAccent;
             Color fieldBackground = darkMode ? darkFieldBackground : lightFieldBackground;
             Color buttonBackground = darkMode ? darkButtonBackground : lightButtonBackground;
+            Color criticalButtonBackground = darkMode ? darkCriticalButtonBackground : lightCriticalButtonBackground;
 
             getContentPane().setBackground(background);
-            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground);
+            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground);
             outputArea.setCaretColor(textColor);
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
@@ -2746,7 +2749,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent,
-                                    Color fieldBackground, Color buttonBackground) {
+                                    Color fieldBackground, Color buttonBackground, Color criticalButtonBackground) {
         if (component instanceof JPanel panel) {
             panel.setOpaque(true);
             panel.setBackground(panelBackground);
@@ -2787,10 +2790,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                     BorderFactory.createEmptyBorder(4, 6, 4, 6)
             ));
         } else if (component instanceof AbstractButton button) {
-            button.setBackground(buttonBackground);
+            Color resolvedButtonBackground = button == flashButton ? criticalButtonBackground : buttonBackground;
+            button.setBackground(resolvedButtonBackground);
             button.setForeground(textColor);
             button.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(accent),
+                    BorderFactory.createLineBorder(button == flashButton ? resolvedButtonBackground.darker() : accent),
                     BorderFactory.createEmptyBorder(6, 10, 6, 10)
             ));
             button.setOpaque(true);
@@ -2816,7 +2820,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) {
-                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground);
+                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground);
             }
         }
     }
