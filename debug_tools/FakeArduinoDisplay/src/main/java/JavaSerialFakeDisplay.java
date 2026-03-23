@@ -515,23 +515,28 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setFont(new Font(MONO, Font.BOLD, 10));
             FontMetrics counterMetrics = g2.getFontMetrics();
             int counterX = right - counterMetrics.stringWidth(pageCounter);
-            g2.drawString(pageCounter, counterX, top + 11);
 
             if (homePage) {
-                String leftText = "Ray Co. System Monitor " + versionText;
-                g2.setFont(fitFont(g2, leftText, Font.BOLD, 16, 11, 320));
-                FontMetrics leftMetrics = g2.getFontMetrics();
-                int baseline = top + leftMetrics.getAscent() + 2;
+                String titleText = "Ray Co. System Monitor";
                 g2.setColor(CYAN);
-                g2.drawString(leftText, left, baseline);
+                g2.setFont(fitFont(g2, titleText, Font.BOLD, 16, 12, right - left));
+                FontMetrics titleMetrics = g2.getFontMetrics();
+                int titleBaseline = top + titleMetrics.getAscent() + 2;
+                g2.drawString(titleText, left, titleBaseline);
 
-                g2.setFont(fitFont(g2, wifiText, Font.PLAIN, 9, 8, 80));
-                FontMetrics wifiMetrics = g2.getFontMetrics();
-                int wifiX = Math.max(left + leftMetrics.stringWidth(leftText) + 20, (w - wifiMetrics.stringWidth(wifiText)) / 2 + 12);
-                wifiX = Math.min(wifiX, counterX - wifiMetrics.stringWidth(wifiText) - 12);
+                int infoBaseline = titleBaseline + 15;
+                g2.setFont(new Font(MONO, Font.PLAIN, 9));
+                FontMetrics infoMetrics = g2.getFontMetrics();
                 g2.setColor(previewWifiEnabled ? LIME : ORANGE);
-                g2.drawString(wifiText, wifiX, baseline);
+                g2.drawString(wifiText, left, infoBaseline);
+
+                g2.setColor(WHITE);
+                int versionX = Math.max(left + 120, (w - infoMetrics.stringWidth(versionText)) / 2);
+                g2.drawString(versionText, versionX, infoBaseline);
+                g2.drawString(pageCounter, counterX, infoBaseline);
+                ruleY = infoBaseline + 10;
             } else {
+                g2.drawString(pageCounter, counterX, top + 11);
                 g2.setColor(CYAN);
                 g2.setFont(fitFont(g2, title, Font.BOLD, 14, 10, Math.max(120, right - left - 62)));
                 FontMetrics titleMetrics = g2.getFontMetrics();

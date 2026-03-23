@@ -506,25 +506,29 @@ void drawHeader(const char* title, int page) {
 
   if (page == 1) {
     const int titleX = 12;
-    const int wifiX = 170;
-    const int versionX = 244;
-    const int pageX = 432;
+    const int titleY = 8;
+    const int secondLineY = 28;
+    const int pageX = 424;
+    const int versionX = 248;
 
-    tft.setTextSize(1);
+    tft.setTextSize(2);
     tft.setTextColor(CYAN);
-    tft.setCursor(titleX, 16);
+    tft.setCursor(titleX, titleY);
     tft.print(pageTitle);
 
+    tft.setTextSize(1);
     tft.setTextColor(wifiStateColor());
-    tft.setCursor(wifiX, 16);
-    tft.print(fitText(wifiStr, 8));
+    tft.setCursor(titleX, secondLineY);
+    tft.print(wifiStr);
 
     tft.setTextColor(WHITE);
-    tft.setCursor(versionX, 16);
-    tft.print(fitText(versionStr, 10));
+    tft.setCursor(versionX, secondLineY);
+    tft.print(versionStr);
 
-    tft.setCursor(pageX, 16);
+    tft.setCursor(pageX, secondLineY);
     tft.print(pageStr);
+
+    tft.drawLine(0, 42, SCREEN_W, 42, WHITE);
   } else {
     const int pageX = 424;
     const int versionX = 176;
@@ -548,9 +552,9 @@ void drawHeader(const char* title, int page) {
     tft.setTextColor(WHITE);
     tft.setCursor(pageX, 10);
     tft.print(pageStr);
-  }
 
-  tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
+    tft.drawLine(0, 34, SCREEN_W, 34, WHITE);
+  }
 }
 
 void drawLabelBar(int y, const char* label, int pct, uint16_t color) {
