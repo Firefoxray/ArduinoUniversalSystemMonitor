@@ -45,7 +45,7 @@ const uint8_t GRAPH_POINTS = 32;
 const uint8_t CPU_THREADS = 16;
 const uint8_t PROCESS_ROWS = 6;
 const uint8_t STORAGE_LINES = 7;
-const uint8_t FIELD_COUNT = 69;
+const uint8_t FIELD_COUNT = 73;
 
 uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
@@ -360,9 +360,11 @@ static void applyField(uint8_t idx, const char* value) {
   else if (idx >= 44 && idx <= 49) safeCopy(procCpu[idx - 44], sizeof(procCpu[0]), value);
   else if (idx >= 50 && idx <= 55) safeCopy(procRam[idx - 50], sizeof(procRam[0]), value);
   else if (idx >= 56 && idx <= 62) safeCopy(storageLine[idx - 56], sizeof(storageLine[0]), value);
+  else if (idx == 63) { /* eighth storage line is unused on Mega layout */ }
   else if (idx == 64) safeCopy(batteryPctStr, sizeof(batteryPctStr), value);
   else if (idx == 65) safeCopy(batteryStateStr, sizeof(batteryStateStr), value);
   else if (idx == 66) safeCopy(batteryModeStr, sizeof(batteryModeStr), value);
+  else if (idx >= 67 && idx <= 72) { /* extra battery slots not rendered on Mega layout */ }
 }
 
 static void finalizeField() {
