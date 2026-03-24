@@ -77,7 +77,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton desktopAppletButton = new JButton("Install Desktop Applet");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update and Restart GUI");
-    private final JButton flashButton = new JButton("Flash Arduino's");
+    private final JButton flashButton = new JButton("Flash Arduinos'");
     private final JButton flashPreviewButton = new JButton("Show Flash Diff");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
     private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
@@ -140,7 +140,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton deleteProfileButton = new JButton("Delete Profile");
     private final JButton exportProfilesButton = new JButton("Export Profiles...");
     private final JButton importProfilesButton = new JButton("Import Profiles...");
-    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 2, 8, 8));
+    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 3, 4, 4));
     private final JLabel boardProfileStatusLabel = new JLabel("No board profile loaded.");
 
     private final Map<String, BoardPageSettings> boardPageSettings = new LinkedHashMap<>();
@@ -181,6 +181,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private volatile java.net.DatagramSocket activeNetworkScanSocket;
     private Thread networkScanThread;
     private Path selectedCustomSketchPath;
+    private boolean homeDisableWarningAcknowledged;
 
 
 
@@ -415,7 +416,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         helper.setBorder(new EmptyBorder(0, 10, 10, 10));
         top.add(helper);
 
-        boardPageTogglePanel.setBorder(new EmptyBorder(8, 8, 8, 8));
+        boardPageTogglePanel.setBorder(new EmptyBorder(6, 6, 6, 6));
         JScrollPane togglesScroll = new JScrollPane(boardPageTogglePanel);
         togglesScroll.setBorder(BorderFactory.createTitledBorder("Page Toggles for Selected Board"));
 
@@ -2918,7 +2919,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             checkBox.setForeground(textColor);
             checkBox.setContentAreaFilled(false);
             checkBox.setFocusPainted(false);
-            checkBox.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+            if (Boolean.TRUE.equals(checkBox.getClientProperty("uasmProfilePageToggle"))) {
+                checkBox.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(accent, 2, true),
+                        BorderFactory.createEmptyBorder(4, 8, 4, 8)
+                ));
+            } else {
+                checkBox.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+            }
         } else if (component instanceof AbstractButton button) {
             Color resolvedButtonBackground = button == flashButton
                     ? criticalButtonBackground
@@ -3687,6 +3695,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                 }
             }
         }
+        homeDisableWarningAcknowledged = Boolean.parseBoolean(
+                properties.getProperty("ui.home_disable_warning_acknowledged", "false")
+        );
 
         Map<String, String> profileIdsToNames = new LinkedHashMap<>();
         for (String key : properties.stringPropertyNames()) {
@@ -3762,6 +3773,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 properties.setProperty("board." + board.id() + ".page." + page.id(), String.valueOf(settings.pageEnabled.getOrDefault(page.id(), true)));
             }
         }
+        properties.setProperty("ui.home_disable_warning_acknowledged", String.valueOf(homeDisableWarningAcknowledged));
 
         for (String profileName : namedPageProfiles.keySet()) {
             String profileId = slugifyProfileName(profileName);
@@ -3869,8 +3881,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         boardPageCheckboxes.clear();
         for (PageDefinition page : board.pages()) {
             JCheckBox box = new JCheckBox(page.label(), settings.pageEnabled.getOrDefault(page.id(), true));
+            box.setFont(box.getFont().deriveFont(Font.BOLD));
+            box.putClientProperty("uasmProfilePageToggle", Boolean.TRUE);
             box.addActionListener(e -> {
-                if ("home".equals(page.id()) && !box.isSelected()) {
+                if ("home".equals(page.id()) && !box.isSelected() && !homeDisableWarningAcknowledged) {
                     int answer = JOptionPane.showConfirmDialog(
                             this,
                             "The Home page may not be safe to disable the first time. Are you sure you want to disable it?",
@@ -3880,7 +3894,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                     );
                     if (answer != JOptionPane.YES_OPTION) {
                         box.setSelected(true);
+                        return;
                     }
+                    homeDisableWarningAcknowledged = true;
+                    persistBoardPageProfiles();
                 }
                 settings.pageEnabled.put(page.id(), box.isSelected());
             });

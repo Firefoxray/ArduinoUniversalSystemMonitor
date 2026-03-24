@@ -598,6 +598,7 @@ void setup() {
   }
 
   resetLineParser();
+  currentPage = firstEnabledPage();
   drawCurrentLayout();
   updateCurrentPage();
 }
