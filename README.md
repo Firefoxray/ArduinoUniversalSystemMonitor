@@ -3,8 +3,8 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett
-**Version:** v9.5.2
-**Last Modified:** March 22, 2026
+**Version:** v9.5.3
+**Last Modified:** March 23, 2026
 
 ---
 
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.5.2 Includes
+## What v9.5.3 Includes
 
-Release **v9.5.2** rolls up the full documented project history that is currently tracked in this repository, including the restored changelog entries, the v9.5.0 / v9.5.1 versioning cleanup, and the latest Control Center, dashboard, flashing, and display-header improvements.
+Release **v9.5.3** adds the readability-focused page layout refresh: the Mega and R3 2.8-inch flows now use full-screen tap paging, Mega / R3 GPU and network views are separated for easier reading, the 2.8-inch storage and power details are split onto dedicated pages, and the R4 usage graph footer now shows hostname plus uptime.
 
 ### Major highlights
 
@@ -520,6 +520,7 @@ debug_tools/FakeArduinoDisplay/README.md
 9.5.0 - Centralized repo-wide version loading, refreshed the dashboard flow, and aligned the newer storage/battery UI changes.
 9.5.1 - Switched runtime version loading over to the VERSION file so the desktop monitor, Control Center, and Arduino display headers stay in sync.
 9.5.2 - Added smarter update pre-checks, restored the full changelog presence in the docs, kept the program headers on v9.5.2, and refreshed the README preview image set.
+9.5.3 - Bumped the project to v9.5.3 and reworked the Arduino page layouts for better readability, simpler tap-to-advance navigation on the Mega / R3 variants, split GPU/network and storage/power views, and added hostname + uptime to the R4 graph footer.
 ```
 
 ---

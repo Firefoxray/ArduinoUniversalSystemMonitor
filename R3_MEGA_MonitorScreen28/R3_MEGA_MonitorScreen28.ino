@@ -48,7 +48,7 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 const uint16_t SCREEN_W = 320;
 const uint16_t SCREEN_H = 240;
-const uint8_t TOTAL_PAGES = 6;
+const uint8_t TOTAL_PAGES = 8;
 const uint8_t GRAPH_POINTS = 24;
 const uint8_t CPU_THREADS = 16;
 const uint8_t PROCESS_ROWS = 6;
@@ -202,24 +202,6 @@ static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.drawFastHLine(0, 20, SCREEN_W, WHITE);
 }
 
-static void drawFooter() {
-  const int y = 220;
-  tft.fillRect(0, y, SCREEN_W, SCREEN_H - y, BLACK);
-  tft.drawFastHLine(0, y, SCREEN_W, WHITE);
-  tft.drawRect(0, y, 70, 20, WHITE);
-  tft.drawRect(125, y, 70, 20, WHITE);
-  tft.drawRect(250, y, 70, 20, WHITE);
-  tft.setTextColor(WHITE);
-  tft.setTextSize(1);
-  tft.setCursor(22, y + 6); tft.print(F("PREV"));
-  tft.setCursor(149, y + 6); tft.print(F("HOME"));
-  tft.setCursor(272, y + 6); tft.print(F("NEXT"));
-}
-
-static void drawPageFrame(const __FlashStringHelper* title, uint8_t pageNum) {
-  drawHeader(title, pageNum);
-  drawFooter();
-}
 
 static void drawKV(int y, const __FlashStringHelper* label, const char* value, uint16_t color, int valueX) {
   clearArea(0, y, SCREEN_W, 14);
@@ -308,12 +290,14 @@ static void drawGraphSeries(const uint8_t* values, uint16_t color) {
 }
 
 static void drawCurrentLayout() {
-  if (currentPage == 0) drawPageFrame(F("Ray Co. System Monitor"), 1);
-  else if (currentPage == 1) drawPageFrame(F("CPU Threads"), 2);
-  else if (currentPage == 2) drawPageFrame(F("Processes"), 3);
-  else if (currentPage == 3) drawPageFrame(F("GPU + Network"), 4);
-  else if (currentPage == 4) drawPageFrame(F("Storage + Power"), 5);
-  else drawPageFrame(F("Usage Graph"), 6);
+  if (currentPage == 0) drawHeader(F("Ray Co. System Monitor"), 1);
+  else if (currentPage == 1) drawHeader(F("CPU Threads"), 2);
+  else if (currentPage == 2) drawHeader(F("Processes"), 3);
+  else if (currentPage == 3) drawHeader(F("GPU"), 4);
+  else if (currentPage == 4) drawHeader(F("Network"), 5);
+  else if (currentPage == 5) drawHeader(F("Storage"), 6);
+  else if (currentPage == 6) drawHeader(F("Power"), 7);
+  else drawHeader(F("Usage Graph"), 8);
 }
 
 static void updateHome() {
@@ -352,38 +336,52 @@ static void updateProcesses() {
   drawKV(202, F("RAM%"), "cyan", CYAN, 48);
 }
 
-static void updateGpuNet() {
+static void updateGpu() {
   char gpuShort[22];
   char vramBuf[16];
   char clockBuf[12];
   shortGPU(gpuShort, sizeof(gpuShort), gpuName);
   snprintf(vramBuf, sizeof(vramBuf), "%u/%uM", gpuMemUsed, gpuMemTotal);
   snprintf(clockBuf, sizeof(clockBuf), "%uMHz", gpuClock);
-  drawPctRow(26, F("GPU"), gpuPct, colorForPct(gpuPct));
-  drawPctRow(52, F("VRAM"), gpuMemPct, MAGENTA);
-  drawKV(82, F("Temp"), gpuTemp, CYAN, 50);
-  drawKV(96, F("Clock"), clockBuf, YELLOW, 50);
-  drawKV(110, F("Mem"), vramBuf, CYAN, 50);
-  drawKV(124, F("Name"), gpuShort, WHITE, 50);
-  drawKV(146, F("Down"), downStr, GREEN, 50);
-  drawKV(160, F("Up"), upStr, YELLOW, 50);
-  drawKV(174, F("DnTot"), downTotalStr, ORANGE, 50);
-  drawKV(188, F("UpTot"), upTotalStr, MAGENTA, 50);
-  drawKV(202, F("IP"), ipAddr, WHITE, 50);
+  drawPctRow(28, F("GPU"), gpuPct, colorForPct(gpuPct));
+  drawPctRow(58, F("VRAM"), gpuMemPct, MAGENTA);
+  drawKV(94, F("Temp"), gpuTemp, CYAN, 64);
+  drawKV(112, F("Clock"), clockBuf, YELLOW, 64);
+  drawKV(130, F("Mem"), vramBuf, CYAN, 64);
+  drawKV(148, F("Name"), gpuShort, WHITE, 64);
+}
+
+static void updateNetwork() {
+  drawKV(34, F("Host"), hostName, CYAN, 64);
+  drawKV(56, F("IP"), ipAddr, WHITE, 64);
+  drawKV(84, F("Down"), downStr, GREEN, 64);
+  drawKV(106, F("Up"), upStr, YELLOW, 64);
+  drawKV(128, F("DnTot"), downTotalStr, ORANGE, 64);
+  drawKV(150, F("UpTot"), upTotalStr, MAGENTA, 64);
+  drawKV(178, F("Up"), uptimeStr, WHITE, 64);
 }
 
 static void updateStorage() {
   for (uint8_t i = 0; i < STORAGE_LINES; i++) {
-    drawStorageRow(28 + (i * 16), storageLine[i], (i % 2 == 0) ? CYAN : YELLOW);
+    drawStorageRow(34 + (i * 24), storageLine[i], (i % 2 == 0) ? CYAN : YELLOW);
   }
-  drawKV(102, F("Batt"), batteryPctStr, GREEN, 50);
-  drawKV(116, F("State"), batteryStateStr, ORANGE, 50);
-  drawKV(130, F("Mode"), batteryModeStr, WHITE, 50);
-  drawKV(150, F("B1"), batteryLabel[0], CYAN, 50);
-  drawKV(164, F("S1"), batteryState[0], WHITE, 50);
-  drawKV(178, F("B2"), batteryLabel[1], CYAN, 50);
-  drawKV(192, F("S2"), batteryState[1], WHITE, 50);
-  drawKV(206, F("Host"), hostName, WHITE, 50);
+  drawKV(144, F("RAM"), ramUsageText, CYAN, 64);
+  char d0[6], d1[6];
+  snprintf(d0, sizeof(d0), "%u%%", disk0Pct);
+  snprintf(d1, sizeof(d1), "%u%%", disk1Pct);
+  drawKV(170, F("Disk0"), d0, ORANGE, 64);
+  drawKV(192, F("Disk1"), d1, MAGENTA, 64);
+}
+
+static void updatePower() {
+  drawKV(34, F("Mode"), batteryModeStr, WHITE, 64);
+  drawKV(58, F("System"), batteryPctStr, GREEN, 64);
+  drawKV(82, F("State"), batteryStateStr, ORANGE, 64);
+  drawKV(114, F("Bat1"), batteryLabel[0], CYAN, 64);
+  drawKV(136, F("St1"), batteryState[0], WHITE, 64);
+  drawKV(160, F("Bat2"), batteryLabel[1], CYAN, 64);
+  drawKV(182, F("St2"), batteryState[1], WHITE, 64);
+  drawKV(204, F("Host"), hostName, GREEN, 64);
 }
 
 static void updateGraph() {
@@ -391,7 +389,7 @@ static void updateGraph() {
   const int gy = 34;
   const int gw = 296;
   const int gh = 146;
-  clearArea(0, 21, SCREEN_W, 198);
+  clearArea(0, 21, SCREEN_W, SCREEN_H - 21);
   tft.drawRect(gx, gy, gw, gh, WHITE);
   for (uint8_t i = 1; i < 4; i++) {
     tft.drawFastHLine(gx, gy + (gh * i) / 4, gw, GRAY);
@@ -406,16 +404,18 @@ static void updateGraph() {
   tft.setTextColor(CYAN);    tft.setCursor(84, 186);  tft.print(F("RAM "));  tft.print(ramPct);     tft.print('%');
   tft.setTextColor(YELLOW);  tft.setCursor(156, 186); tft.print(F("GPU "));  tft.print(gpuPct);     tft.print('%');
   tft.setTextColor(MAGENTA); tft.setCursor(228, 186); tft.print(F("VRM "));  tft.print(gpuMemPct);  tft.print('%');
-  drawKV(200, F("Host"), hostName, WHITE, 44);
-  drawKV(212, F("Up"), uptimeStr, WHITE, 44);
+  drawKV(204, F("Host"), hostName, WHITE, 52);
+  drawKV(218, F("Up"), uptimeStr, WHITE, 52);
 }
 
 static void updateCurrentPage() {
   if (currentPage == 0) updateHome();
   else if (currentPage == 1) updateCpu();
   else if (currentPage == 2) updateProcesses();
-  else if (currentPage == 3) updateGpuNet();
-  else if (currentPage == 4) updateStorage();
+  else if (currentPage == 3) updateGpu();
+  else if (currentPage == 4) updateNetwork();
+  else if (currentPage == 5) updateStorage();
+  else if (currentPage == 6) updatePower();
   else updateGraph();
 }
 
@@ -458,14 +458,7 @@ static void handleTouch() {
   if (pressed && !touchHeld && millis() - lastTouchTime > touchDebounceMs) {
     touchHeld = true;
     lastTouchTime = millis();
-
-    if (y >= 220) {
-      if (x < 70) goToPage((currentPage + TOTAL_PAGES - 1) % TOTAL_PAGES);
-      else if (x >= 125 && x < 195) goToPage(0);
-      else if (x >= 250) goToPage((currentPage + 1) % TOTAL_PAGES);
-    } else {
-      goToPage((currentPage + 1) % TOTAL_PAGES);
-    }
+    goToPage((currentPage + 1) % TOTAL_PAGES);
   }
 
   if (!pressed) touchHeld = false;
