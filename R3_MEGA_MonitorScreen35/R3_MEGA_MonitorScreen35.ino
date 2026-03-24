@@ -272,7 +272,7 @@ static void drawCurrentLayout() {
   else if (currentPage == 2) drawHeader(F("Processes"), 3);
   else if (currentPage == 3) drawHeader(F("Network"), 4);
   else if (currentPage == 4) drawHeader(F("GPU"), 5);
-  else if (currentPage == 5) drawHeader(F("Storage Inventory"), 6);
+  else if (currentPage == 5) drawHeader(F("Extra Statistics"), 6);
   else drawHeader(F("Usage Graph"), 7);
 }
 
@@ -283,9 +283,9 @@ static void updateHome() {
   drawPctRow(146, F("Disk1"), disk1Pct, ORANGE);
   drawKV(182, F("Freq"), cpuFreqStr, ORANGE, 96);
   drawKV(208, F("RAM"), ramUsageText, CYAN, 96);
-  drawKV(234, F("Up"), uptimeStr, WHITE, 96);
-  drawKV(260, F("OS"), osName, CYAN, 96);
-  drawKV(286, F("Host"), hostName, GREEN, 96);
+  drawKV(234, F("Host"), hostName, GREEN, 96);
+  drawKV(260, F("Up"), uptimeStr, WHITE, 96);
+  drawKV(286, F("OS"), osName, CYAN, 96);
 }
 
 static void updateCpu() {
@@ -307,14 +307,14 @@ static void updateProcesses() {
 }
 
 static void updateNetwork() {
-  drawKV(48, F("IP"), ipAddr, CYAN, 90);
-  drawKV(78, F("Down"), downStr, GREEN, 90);
-  drawKV(108, F("Up"), upStr, YELLOW, 90);
-  drawKV(138, F("DnTot"), downTotalStr, ORANGE, 90);
-  drawKV(168, F("UpTot"), upTotalStr, MAGENTA, 90);
-  drawKV(198, F("UpTime"), uptimeStr, WHITE, 90);
-  drawKV(228, F("Host"), hostName, CYAN, 90);
-  drawKV(258, F("OS"), osName, CYAN, 90);
+  drawKV(48, F("Host"), hostName, CYAN, 90);
+  drawKV(78, F("OS"), osName, ORANGE, 90);
+  drawKV(108, F("PC IP"), ipAddr, WHITE, 90);
+  drawKV(138, F("Down"), downStr, GREEN, 90);
+  drawKV(168, F("Up"), upStr, YELLOW, 90);
+  drawKV(198, F("DnTot"), downTotalStr, CYAN, 90);
+  drawKV(228, F("UpTot"), upTotalStr, ORANGE, 90);
+  drawKV(258, F("Uptm"), uptimeStr, WHITE, 90);
 }
 
 static void updateGpu() {
