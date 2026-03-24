@@ -9,6 +9,9 @@
 #else
 #include "wifi_config.h"
 #endif
+#if __has_include("page_config.local.h")
+#include "page_config.local.h"
+#endif
 #include <WiFiS3.h>
 #if __has_include("app_version.generated.h")
 #include "app_version.generated.h"
@@ -35,6 +38,28 @@
 
 #ifndef WIFI_TARGET_HOSTNAME_VALUE
 #define WIFI_TARGET_HOSTNAME_VALUE ""
+#endif
+
+#ifndef UASM_PAGE_HOME_ENABLED
+#define UASM_PAGE_HOME_ENABLED 1
+#endif
+#ifndef UASM_PAGE_CPU_ENABLED
+#define UASM_PAGE_CPU_ENABLED 1
+#endif
+#ifndef UASM_PAGE_PROCESSES_ENABLED
+#define UASM_PAGE_PROCESSES_ENABLED 1
+#endif
+#ifndef UASM_PAGE_NETWORK_ENABLED
+#define UASM_PAGE_NETWORK_ENABLED 1
+#endif
+#ifndef UASM_PAGE_GPU_ENABLED
+#define UASM_PAGE_GPU_ENABLED 1
+#endif
+#ifndef UASM_PAGE_STORAGE_ENABLED
+#define UASM_PAGE_STORAGE_ENABLED 1
+#endif
+#ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
+#define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
 
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
@@ -104,6 +129,16 @@ int cpuHistory[GRAPH_POINTS];
 int ramHistory[GRAPH_POINTS];
 int gpuHistory[GRAPH_POINTS];
 int vramHistory[GRAPH_POINTS];
+
+const bool PAGE_ENABLED[TOTAL_PAGES] = {
+  UASM_PAGE_HOME_ENABLED != 0,
+  UASM_PAGE_CPU_ENABLED != 0,
+  UASM_PAGE_PROCESSES_ENABLED != 0,
+  UASM_PAGE_NETWORK_ENABLED != 0,
+  UASM_PAGE_GPU_ENABLED != 0,
+  UASM_PAGE_STORAGE_ENABLED != 0,
+  UASM_PAGE_USAGE_GRAPH_ENABLED != 0
+};
 
 int currentPage = 0;
 bool touchHeld = false;
@@ -495,12 +530,41 @@ void handleDiscoveryRequests() {
   discoveryUdp.endPacket();
 }
 
+
+int enabledPageCount() {
+  int count = 0;
+  for (int i = 0; i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) count++;
+  return count > 0 ? count : TOTAL_PAGES;
+}
+
+int firstEnabledPage() {
+  for (int i = 0; i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) return i;
+  return 0;
+}
+
+int nextEnabledPage(int page) {
+  for (int step = 1; step <= TOTAL_PAGES; step++) {
+    int candidate = (page + step) % TOTAL_PAGES;
+    if (PAGE_ENABLED[candidate]) return candidate;
+  }
+  return firstEnabledPage();
+}
+
+int pageDisplayNumber(int physicalPageOneBased) {
+  int physicalIndex = physicalPageOneBased - 1;
+  int display = 0;
+  for (int i = 0; i <= physicalIndex && i < TOTAL_PAGES; i++) {
+    if (PAGE_ENABLED[i]) display++;
+  }
+  return display > 0 ? display : 1;
+}
+
 void drawHeader(const char* title, int page) {
   tft.fillScreen(BLACK);
   refreshArduinoWifiIp();
 
   String pageTitle = (page == 1) ? String("Ray Co. System Monitor") : String(title);
-  String pageStr = String(page) + "/" + String(TOTAL_PAGES);
+  String pageStr = String(pageDisplayNumber(page)) + "/" + String(enabledPageCount());
   String versionStr = String(APP_VERSION);
   String wifiStr = wifiStateText();
 
@@ -985,7 +1049,8 @@ void handleTouch() {
   if (pressed && !touchHeld && millis() - lastTouchTime > touchDebounceMs) {
     touchHeld = true;
     lastTouchTime = millis();
-    currentPage = (currentPage + 1) % TOTAL_PAGES;
+    currentPage = nextEnabledPage(currentPage);
+    if (!PAGE_ENABLED[currentPage]) currentPage = firstEnabledPage();
     drawCurrentLayout();
     updateCurrentPage();
     screenDirty = false;

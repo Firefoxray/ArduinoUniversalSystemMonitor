@@ -25,6 +25,8 @@ import java.util.Enumeration;
 import java.util.Set;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Properties;
 
 public class UniversalMonitorControlCenter extends JFrame {
@@ -43,6 +45,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final int DISPLAY_ROTATION_NORMAL = 1;
     private static final int DISPLAY_ROTATION_FLIPPED = 3;
     private static final int FLASH_SERVICE_RESTART_DELAY_SECONDS = 2;
+    private static final String DEFAULT_PAGE_PROFILE_NAME = "Desktop Default";
     private static final List<String> REQUIRED_ARDUINO_CORE_PACKAGES = List.of(
             "arduino:avr",
             "arduino:renesas_uno"
@@ -126,6 +129,20 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton stopNetworkScanButton = new JButton("Stop Scan");
     private final DefaultListModel<String> networkScanResultsModel = new DefaultListModel<>();
     private final JList<String> networkScanResultsList = new JList<>(networkScanResultsModel);
+
+    private final JComboBox<BoardProfileTarget> profileBoardSelector = new JComboBox<>();
+    private final JComboBox<String> activeBoardProfileSelector = new JComboBox<>();
+    private final JButton applyBoardProfileButton = new JButton("Apply Profile to Board");
+    private final JButton saveBoardSettingsButton = new JButton("Save Board Page Settings");
+    private final JButton saveProfileAsButton = new JButton("Save As Profile");
+    private final JButton updateProfileButton = new JButton("Update Profile");
+    private final JButton deleteProfileButton = new JButton("Delete Profile");
+    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 2, 8, 8));
+    private final JLabel boardProfileStatusLabel = new JLabel("No board profile loaded.");
+
+    private final Map<String, BoardPageSettings> boardPageSettings = new LinkedHashMap<>();
+    private final Map<String, Map<String, Map<String, Boolean>>> namedPageProfiles = new LinkedHashMap<>();
+    private final Map<String, JCheckBox> boardPageCheckboxes = new LinkedHashMap<>();
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -243,6 +260,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
+        initializeBoardProfileState();
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
         updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
@@ -309,6 +327,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Dashboard", buildDashboardTab());
         tabs.addTab("Flash", buildFlashTab());
+        tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
         return tabs;
     }
 
@@ -355,6 +374,45 @@ public class UniversalMonitorControlCenter extends JFrame {
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildSettingsProfilesTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+
+        JPanel top = new JPanel();
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+        top.setBorder(BorderFactory.createTitledBorder("Board Page Settings / Profiles"));
+
+        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowOne.add(new JLabel("Board Type:"));
+        rowOne.add(profileBoardSelector);
+        rowOne.add(new JLabel("Active Profile:"));
+        activeBoardProfileSelector.setEditable(true);
+        activeBoardProfileSelector.setPreferredSize(new Dimension(220, activeBoardProfileSelector.getPreferredSize().height));
+        rowOne.add(activeBoardProfileSelector);
+        rowOne.add(applyBoardProfileButton);
+        top.add(rowOne);
+
+        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowTwo.add(saveBoardSettingsButton);
+        rowTwo.add(saveProfileAsButton);
+        rowTwo.add(updateProfileButton);
+        rowTwo.add(deleteProfileButton);
+        boardProfileStatusLabel.setBorder(new EmptyBorder(0, 12, 0, 0));
+        rowTwo.add(boardProfileStatusLabel);
+        top.add(rowTwo);
+
+        JLabel helper = new JLabel("<html>Enable/disable pages per board, then save named profiles and reuse them across board types. Disabled pages are omitted from touch navigation after flashing.</html>");
+        helper.setBorder(new EmptyBorder(0, 10, 10, 10));
+        top.add(helper);
+
+        boardPageTogglePanel.setBorder(new EmptyBorder(8, 8, 8, 8));
+        JScrollPane togglesScroll = new JScrollPane(boardPageTogglePanel);
+        togglesScroll.setBorder(BorderFactory.createTitledBorder("Page Toggles for Selected Board"));
+
+        panel.add(top, BorderLayout.NORTH);
+        panel.add(togglesScroll, BorderLayout.CENTER);
         return panel;
     }
 
@@ -700,6 +758,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
         resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
+        profileBoardSelector.addActionListener(e -> refreshBoardPageToggleView());
+        applyBoardProfileButton.addActionListener(e -> applySelectedProfileToCurrentBoard());
+        saveBoardSettingsButton.addActionListener(e -> saveBoardPageSettingsAndSyncHeaders(true));
+        saveProfileAsButton.addActionListener(e -> saveCurrentBoardAsNamedProfile());
+        updateProfileButton.addActionListener(e -> updateSelectedProfileFromCurrentBoard());
+        deleteProfileButton.addActionListener(e -> deleteSelectedProfile());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
         lightModeToggle.addActionListener(e -> {
             darkMode = !lightModeToggle.isSelected();
@@ -721,6 +785,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void runDefaultFlashWorkflow() {
         syncDashboardSudoPassword();
         persistCurrentDisplayRotationSelections(true, true);
+        saveBoardPageSettingsAndSyncHeaders(false);
         if (alwaysShowFlashPreviewToggle.isSelected()) {
             showFlashPreviewDialog();
         }
@@ -1694,6 +1759,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         syncedWifiHeader = syncWifiHeaderIntoLocalHeader(wifiPort, wifiBoardName, wifiTargetHost, wifiTargetHostname);
         boolean syncedDisplayHeaders = syncDisplayRotationHeaders(r4Rotation, r3Rotation, megaRotation);
+        boolean syncedPageHeaders = saveBoardPageSettingsAndSyncHeaders(false);
         refreshWifiCredentialsIndicator(false);
 
         if (!savedMonitorConfig) {
@@ -1706,6 +1772,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         if (syncedDisplayHeaders) {
             log("[INFO] Synced per-board display rotation headers so the next compile enforces the saved GUI rotation for R4, R3, and Mega boards.");
+        }
+        if (syncedPageHeaders) {
+            log("[INFO] Synced board page toggle headers so disabled pages are skipped during on-device navigation.");
         }
         log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort
                 + ", connection mode " + (wifiAutoDiscovery ? "Auto Discovery (UDP)" : "Manual / Fixed IP")
@@ -3429,6 +3498,386 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private Path boardPageProfilesPath() {
+        return configDir().resolve("board_page_profiles.properties");
+    }
+
+    private void initializeBoardProfileState() {
+        boardPageSettings.clear();
+        namedPageProfiles.clear();
+
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            boardPageSettings.put(board.id(), BoardPageSettings.defaultsFor(board));
+        }
+        namedPageProfiles.putAll(defaultNamedProfiles());
+        loadBoardPageProfilesFromDisk();
+        enforceSafeBoardProfileDefaults();
+
+        profileBoardSelector.removeAllItems();
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            profileBoardSelector.addItem(board);
+        }
+        profileBoardSelector.setSelectedItem(BoardProfileTarget.R4_WIFI);
+        refreshProfileSelectorChoices();
+        refreshBoardPageToggleView();
+        saveBoardPageSettingsAndSyncHeaders(false);
+    }
+
+    private Map<String, Map<String, Map<String, Boolean>>> defaultNamedProfiles() {
+        Map<String, Map<String, Map<String, Boolean>>> profiles = new LinkedHashMap<>();
+        profiles.put(DEFAULT_PAGE_PROFILE_NAME, defaultsForEveryBoard(true));
+        profiles.put("Minimal", minimalForEveryBoard());
+        profiles.put("Gaming HUD", gamingHudForEveryBoard());
+        profiles.put("Network Focus", networkFocusForEveryBoard());
+        return profiles;
+    }
+
+    private Map<String, Map<String, Boolean>> defaultsForEveryBoard(boolean enabled) {
+        Map<String, Map<String, Boolean>> result = new LinkedHashMap<>();
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            Map<String, Boolean> pages = new LinkedHashMap<>();
+            for (PageDefinition page : board.pages()) {
+                pages.put(page.id(), enabled);
+            }
+            result.put(board.id(), pages);
+        }
+        return result;
+    }
+
+    private Map<String, Map<String, Boolean>> minimalForEveryBoard() {
+        Map<String, Map<String, Boolean>> result = defaultsForEveryBoard(false);
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            result.get(board.id()).put("home", true);
+            if (result.get(board.id()).containsKey("network")) result.get(board.id()).put("network", true);
+        }
+        return result;
+    }
+
+    private Map<String, Map<String, Boolean>> gamingHudForEveryBoard() {
+        Map<String, Map<String, Boolean>> result = defaultsForEveryBoard(false);
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            Map<String, Boolean> pages = result.get(board.id());
+            pages.put("home", true);
+            if (pages.containsKey("cpu")) pages.put("cpu", true);
+            if (pages.containsKey("gpu")) pages.put("gpu", true);
+            if (pages.containsKey("usage_graph")) pages.put("usage_graph", true);
+        }
+        return result;
+    }
+
+    private Map<String, Map<String, Boolean>> networkFocusForEveryBoard() {
+        Map<String, Map<String, Boolean>> result = defaultsForEveryBoard(false);
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            Map<String, Boolean> pages = result.get(board.id());
+            pages.put("home", true);
+            if (pages.containsKey("network")) pages.put("network", true);
+            if (pages.containsKey("storage")) pages.put("storage", true);
+        }
+        return result;
+    }
+
+    private void loadBoardPageProfilesFromDisk() {
+        Path path = boardPageProfilesPath();
+        if (!Files.exists(path)) {
+            return;
+        }
+        Properties properties = new Properties();
+        try (var input = Files.newInputStream(path)) {
+            properties.load(input);
+        } catch (IOException ex) {
+            log("[WARN] Failed to read board page profiles from " + path + ": " + ex.getMessage());
+            return;
+        }
+
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            String active = properties.getProperty("board." + board.id() + ".active_profile");
+            if ((active == null || active.isBlank()) && board.id().startsWith("mega_")) {
+                active = properties.getProperty("board.mega.active_profile");
+            }
+            if (active != null && !active.isBlank()) {
+                boardPageSettings.get(board.id()).activeProfile = active.trim();
+            }
+            for (PageDefinition page : board.pages()) {
+                String raw = properties.getProperty("board." + board.id() + ".page." + page.id());
+                if ((raw == null || raw.isBlank()) && board.id().startsWith("mega_")) {
+                    raw = properties.getProperty("board.mega.page." + page.id());
+                }
+                if (raw != null) {
+                    boardPageSettings.get(board.id()).pageEnabled.put(page.id(), Boolean.parseBoolean(raw));
+                }
+            }
+        }
+
+        Map<String, String> profileIdsToNames = new LinkedHashMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            if (key.startsWith("profile.") && key.endsWith(".name")) {
+                String id = key.substring("profile.".length(), key.length() - ".name".length());
+                String name = properties.getProperty(key, "").trim();
+                if (!name.isBlank()) {
+                    profileIdsToNames.put(id, name);
+                }
+            }
+        }
+
+        for (Map.Entry<String, String> profileMeta : profileIdsToNames.entrySet()) {
+            String profileId = profileMeta.getKey();
+            String profileName = profileMeta.getValue();
+            Map<String, Map<String, Boolean>> boardMap = defaultsForEveryBoard(true);
+            for (BoardProfileTarget board : BoardProfileTarget.values()) {
+                for (PageDefinition page : board.pages()) {
+                    String raw = properties.getProperty("profile." + profileId + "." + board.id() + "." + page.id());
+                    if ((raw == null || raw.isBlank()) && board.id().startsWith("mega_")) {
+                        raw = properties.getProperty("profile." + profileId + ".mega." + page.id());
+                    }
+                    if (raw != null) {
+                        boardMap.get(board.id()).put(page.id(), Boolean.parseBoolean(raw));
+                    }
+                }
+            }
+            namedPageProfiles.put(profileName, boardMap);
+        }
+    }
+
+    private void enforceSafeBoardProfileDefaults() {
+        if (!namedPageProfiles.containsKey(DEFAULT_PAGE_PROFILE_NAME)) {
+            namedPageProfiles.put(DEFAULT_PAGE_PROFILE_NAME, defaultsForEveryBoard(true));
+        }
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            BoardPageSettings settings = boardPageSettings.get(board.id());
+            if (settings == null) {
+                continue;
+            }
+            if (settings.activeProfile == null || settings.activeProfile.isBlank() || !namedPageProfiles.containsKey(settings.activeProfile)) {
+                settings.activeProfile = DEFAULT_PAGE_PROFILE_NAME;
+            }
+            for (PageDefinition page : board.pages()) {
+                settings.pageEnabled.putIfAbsent(page.id(), true);
+            }
+        }
+    }
+
+    private void persistBoardPageProfiles() {
+        Properties properties = new Properties();
+        properties.setProperty("format_version", "1");
+
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            BoardPageSettings settings = boardPageSettings.get(board.id());
+            properties.setProperty("board." + board.id() + ".active_profile", settings.activeProfile);
+            for (PageDefinition page : board.pages()) {
+                properties.setProperty("board." + board.id() + ".page." + page.id(), String.valueOf(settings.pageEnabled.getOrDefault(page.id(), true)));
+            }
+        }
+
+        for (String profileName : namedPageProfiles.keySet()) {
+            String profileId = slugifyProfileName(profileName);
+            properties.setProperty("profile." + profileId + ".name", profileName);
+            Map<String, Map<String, Boolean>> profileBoards = namedPageProfiles.get(profileName);
+            for (BoardProfileTarget board : BoardProfileTarget.values()) {
+                Map<String, Boolean> pages = profileBoards.get(board.id());
+                if (pages == null) continue;
+                for (PageDefinition page : board.pages()) {
+                    properties.setProperty("profile." + profileId + "." + board.id() + "." + page.id(), String.valueOf(pages.getOrDefault(page.id(), true)));
+                }
+            }
+        }
+
+        Path path = boardPageProfilesPath();
+        try {
+            Files.createDirectories(path.getParent());
+            try (var output = Files.newOutputStream(path, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                properties.store(output, "UASM board page profiles");
+            }
+        } catch (IOException ex) {
+            log("[WARN] Failed to save board page profile settings to " + path + ": " + ex.getMessage());
+        }
+    }
+
+    private String slugifyProfileName(String name) {
+        String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("_+", "_");
+        normalized = normalized.replaceAll("^_", "").replaceAll("_$", "");
+        return normalized.isBlank() ? "custom_profile" : normalized;
+    }
+
+    private BoardProfileTarget currentProfileBoardSelection() {
+        Object selected = profileBoardSelector.getSelectedItem();
+        return selected instanceof BoardProfileTarget board ? board : BoardProfileTarget.R4_WIFI;
+    }
+
+    private void refreshProfileSelectorChoices() {
+        Object current = activeBoardProfileSelector.getSelectedItem();
+        activeBoardProfileSelector.removeAllItems();
+        for (String profileName : namedPageProfiles.keySet()) {
+            activeBoardProfileSelector.addItem(profileName);
+        }
+        BoardPageSettings settings = boardPageSettings.get(currentProfileBoardSelection().id());
+        activeBoardProfileSelector.setSelectedItem(settings == null ? current : settings.activeProfile);
+    }
+
+    private void refreshBoardPageToggleView() {
+        BoardProfileTarget board = currentProfileBoardSelection();
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        if (settings == null) return;
+
+        boardPageTogglePanel.removeAll();
+        boardPageCheckboxes.clear();
+        for (PageDefinition page : board.pages()) {
+            JCheckBox box = new JCheckBox(page.label(), settings.pageEnabled.getOrDefault(page.id(), true));
+            box.addActionListener(e -> settings.pageEnabled.put(page.id(), box.isSelected()));
+            boardPageCheckboxes.put(page.id(), box);
+            boardPageTogglePanel.add(box);
+        }
+        boardProfileStatusLabel.setText("Editing " + board.label() + " pages");
+        refreshProfileSelectorChoices();
+        boardPageTogglePanel.revalidate();
+        boardPageTogglePanel.repaint();
+    }
+
+    private void applySelectedProfileToCurrentBoard() {
+        BoardProfileTarget board = currentProfileBoardSelection();
+        String profileName = String.valueOf(activeBoardProfileSelector.getEditor().getItem()).trim();
+        if (profileName.isBlank()) {
+            log("[WARN] Choose or type a profile name before applying.");
+            return;
+        }
+        Map<String, Map<String, Boolean>> profile = namedPageProfiles.get(profileName);
+        if (profile == null) {
+            log("[WARN] Profile '" + profileName + "' does not exist yet. Save it first with Save As Profile.");
+            return;
+        }
+        Map<String, Boolean> boardProfile = profile.get(board.id());
+        if (boardProfile == null) {
+            log("[WARN] Profile '" + profileName + "' has no settings for " + board.label() + ".");
+            return;
+        }
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        for (PageDefinition page : board.pages()) {
+            settings.pageEnabled.put(page.id(), boardProfile.getOrDefault(page.id(), true));
+        }
+        settings.activeProfile = profileName;
+        refreshBoardPageToggleView();
+        log("[INFO] Applied profile '" + profileName + "' to " + board.label() + ".");
+    }
+
+    private void saveCurrentBoardAsNamedProfile() {
+        BoardProfileTarget board = currentProfileBoardSelection();
+        String profileName = String.valueOf(activeBoardProfileSelector.getEditor().getItem()).trim();
+        if (profileName.isBlank()) {
+            log("[WARN] Profile name cannot be empty.");
+            return;
+        }
+        Map<String, Map<String, Boolean>> profile = namedPageProfiles.computeIfAbsent(profileName, k -> defaultsForEveryBoard(true));
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        Map<String, Boolean> boardProfile = new LinkedHashMap<>();
+        for (PageDefinition page : board.pages()) {
+            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), true));
+        }
+        profile.put(board.id(), boardProfile);
+        settings.activeProfile = profileName;
+        persistBoardPageProfiles();
+        refreshProfileSelectorChoices();
+        activeBoardProfileSelector.setSelectedItem(profileName);
+        log("[INFO] Saved board profile '" + profileName + "' for " + board.label() + ".");
+    }
+
+    private void updateSelectedProfileFromCurrentBoard() {
+        BoardProfileTarget board = currentProfileBoardSelection();
+        Object selectedItem = activeBoardProfileSelector.getSelectedItem();
+        String profileName = selectedItem == null ? "" : selectedItem.toString().trim();
+        if (!namedPageProfiles.containsKey(profileName)) {
+            log("[WARN] Select an existing profile to update.");
+            return;
+        }
+        Map<String, Map<String, Boolean>> profile = namedPageProfiles.get(profileName);
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        Map<String, Boolean> boardProfile = new LinkedHashMap<>();
+        for (PageDefinition page : board.pages()) {
+            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), true));
+        }
+        profile.put(board.id(), boardProfile);
+        settings.activeProfile = profileName;
+        persistBoardPageProfiles();
+        log("[INFO] Updated profile '" + profileName + "' using current " + board.label() + " toggles.");
+    }
+
+    private void deleteSelectedProfile() {
+        Object selectedItem = activeBoardProfileSelector.getSelectedItem();
+        String profileName = selectedItem == null ? "" : selectedItem.toString().trim();
+        if (profileName.isBlank()) {
+            log("[WARN] Select a profile to delete.");
+            return;
+        }
+        if (!namedPageProfiles.containsKey(profileName)) {
+            log("[WARN] Profile '" + profileName + "' was not found.");
+            return;
+        }
+        if (List.of(DEFAULT_PAGE_PROFILE_NAME, "Minimal", "Gaming HUD", "Network Focus").contains(profileName)) {
+            log("[WARN] Built-in profiles cannot be deleted.");
+            return;
+        }
+        namedPageProfiles.remove(profileName);
+        for (BoardPageSettings settings : boardPageSettings.values()) {
+            if (profileName.equals(settings.activeProfile)) settings.activeProfile = DEFAULT_PAGE_PROFILE_NAME;
+        }
+        persistBoardPageProfiles();
+        refreshProfileSelectorChoices();
+        log("[INFO] Deleted profile '" + profileName + "'.");
+    }
+
+    private boolean saveBoardPageSettingsAndSyncHeaders(boolean verbose) {
+        ensureAtLeastOnePageEnabledPerBoard();
+        persistBoardPageProfiles();
+        boolean synced = syncBoardPageConfigHeaders();
+        if (verbose) {
+            if (synced) {
+                log("[INFO] Saved board page settings/profiles and synced page_config.local.h headers for R4, UNO R3 (2.8/3.5), and Mega.");
+            } else {
+                log("[WARN] Saved profile data, but one or more page_config.local.h headers failed to sync.");
+            }
+        }
+        return synced;
+    }
+
+    private void ensureAtLeastOnePageEnabledPerBoard() {
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            BoardPageSettings settings = boardPageSettings.get(board.id());
+            boolean anyEnabled = settings.pageEnabled.values().stream().anyMatch(Boolean::booleanValue);
+            if (!anyEnabled) {
+                settings.pageEnabled.put(board.pages().get(0).id(), true);
+            }
+        }
+    }
+
+    private boolean syncBoardPageConfigHeaders() {
+        boolean ok = true;
+        ok &= writeBoardPageConfigHeader(BoardProfileTarget.R4_WIFI, repoPath().resolve("R4_WIFI35/page_config.local.h"));
+        ok &= writeBoardPageConfigHeader(BoardProfileTarget.UNO_R3_28, repoPath().resolve("R3_MonitorScreen28/page_config.local.h"));
+        ok &= writeBoardPageConfigHeader(BoardProfileTarget.UNO_R3_35, repoPath().resolve("R3_MonitorScreen35/page_config.local.h"));
+        ok &= writeBoardPageConfigHeader(BoardProfileTarget.MEGA_35, repoPath().resolve("R3_MEGA_MonitorScreen35/page_config.local.h"));
+        ok &= writeBoardPageConfigHeader(BoardProfileTarget.MEGA_28, repoPath().resolve("R3_MEGA_MonitorScreen28/page_config.local.h"));
+        return ok;
+    }
+
+    private boolean writeBoardPageConfigHeader(BoardProfileTarget board, Path target) {
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        if (settings == null) return false;
+
+        StringBuilder header = new StringBuilder("#pragma once\n\n");
+        for (PageDefinition page : board.pages()) {
+            String macro = "UASM_PAGE_" + page.id().toUpperCase(Locale.ROOT) + "_ENABLED";
+            boolean enabled = settings.pageEnabled.getOrDefault(page.id(), true);
+            header.append("#define ").append(macro).append(" ").append(enabled ? "1" : "0").append("\n");
+        }
+
+        try {
+            if (target.getParent() != null) Files.createDirectories(target.getParent());
+            Files.writeString(target, header.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            return true;
+        } catch (IOException ex) {
+            log("[WARN] Failed to write page config header " + target + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
     private boolean runningAsRoot() {
         return "root".equals(System.getProperty("user.name"));
     }
@@ -3521,6 +3970,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             loadMonitorSettingsButton.setEnabled(enabled);
             saveMonitorSettingsButton.setEnabled(enabled);
             resetWifiPairingButton.setEnabled(enabled);
+            profileBoardSelector.setEnabled(enabled);
+            activeBoardProfileSelector.setEnabled(enabled);
+            applyBoardProfileButton.setEnabled(enabled);
+            saveBoardSettingsButton.setEnabled(enabled);
+            saveProfileAsButton.setEnabled(enabled);
+            updateProfileButton.setEnabled(enabled);
+            deleteProfileButton.setEnabled(enabled);
             updateNetworkScanButtons();
             updateKillRunningTaskButton();
         });
@@ -3629,6 +4085,88 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         SwingUtilities.invokeLater(() -> new UniversalMonitorControlCenter().setVisible(true));
+    }
+
+
+    private record PageDefinition(String id, String label) {}
+
+    private enum BoardProfileTarget {
+        R4_WIFI("r4_wifi", "R4 WiFi", List.of(
+                new PageDefinition("home", "Home"),
+                new PageDefinition("cpu", "CPU"),
+                new PageDefinition("processes", "Processes"),
+                new PageDefinition("network", "Network"),
+                new PageDefinition("gpu", "GPU"),
+                new PageDefinition("storage", "Storage"),
+                new PageDefinition("usage_graph", "Usage Graph")
+        )),
+        UNO_R3_28("uno_r3_28", "UNO R3 2.8", List.of(
+                new PageDefinition("home", "Home"),
+                new PageDefinition("cpu", "CPU"),
+                new PageDefinition("gpu", "GPU"),
+                new PageDefinition("network", "Network"),
+                new PageDefinition("storage", "Storage"),
+                new PageDefinition("power", "Power"),
+                new PageDefinition("usage_graph", "Usage Graph")
+        )),
+        UNO_R3_35("uno_r3_35", "UNO R3 3.5", List.of(
+                new PageDefinition("home", "Home"),
+                new PageDefinition("cpu", "CPU + Processes"),
+                new PageDefinition("gpu", "GPU + Network"),
+                new PageDefinition("storage", "Storage + Totals"),
+                new PageDefinition("usage_graph", "Usage Graph")
+        )),
+        MEGA_28("mega_28", "Mega 2.8", List.of(
+                new PageDefinition("home", "Home"),
+                new PageDefinition("cpu", "CPU"),
+                new PageDefinition("processes", "Processes"),
+                new PageDefinition("gpu", "GPU"),
+                new PageDefinition("network", "Network"),
+                new PageDefinition("storage", "Storage"),
+                new PageDefinition("power", "Power"),
+                new PageDefinition("usage_graph", "Usage Graph")
+        )),
+        MEGA_35("mega_35", "Mega 3.5", List.of(
+                new PageDefinition("home", "Home"),
+                new PageDefinition("cpu", "CPU"),
+                new PageDefinition("processes", "Processes"),
+                new PageDefinition("network", "Network"),
+                new PageDefinition("gpu", "GPU"),
+                new PageDefinition("storage", "Storage"),
+                new PageDefinition("usage_graph", "Usage Graph")
+        ));
+
+        private final String id;
+        private final String label;
+        private final List<PageDefinition> pages;
+
+        BoardProfileTarget(String id, String label, List<PageDefinition> pages) {
+            this.id = id;
+            this.label = label;
+            this.pages = pages;
+        }
+
+        String id() { return id; }
+        String label() { return label; }
+        List<PageDefinition> pages() { return pages; }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private static class BoardPageSettings {
+        final Map<String, Boolean> pageEnabled = new LinkedHashMap<>();
+        String activeProfile = DEFAULT_PAGE_PROFILE_NAME;
+
+        static BoardPageSettings defaultsFor(BoardProfileTarget board) {
+            BoardPageSettings settings = new BoardPageSettings();
+            for (PageDefinition page : board.pages()) {
+                settings.pageEnabled.put(page.id(), true);
+            }
+            return settings;
+        }
     }
 
 
