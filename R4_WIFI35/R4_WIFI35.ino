@@ -1349,6 +1349,7 @@ void setup() {
     batteryDeviceState[i] = "--";
   }
 
+  currentPage = firstEnabledPage();
   drawCurrentLayout();
   updateCurrentPage();
   lastScreenUpdate = millis();

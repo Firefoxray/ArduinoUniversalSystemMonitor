@@ -527,6 +527,7 @@ void setup() {
   }
 
   resetLineParser();
+  currentPage = firstEnabledPage();
   drawCurrentLayout();
   lastScreenUpdate = 0;
   updateCurrentPage();

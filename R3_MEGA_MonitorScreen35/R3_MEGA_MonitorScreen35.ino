@@ -476,6 +476,7 @@ void setup() {
   }
   for (uint8_t i = 0; i < STORAGE_LINES; i++) safeCopy(storageLine[i], sizeof(storageLine[i]), "Disk: --");
 
+  currentPage = firstEnabledPage();
   drawCurrentLayout();
   updateCurrentPage();
 }
