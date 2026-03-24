@@ -87,6 +87,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton serviceOffButton = new JButton("Service Off");
     private final JButton serviceRestartButton = new JButton("Service Restart");
     private final JButton serviceStatusButton = new JButton("Service Status");
+    private final JButton serviceStartupEnableButton = new JButton("Enable Monitor on Startup");
+    private final JButton serviceStartupDisableButton = new JButton("Disable Monitor on Startup");
+    private final JButton serviceStartupRefreshButton = new JButton("Refresh Startup State");
 
     private final JButton debugOnButton = new JButton("Enable Debug Mode");
     private final JButton debugOffButton = new JButton("Disable Debug Mode");
@@ -96,6 +99,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton wifiModeRefreshButton = new JButton("Refresh Transport");
 
     private final JLabel serviceIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
+    private final JLabel startupIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel debugIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel transportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
     private final JLabel flashTransportIndicator = new JLabel("UNKNOWN", SwingConstants.CENTER);
@@ -135,12 +139,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> activeBoardProfileSelector = new JComboBox<>();
     private final JButton applyBoardProfileButton = new JButton("Apply Profile to Board");
     private final JButton saveBoardSettingsButton = new JButton("Save Board Page Settings");
+    private final JButton newProfileButton = new JButton("New Profile");
     private final JButton saveProfileAsButton = new JButton("Save As Profile");
     private final JButton updateProfileButton = new JButton("Update Profile");
     private final JButton deleteProfileButton = new JButton("Delete Profile");
     private final JButton exportProfilesButton = new JButton("Export Profiles...");
     private final JButton importProfilesButton = new JButton("Import Profiles...");
-    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 3, 4, 4));
+    private final JButton saveAllBoardsAndProfilesButton = new JButton("Save All Boards & Current Profiles");
+    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 4, 6, 6));
     private final JLabel boardProfileStatusLabel = new JLabel("No board profile loaded.");
 
     private final Map<String, BoardPageSettings> boardPageSettings = new LinkedHashMap<>();
@@ -220,13 +226,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         sudoPasswordField.setToolTipText("Optional: sudo password used for installer/update/flash/service controls when not root");
         rememberPasswordToggle.setToolTipText("Stores the sudo password in the local " + SUDO_PASSWORD_FILE + " file inside the repo. Git ignores that file so it stays on this machine.");
         clearSavedPasswordButton.setToolTipText("Deletes the saved sudo password file from this repo.");
-        flashButton.setToolTipText("Builds and uploads the repo's included monitor sketch for the detected board.");
+        flashButton.setToolTipText("Builds and uploads from the repo's current sketches plus the latest generated local headers/config state saved in this UI.");
         customFlashButton.setToolTipText("Lets you choose a local .ino or sketch folder and upload that custom sketch.");
         wifiCredentialsButton.setToolTipText("Saves the SSID and password into the local R4 Wi-Fi sketch config before flashing.");
         killRunningTaskButton.setToolTipText("Force-stops the currently running flash/task command if it gets stuck, then refreshes the UI.");
         killRunningTaskButton.setEnabled(false);
         debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
         wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
+        serviceStartupEnableButton.setToolTipText("Runs systemctl enable and start for the Arduino monitor service so it starts at boot and now.");
+        serviceStartupDisableButton.setToolTipText("Runs systemctl disable and stop for the Arduino monitor service so it does not start at boot.");
+        serviceStartupRefreshButton.setToolTipText("Re-checks whether the Arduino monitor service is enabled at boot.");
         startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
         connectPreviewButton.setToolTipText("Connects the built-in preview window to the fake output serial port.");
         unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto detected Arduino UNO R3 boards only.");
@@ -259,6 +268,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         applyTheme();
         updatePortButtons();
         setServiceIndicator("UNKNOWN", Color.GRAY);
+        setStartupIndicator("UNKNOWN", Color.GRAY);
         setDebugIndicator("UNKNOWN", Color.GRAY);
         loadSavedSudoPassword();
         dashboardSudoPasswordField.setText(new String(sudoPasswordField.getPassword()));
@@ -274,12 +284,14 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         Timer serviceTimer = new Timer(7000, e -> {
             refreshServiceStatus(false);
+            refreshServiceStartupStatus(false);
             refreshDebugStatus(false);
             refreshTransportModeStatus(false);
         });
         serviceTimer.setRepeats(true);
         serviceTimer.start();
         refreshServiceStatus(false);
+        refreshServiceStartupStatus(false);
         refreshDebugStatus(false);
         refreshTransportModeStatus(false);
     }
@@ -390,8 +402,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
         top.setBorder(BorderFactory.createTitledBorder("Board Page Settings / Profiles"));
+        top.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
 
-        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         rowOne.add(new JLabel("Board Type:"));
         rowOne.add(profileBoardSelector);
         rowOne.add(new JLabel("Active Profile:"));
@@ -401,22 +414,33 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowOne.add(applyBoardProfileButton);
         top.add(rowOne);
 
-        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         rowTwo.add(saveBoardSettingsButton);
+        rowTwo.add(newProfileButton);
         rowTwo.add(saveProfileAsButton);
         rowTwo.add(updateProfileButton);
         rowTwo.add(deleteProfileButton);
         rowTwo.add(exportProfilesButton);
         rowTwo.add(importProfilesButton);
+        rowTwo.add(saveAllBoardsAndProfilesButton);
         boardProfileStatusLabel.setBorder(new EmptyBorder(0, 12, 0, 0));
         rowTwo.add(boardProfileStatusLabel);
         top.add(rowTwo);
 
-        JLabel helper = new JLabel("<html>Enable/disable pages per board, then save named profiles and reuse them across board types. Disabled pages are omitted from touch navigation after flashing.</html>");
-        helper.setBorder(new EmptyBorder(0, 10, 10, 10));
+        JLabel helper = new JLabel("<html><b>Settings / Profiles quick guide:</b><br>"
+                + "A <b>profile</b> is a reusable page-toggle preset. Each profile stores page visibility <b>per board type</b> (R4, UNO R3, Mega), so one profile name can hold different page maps for each board.<br>"
+                + "<b>Enable/disable pages</b> to control touch navigation availability after flashing. Disabled pages are skipped on-device.<br>"
+                + "<b>Apply Profile</b>: loads the selected profile onto this board's toggles.<br>"
+                + "<b>Save Board Page Settings</b>: writes current toggles + active profile and updates board page headers used at compile time.<br>"
+                + "<b>Save As / New Profile</b>: create a named custom profile from current toggles. <b>Update</b> overwrites the selected profile for this board. <b>Delete</b> removes a custom profile.<br>"
+                + "<b>Import / Export</b>: move profile definitions between systems using board_page_profiles.properties.<br>"
+                + "<b>Flash Arduinos'</b> compiles/flashes the <i>current repo sketches</i> with the <i>current generated local headers</i> (rotations, page toggles, and local Wi-Fi header values). Reflash is required for profile/toggle changes to take effect on hardware.</html>");
+        helper.setBorder(new EmptyBorder(0, 8, 8, 8));
+        helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
 
         boardPageTogglePanel.setBorder(new EmptyBorder(6, 6, 6, 6));
+        boardPageTogglePanel.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
         JScrollPane togglesScroll = new JScrollPane(boardPageTogglePanel);
         togglesScroll.setBorder(BorderFactory.createTitledBorder("Page Toggles for Selected Board"));
 
@@ -437,16 +461,31 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildServiceControlsPanel() {
         JPanel servicePanel = new JPanel(new BorderLayout(10, 8));
         servicePanel.setBorder(BorderFactory.createTitledBorder("Service Controls: " + SERVICE_NAME));
+        JPanel controlsColumn = new JPanel();
+        controlsColumn.setLayout(new BoxLayout(controlsColumn, BoxLayout.Y_AXIS));
+
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         serviceIndicator.setOpaque(true);
-        serviceIndicator.setPreferredSize(new Dimension(100, 30));
+        serviceIndicator.setPreferredSize(new Dimension(110, 30));
         buttonPanel.add(serviceOnButton);
         buttonPanel.add(serviceOffButton);
         buttonPanel.add(serviceRestartButton);
         buttonPanel.add(serviceStatusButton);
-        buttonPanel.add(new JLabel("Indicator:"));
+        buttonPanel.add(new JLabel("Running:"));
         buttonPanel.add(serviceIndicator);
-        servicePanel.add(buttonPanel, BorderLayout.CENTER);
+        controlsColumn.add(buttonPanel);
+
+        JPanel startupRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        startupIndicator.setOpaque(true);
+        startupIndicator.setPreferredSize(new Dimension(110, 30));
+        startupRow.add(serviceStartupEnableButton);
+        startupRow.add(serviceStartupDisableButton);
+        startupRow.add(serviceStartupRefreshButton);
+        startupRow.add(new JLabel("Startup:"));
+        startupRow.add(startupIndicator);
+        controlsColumn.add(startupRow);
+
+        servicePanel.add(controlsColumn, BorderLayout.CENTER);
         lightModeToggle.setFocusable(false);
         JPanel rightPanel = new JPanel();
         rightPanel.setLayout(new BoxLayout(rightPanel, BoxLayout.Y_AXIS));
@@ -552,6 +591,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         optionsRow.setBorder(new EmptyBorder(6, 0, 0, 0));
         optionsRow.add(alwaysShowFlashPreviewToggle);
         rowTwo.add(optionsRow);
+        JLabel flashHelper = new JLabel("<html><b>Flash Arduinos'</b> always compiles/uploads from the current repo files on disk, including the latest generated local config headers (page toggles, board rotations, and Wi-Fi local header values).</html>");
+        flashHelper.setBorder(new EmptyBorder(6, 0, 0, 0));
+        rowTwo.add(flashHelper);
 
         panel.add(rowTwo);
         return panel;
@@ -751,6 +793,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
         serviceRestartButton.addActionListener(e -> runServiceCommand("restart"));
         serviceStatusButton.addActionListener(e -> refreshServiceStatus(true));
+        serviceStartupEnableButton.addActionListener(e -> setServiceStartupEnabled(true));
+        serviceStartupDisableButton.addActionListener(e -> setServiceStartupEnabled(false));
+        serviceStartupRefreshButton.addActionListener(e -> refreshServiceStartupStatus(true));
 
         debugOnButton.addActionListener(e -> setDebugMode(true));
         debugOffButton.addActionListener(e -> setDebugMode(false));
@@ -773,11 +818,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         profileBoardSelector.addActionListener(e -> refreshBoardPageToggleView());
         applyBoardProfileButton.addActionListener(e -> applySelectedProfileToCurrentBoard());
         saveBoardSettingsButton.addActionListener(e -> saveBoardPageSettingsAndSyncHeaders(true));
+        newProfileButton.addActionListener(e -> createNewProfile());
         saveProfileAsButton.addActionListener(e -> saveCurrentBoardAsNamedProfile());
         updateProfileButton.addActionListener(e -> updateSelectedProfileFromCurrentBoard());
         deleteProfileButton.addActionListener(e -> deleteSelectedProfile());
         exportProfilesButton.addActionListener(e -> exportBoardProfilesToChosenPath());
         importProfilesButton.addActionListener(e -> importBoardProfilesFromChosenPath());
+        saveAllBoardsAndProfilesButton.addActionListener(e -> saveAllBoardsAndProfiles());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
         lightModeToggle.addActionListener(e -> {
             darkMode = !lightModeToggle.isSelected();
@@ -799,6 +846,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void runDefaultFlashWorkflow() {
         syncDashboardSudoPassword();
         persistCurrentDisplayRotationSelections(true, true);
+        syncCurrentWifiHeaderFromUi(false);
         saveBoardPageSettingsAndSyncHeaders(false);
         if (alwaysShowFlashPreviewToggle.isSelected()) {
             showFlashPreviewDialog();
@@ -1177,6 +1225,20 @@ public class UniversalMonitorControlCenter extends JFrame {
         delayed.start();
     }
 
+    private void setServiceStartupEnabled(boolean enabled) {
+        String label = enabled ? "enable startup service" : "disable startup service";
+        String command = enabled
+                ? "systemctl enable " + SERVICE_NAME + " && systemctl start " + SERVICE_NAME
+                : "systemctl disable " + SERVICE_NAME + " && systemctl stop " + SERVICE_NAME;
+        runCommand(command, repoPath().toFile(), label, true, true);
+        Timer delayed = new Timer(1400, e -> {
+            refreshServiceStartupStatus(false);
+            refreshServiceStatus(false);
+        });
+        delayed.setRepeats(false);
+        delayed.start();
+    }
+
     private boolean ensureSocatInstalled() {
         if (commandExists("socat")) {
             return true;
@@ -1255,9 +1317,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                 String status = out.toString().trim();
 
                 if (code == 0 && status.contains("active")) {
-                    setServiceIndicator("ON", new Color(24, 170, 24));
+                    setServiceIndicator("RUNNING", new Color(24, 170, 24));
                 } else if (status.contains("inactive") || status.contains("failed") || status.contains("unknown")) {
-                    setServiceIndicator("OFF", new Color(190, 35, 35));
+                    setServiceIndicator("STOPPED", new Color(190, 35, 35));
                 } else {
                     setServiceIndicator("UNKNOWN", Color.GRAY);
                 }
@@ -1272,6 +1334,56 @@ public class UniversalMonitorControlCenter extends JFrame {
                 }
             }
         }, "service-status-thread");
+
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void refreshServiceStartupStatus(boolean allowPrompt) {
+        Thread t = new Thread(() -> {
+            CommandSpec spec = buildShellCommand("systemctl is-enabled " + SERVICE_NAME, true, allowPrompt);
+            if (spec == null) {
+                return;
+            }
+
+            try {
+                ProcessBuilder pb = new ProcessBuilder(spec.command);
+                pb.directory(repoPath().toFile());
+                pb.redirectErrorStream(true);
+                if (spec.sudoPassword != null) {
+                    pb.environment().put("SUDO_PASS", spec.sudoPassword);
+                }
+                Process process = pb.start();
+
+                StringBuilder out = new StringBuilder();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (!line.trim().isEmpty()) {
+                        out.append(line.trim()).append("\n");
+                    }
+                }
+                int code = process.waitFor();
+                String status = out.toString().trim().toLowerCase(Locale.ROOT);
+
+                if (code == 0 && (status.contains("enabled") || status.contains("static"))) {
+                    setStartupIndicator("ENABLED", new Color(24, 170, 24));
+                } else if (status.contains("disabled") || status.contains("masked")) {
+                    setStartupIndicator("DISABLED", new Color(190, 35, 35));
+                } else {
+                    setStartupIndicator("UNKNOWN", Color.GRAY);
+                }
+
+                if (allowPrompt) {
+                    log("[SERVICE] startup output: " + (status.isEmpty() ? "<no output>" : status.replace("\n", " | ")));
+                }
+            } catch (Exception ex) {
+                setStartupIndicator("UNKNOWN", Color.GRAY);
+                if (allowPrompt) {
+                    log("[ERROR] Failed startup status check: " + ex.getMessage());
+                }
+            }
+        }, "service-startup-status-thread");
 
         t.setDaemon(true);
         t.start();
@@ -2879,6 +2991,11 @@ public class UniversalMonitorControlCenter extends JFrame {
             panel.setBackground(panelBackground);
             if (panel.getBorder() instanceof javax.swing.border.TitledBorder titledBorder) {
                 titledBorder.setTitleColor(textColor);
+            } else if (Boolean.TRUE.equals(panel.getClientProperty("uasmSettingsPanel"))) {
+                panel.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(accent, 1, true),
+                        BorderFactory.createEmptyBorder(6, 6, 6, 6)
+                ));
             }
         } else if (component instanceof JSplitPane splitPane) {
             splitPane.setBackground(background);
@@ -2942,9 +3059,17 @@ public class UniversalMonitorControlCenter extends JFrame {
             ));
             button.setOpaque(true);
         } else if (component instanceof JLabel label) {
-            if (label != serviceIndicator && label != debugIndicator
+            if (label != serviceIndicator && label != startupIndicator && label != debugIndicator
                     && label != transportIndicator && label != flashTransportIndicator) {
                 label.setForeground(textColor);
+            }
+            if (Boolean.TRUE.equals(label.getClientProperty("uasmSettingsHelpBlock"))) {
+                label.setOpaque(true);
+                label.setBackground(fieldBackground);
+                label.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(accent, 1, true),
+                        BorderFactory.createEmptyBorder(6, 8, 6, 8)
+                ));
             }
         } else if (component instanceof JComboBox<?> comboBox) {
             comboBox.setBackground(fieldBackground);
@@ -3902,7 +4027,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                 settings.pageEnabled.put(page.id(), box.isSelected());
             });
             boardPageCheckboxes.put(page.id(), box);
-            boardPageTogglePanel.add(box);
+            JPanel card = new JPanel(new BorderLayout());
+            card.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
+            card.add(box, BorderLayout.CENTER);
+            boardPageTogglePanel.add(card);
         }
         boardProfileStatusLabel.setText("Editing " + board.label() + " pages");
         refreshProfileSelectorChoices();
@@ -3956,6 +4084,76 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshProfileSelectorChoices();
         activeBoardProfileSelector.setSelectedItem(profileName);
         log("[INFO] Saved board profile '" + profileName + "' for " + board.label() + ".");
+    }
+
+    private void createNewProfile() {
+        String proposed = JOptionPane.showInputDialog(this, "Enter a new profile name:", "New Profile", JOptionPane.PLAIN_MESSAGE);
+        if (proposed == null) {
+            return;
+        }
+        String profileName = proposed.trim();
+        if (profileName.isBlank()) {
+            log("[WARN] New profile name cannot be empty.");
+            return;
+        }
+        if (namedPageProfiles.containsKey(profileName)) {
+            log("[WARN] Profile '" + profileName + "' already exists. Choose another name.");
+            activeBoardProfileSelector.setSelectedItem(profileName);
+            return;
+        }
+        Map<String, Map<String, Boolean>> profile = defaultsForEveryBoard(true);
+        BoardProfileTarget board = currentProfileBoardSelection();
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        Map<String, Boolean> boardProfile = new LinkedHashMap<>();
+        for (PageDefinition page : board.pages()) {
+            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), true));
+        }
+        profile.put(board.id(), boardProfile);
+        namedPageProfiles.put(profileName, profile);
+        settings.activeProfile = profileName;
+        persistBoardPageProfiles();
+        refreshProfileSelectorChoices();
+        activeBoardProfileSelector.setSelectedItem(profileName);
+        log("[INFO] Created new profile '" + profileName + "' from current " + board.label() + " toggles.");
+    }
+
+    private void saveAllBoardsAndProfiles() {
+        boolean rotationsSaved = persistCurrentDisplayRotationSelections(true, true);
+        boolean wifiSynced = syncCurrentWifiHeaderFromUi(true);
+        boolean pagesSaved = saveBoardPageSettingsAndSyncHeaders(true);
+        persistBoardPageProfiles();
+        if (rotationsSaved && wifiSynced && pagesSaved) {
+            log("[INFO] Saved all board settings and current profiles. Use Flash Arduinos' to compile/upload this exact saved state.");
+        } else {
+            log("[WARN] Save all completed with warnings. Check logs above and retry if needed.");
+        }
+    }
+
+    private boolean syncCurrentWifiHeaderFromUi(boolean verbose) {
+        String wifiPortText = wifiPortField.getText() == null ? "" : wifiPortField.getText().trim();
+        int wifiPort;
+        try {
+            wifiPort = Integer.parseInt(wifiPortText);
+        } catch (NumberFormatException ex) {
+            if (verbose) {
+                log("[WARN] Cannot sync Wi-Fi local header: Wi-Fi TCP port must be a number.");
+            }
+            return false;
+        }
+        if (wifiPort < 1 || wifiPort > 65535) {
+            if (verbose) {
+                log("[WARN] Cannot sync Wi-Fi local header: Wi-Fi TCP port must be between 1 and 65535.");
+            }
+            return false;
+        }
+        String wifiBoardName = normalizeWifiBoardName(wifiBoardNameField.getText() == null ? "" : wifiBoardNameField.getText().trim());
+        String wifiTargetHost = wifiTargetHostField.getText() == null ? "" : wifiTargetHostField.getText().trim();
+        String wifiTargetHostname = wifiTargetHostnameField.getText() == null ? "" : wifiTargetHostnameField.getText().trim();
+        boolean synced = syncWifiHeaderIntoLocalHeader(wifiPort, wifiBoardName, wifiTargetHost, wifiTargetHostname);
+        if (verbose && synced) {
+            log("[INFO] Synced current Wi-Fi board values into wifi_config.local.h for immediate flashing.");
+        }
+        return synced;
     }
 
     private void updateSelectedProfileFromCurrentBoard() {
@@ -4126,6 +4324,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             serviceOffButton.setEnabled(enabled);
             serviceRestartButton.setEnabled(enabled);
             serviceStatusButton.setEnabled(enabled);
+            serviceStartupEnableButton.setEnabled(enabled);
+            serviceStartupDisableButton.setEnabled(enabled);
+            serviceStartupRefreshButton.setEnabled(enabled);
             debugOnButton.setEnabled(enabled);
             debugOffButton.setEnabled(enabled);
             debugRefreshButton.setEnabled(enabled);
@@ -4154,11 +4355,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             activeBoardProfileSelector.setEnabled(enabled);
             applyBoardProfileButton.setEnabled(enabled);
             saveBoardSettingsButton.setEnabled(enabled);
+            newProfileButton.setEnabled(enabled);
             saveProfileAsButton.setEnabled(enabled);
             updateProfileButton.setEnabled(enabled);
             deleteProfileButton.setEnabled(enabled);
             exportProfilesButton.setEnabled(enabled);
             importProfilesButton.setEnabled(enabled);
+            saveAllBoardsAndProfilesButton.setEnabled(enabled);
             updateNetworkScanButtons();
             updateKillRunningTaskButton();
         });
@@ -4201,6 +4404,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             serviceIndicator.setText(label);
             serviceIndicator.setBackground(color);
             serviceIndicator.setForeground(Color.WHITE);
+        });
+    }
+
+    private void setStartupIndicator(String label, Color color) {
+        SwingUtilities.invokeLater(() -> {
+            startupIndicator.setText(label);
+            startupIndicator.setBackground(color);
+            startupIndicator.setForeground(Color.WHITE);
         });
     }
 
