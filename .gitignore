@@ -14,3 +14,4 @@ R3_MonitorScreen35/page_config.local.h
 R3_MEGA_MonitorScreen28/page_config.local.h
 R3_MEGA_MonitorScreen35/page_config.local.h
 config/board_page_profiles.properties
+*display_config.local.h
