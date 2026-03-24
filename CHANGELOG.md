@@ -1,5 +1,14 @@
 # Changelog
 
+## v9.6.0 - 2026-03-24
+- Bumped the shared project version to v9.6.0 so VERSION-driven Python/Java/Arduino version displays stay aligned.
+- Made the Control Center Update button use a positive green theme style and renamed the default flash action to "Flash Arduino's".
+- Added independent UNO R3 and Mega screen-size selectors for flashing so Mega no longer inherits UNO mode by default.
+- Fixed profile page toggle behavior by adding a Home-page disable confirmation prompt and preventing profile-toggle checkbox theme regressions that turned controls white while switching/pressing.
+- Corrected the R4 profile-page label mapping from "Storage" to "Extra Statistics" while preserving the existing firmware page macro IDs.
+- Moved board profile persistence to a machine-local config path with legacy migration support, and added Control Center import/export actions for manual backup/restore to any filesystem location.
+- Ensured imported/saved board profile settings are immediately re-applied/synced to generated page_config.local.h headers so explicit profile choices remain the source of truth.
+
 ## v9.5.3 - 2026-03-23
 - Bumped the shared project version to v9.5.3 so the repo VERSION file, generated Arduino headers, Python monitor startup banner, Control Center title/header, and flashing output stay aligned.
 - Simplified the Mega and UNO R3 2.8-inch touch flow to full-screen tap-to-advance paging with clean looping and no footer navigation buttons.

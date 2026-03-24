@@ -3,8 +3,8 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett
-**Version:** v9.5.3
-**Last Modified:** March 23, 2026
+**Version:** v9.6.0
+**Last Modified:** March 24, 2026
 
 ---
 
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.5.3 Includes
+## What v9.6.0 Includes
 
-Release **v9.5.3** adds the readability-focused page layout refresh: the Mega and R3 2.8-inch flows now use full-screen tap paging, Mega / R3 GPU and network views are separated for easier reading, the 2.8-inch storage and power details are split onto dedicated pages, and the R4 usage graph footer now shows hostname plus uptime.
+Release **v9.6.0** focuses on Control Center profile reliability and board mapping accuracy: profile settings now stay machine-local with manual import/export support, UNO R3 and Mega screen-size flashing selectors are independent, R4 profile naming now shows Extra Statistics, Home-page disable prompts protect first-time setup, and profile toggle/theme behavior was hardened so board page choices stick as expected.
 
 ### Major highlights
 
@@ -521,6 +521,7 @@ debug_tools/FakeArduinoDisplay/README.md
 9.5.1 - Switched runtime version loading over to the VERSION file so the desktop monitor, Control Center, and Arduino display headers stay in sync.
 9.5.2 - Added smarter update pre-checks, restored the full changelog presence in the docs, kept the program headers on v9.5.2, and refreshed the README preview image set.
 9.5.3 - Bumped the project to v9.5.3 and reworked the Arduino page layouts for better readability, simpler tap-to-advance navigation on the Mega / R3 variants, split GPU/network and storage/power views, and added hostname + uptime to the R4 graph footer.
+9.6.0 - Updated Control Center profile persistence/import-export, fixed board page naming/styling issues, separated UNO R3 vs Mega screen-size flashing selectors, and tightened profile-to-page application behavior.
 ```
 
 ---
