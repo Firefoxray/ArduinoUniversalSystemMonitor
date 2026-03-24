@@ -77,7 +77,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton desktopAppletButton = new JButton("Install Desktop Applet");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update and Restart GUI");
-    private final JButton flashButton = new JButton("Flash Arduino(s) with Default Sketch");
+    private final JButton flashButton = new JButton("Flash Arduino's");
     private final JButton flashPreviewButton = new JButton("Show Flash Diff");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
     private final JButton wifiCredentialsButton = new JButton("Set R4 Wi-Fi Credentials");
@@ -103,6 +103,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JCheckBox alwaysShowFlashPreviewToggle = new JCheckBox("Always show preview before flashing");
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
+    private final JComboBox<String> megaScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> r4RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
     private final JComboBox<String> r3RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
     private final JComboBox<String> megaRotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
@@ -137,6 +138,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton saveProfileAsButton = new JButton("Save As Profile");
     private final JButton updateProfileButton = new JButton("Update Profile");
     private final JButton deleteProfileButton = new JButton("Delete Profile");
+    private final JButton exportProfilesButton = new JButton("Export Profiles...");
+    private final JButton importProfilesButton = new JButton("Import Profiles...");
     private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 2, 8, 8));
     private final JLabel boardProfileStatusLabel = new JLabel("No board profile loaded.");
 
@@ -153,6 +156,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color darkFieldBackground = new Color(18, 29, 48);
     private final Color darkButtonBackground = new Color(70, 109, 171);
     private final Color darkCriticalButtonBackground = new Color(176, 58, 58);
+    private final Color darkPositiveButtonBackground = new Color(49, 145, 86);
     private final Color lightBackground = new Color(236, 242, 252);
     private final Color lightPanelBackground = new Color(248, 251, 255);
     private final Color lightAccent = new Color(125, 160, 219);
@@ -160,6 +164,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color lightFieldBackground = Color.WHITE;
     private final Color lightButtonBackground = new Color(214, 226, 245);
     private final Color lightCriticalButtonBackground = new Color(221, 92, 92);
+    private final Color lightPositiveButtonBackground = new Color(91, 182, 127);
 
     private boolean darkMode;
 
@@ -223,7 +228,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
         startFakePortsButton.setToolTipText("Creates a linked fake serial port pair for testing the preview without hardware.");
         connectPreviewButton.setToolTipText("Connects the built-in preview window to the fake output serial port.");
-        unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto every detected Arduino UNO R3. R4 boards are not affected.");
+        unoR3ScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto detected Arduino UNO R3 boards only.");
+        megaScreenSizeSelector.setToolTipText("Choose which sketch size to flash onto detected Arduino Mega boards only.");
         r4RotationSelector.setToolTipText("Set the saved screen rotation for every UNO R4 WiFi flash: Normal = setRotation(1), Flipped = setRotation(3).");
         r3RotationSelector.setToolTipText("Set the saved screen rotation for every UNO R3 flash, including the 2.8\" and 3.5\" sketches: Normal = setRotation(1), Flipped = setRotation(3).");
         megaRotationSelector.setToolTipText("Set the saved screen rotation for every Arduino Mega 3.5\" flash: Normal = setRotation(1), Flipped = setRotation(3).");
@@ -399,6 +405,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowTwo.add(saveProfileAsButton);
         rowTwo.add(updateProfileButton);
         rowTwo.add(deleteProfileButton);
+        rowTwo.add(exportProfilesButton);
+        rowTwo.add(importProfilesButton);
         boardProfileStatusLabel.setBorder(new EmptyBorder(0, 12, 0, 0));
         rowTwo.add(boardProfileStatusLabel);
         top.add(rowTwo);
@@ -513,6 +521,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowOne.add(new JLabel("UNO R3 mode:"));
         unoR3ScreenSizeSelector.setSelectedIndex(1);
         rowOne.add(unoR3ScreenSizeSelector);
+        rowOne.add(new JLabel("Mega mode:"));
+        megaScreenSizeSelector.setSelectedIndex(1);
+        rowOne.add(megaScreenSizeSelector);
         rowOne.add(new JLabel("R4 rotation:"));
         rowOne.add(r4RotationSelector);
         rowOne.add(new JLabel("R3 rotation:"));
@@ -764,6 +775,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveProfileAsButton.addActionListener(e -> saveCurrentBoardAsNamedProfile());
         updateProfileButton.addActionListener(e -> updateSelectedProfileFromCurrentBoard());
         deleteProfileButton.addActionListener(e -> deleteSelectedProfile());
+        exportProfilesButton.addActionListener(e -> exportBoardProfilesToChosenPath());
+        importProfilesButton.addActionListener(e -> importBoardProfilesFromChosenPath());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
         lightModeToggle.addActionListener(e -> {
             darkMode = !lightModeToggle.isSelected();
@@ -1120,11 +1133,16 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if ("arduino_install.sh".equals(scriptName)) {
             String unoScreenSize = resolveUnoR3ScreenSizeForControlCenter();
+            String megaScreenSize = resolveMegaScreenSizeForControlCenter();
             if ("".equals(unoScreenSize)) {
                 return null;
             }
-            if (unoScreenSize != null) {
+            if ("".equals(megaScreenSize)) {
+                return null;
+            }
+            if (unoScreenSize != null && megaScreenSize != null) {
                 command.append("UNO_R3_SCREEN_SIZE=").append(escape(unoScreenSize)).append(' ');
+                command.append("MEGA_SCREEN_SIZE=").append(escape(megaScreenSize)).append(' ');
             }
         }
 
@@ -1133,13 +1151,19 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String resolveUnoR3ScreenSizeForControlCenter() {
-        Object selected = unoR3ScreenSizeSelector.getSelectedItem();
-        String choice = selected == null ? "2.8\" mode" : selected.toString();
-        String unoScreenSize = choice.startsWith("3.5") ? "35" : "28";
+        String unoScreenSize = resolveScreenSizeSelectorValue(unoR3ScreenSizeSelector, "35");
         log("[INFO] Control Center will flash Arduino UNO R3 boards with the "
                 + ("35".equals(unoScreenSize) ? "3.5\"" : "2.8\"")
                 + " TFT sketch. R4 boards are unchanged.");
         return unoScreenSize;
+    }
+
+    private String resolveMegaScreenSizeForControlCenter() {
+        String megaScreenSize = resolveScreenSizeSelectorValue(megaScreenSizeSelector, "35");
+        log("[INFO] Control Center will flash Arduino Mega boards with the "
+                + ("35".equals(megaScreenSize) ? "3.5\"" : "2.8\"")
+                + " TFT sketch.");
+        return megaScreenSize;
     }
 
     private void runServiceCommand(String action) {
@@ -1522,7 +1546,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "wifi_discovery_magic",
                 "r4_display_rotation",
                 "r3_display_rotation",
-                "mega_display_rotation"
+                "mega_display_rotation",
+                "uno_r3_screen_size",
+                "mega_screen_size"
         )) {
             merged = copyConfigEntryIfPresent(merged, overrideText, key);
         }
@@ -1646,6 +1672,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
                 setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
                 setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
+                setScreenSizeSelectorValue(unoR3ScreenSizeSelector, "35");
+                setScreenSizeSelectorValue(megaScreenSizeSelector, "35");
                 wifiPortSourceLabel.setText("Effective source: default fallback (5000)");
                 updateWifiHostFieldState();
                 if (verbose) {
@@ -1667,6 +1695,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             setRotationSelectorValue(r4RotationSelector, resolveDisplayRotation(text, "r4_display_rotation"));
             setRotationSelectorValue(r3RotationSelector, resolveDisplayRotation(text, "r3_display_rotation"));
             setRotationSelectorValue(megaRotationSelector, resolveDisplayRotation(text, "mega_display_rotation"));
+            setScreenSizeSelectorValue(unoR3ScreenSizeSelector, resolveScreenSizeConfig(text, "uno_r3_screen_size", "35"));
+            setScreenSizeSelectorValue(megaScreenSizeSelector, resolveScreenSizeConfig(text, "mega_screen_size", "35"));
             wifiPortSourceLabel.setText("Effective source: " + wifiResolution.source());
             updateWifiHostFieldState();
             if (verbose) {
@@ -1722,6 +1752,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         int r4Rotation = selectedRotationValue(r4RotationSelector);
         int r3Rotation = selectedRotationValue(r3RotationSelector);
         int megaRotation = selectedRotationValue(megaRotationSelector);
+        String unoScreenSize = resolveScreenSizeSelectorValue(unoR3ScreenSizeSelector, "35");
+        String megaScreenSize = resolveScreenSizeSelectorValue(megaScreenSizeSelector, "35");
         String wifiTargetHost = wifiTargetHostField.getText() == null ? "" : wifiTargetHostField.getText().trim();
         String wifiTargetHostname = wifiTargetHostnameField.getText() == null ? "" : wifiTargetHostnameField.getText().trim();
 
@@ -1739,6 +1771,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertNumberConfigValue(updated, "r4_display_rotation", r4Rotation);
             updated = upsertNumberConfigValue(updated, "r3_display_rotation", r3Rotation);
             updated = upsertNumberConfigValue(updated, "mega_display_rotation", megaRotation);
+            updated = upsertStringConfigValue(updated, "uno_r3_screen_size", unoScreenSize);
+            updated = upsertStringConfigValue(updated, "mega_screen_size", megaScreenSize);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                 log("[INFO] Saved machine-local monitor settings to " + configPath
@@ -1748,7 +1782,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", wifi_host=" + ((wifiAutoDiscovery || wifiHost.isBlank()) ? "<unset>" : wifiHost)
                         + ", r4_display_rotation=" + r4Rotation
                         + ", r3_display_rotation=" + r3Rotation
-                        + ", mega_display_rotation=" + megaRotation + ").");
+                        + ", mega_display_rotation=" + megaRotation
+                        + ", uno_r3_screen_size=" + unoScreenSize
+                        + ", mega_screen_size=" + megaScreenSize + ").");
             } else {
                 log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains preferred over USB).");
             }
@@ -1993,6 +2029,23 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private String selectedRotationSummary(JComboBox<String> selector) {
         return rotationLabel(selectedRotationValue(selector));
+    }
+
+    private String resolveScreenSizeConfig(String text, String key, String fallback) {
+        String value = readStringConfigValue(text, key, fallback);
+        return "28".equals(value) ? "28" : "35";
+    }
+
+    private void setScreenSizeSelectorValue(JComboBox<String> selector, String sizeValue) {
+        selector.setSelectedItem("28".equals(sizeValue) ? "2.8\" mode" : "3.5\" mode");
+    }
+
+    private String resolveScreenSizeSelectorValue(JComboBox<String> selector, String fallback) {
+        Object selected = selector.getSelectedItem();
+        if (selected != null && selected.toString().startsWith("2.8")) {
+            return "28";
+        }
+        return "28".equals(fallback) ? "28" : "35";
     }
 
     private Path r4DisplayConfigPath() {
@@ -2803,9 +2856,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             Color fieldBackground = darkMode ? darkFieldBackground : lightFieldBackground;
             Color buttonBackground = darkMode ? darkButtonBackground : lightButtonBackground;
             Color criticalButtonBackground = darkMode ? darkCriticalButtonBackground : lightCriticalButtonBackground;
+            Color positiveButtonBackground = darkMode ? darkPositiveButtonBackground : lightPositiveButtonBackground;
 
             getContentPane().setBackground(background);
-            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground);
+            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, positiveButtonBackground);
             outputArea.setCaretColor(textColor);
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
@@ -2818,7 +2872,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent,
-                                    Color fieldBackground, Color buttonBackground, Color criticalButtonBackground) {
+                                    Color fieldBackground, Color buttonBackground, Color criticalButtonBackground, Color positiveButtonBackground) {
         if (component instanceof JPanel panel) {
             panel.setOpaque(true);
             panel.setBackground(panelBackground);
@@ -2858,12 +2912,24 @@ public class UniversalMonitorControlCenter extends JFrame {
                     BorderFactory.createLineBorder(accent),
                     BorderFactory.createEmptyBorder(4, 6, 4, 6)
             ));
+        } else if (component instanceof JCheckBox checkBox) {
+            checkBox.setOpaque(true);
+            checkBox.setBackground(panelBackground);
+            checkBox.setForeground(textColor);
+            checkBox.setContentAreaFilled(false);
+            checkBox.setFocusPainted(false);
+            checkBox.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
         } else if (component instanceof AbstractButton button) {
-            Color resolvedButtonBackground = button == flashButton ? criticalButtonBackground : buttonBackground;
+            Color resolvedButtonBackground = button == flashButton
+                    ? criticalButtonBackground
+                    : (button == updateButton ? positiveButtonBackground : buttonBackground);
             button.setBackground(resolvedButtonBackground);
             button.setForeground(textColor);
             button.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(button == flashButton ? resolvedButtonBackground.darker() : accent),
+                    BorderFactory.createLineBorder(
+                            (button == flashButton || button == updateButton)
+                                    ? resolvedButtonBackground.darker() : accent
+                    ),
                     BorderFactory.createEmptyBorder(6, 10, 6, 10)
             ));
             button.setOpaque(true);
@@ -2889,7 +2955,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) {
-                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground);
+                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, positiveButtonBackground);
             }
         }
     }
@@ -3499,7 +3565,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private Path boardPageProfilesPath() {
+        return localStateDir().resolve("board_page_profiles.properties");
+    }
+
+    private Path legacyBoardPageProfilesPath() {
         return configDir().resolve("board_page_profiles.properties");
+    }
+
+    private Path localStateDir() {
+        Path home = Paths.get(System.getProperty("user.home", ".")).toAbsolutePath();
+        return home.resolve(".config").resolve("arduino-universal-system-monitor");
     }
 
     private void initializeBoardProfileState() {
@@ -3510,6 +3585,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             boardPageSettings.put(board.id(), BoardPageSettings.defaultsFor(board));
         }
         namedPageProfiles.putAll(defaultNamedProfiles());
+        migrateLegacyBoardProfilesIfNeeded();
         loadBoardPageProfilesFromDisk();
         enforceSafeBoardProfileDefaults();
 
@@ -3581,6 +3657,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (!Files.exists(path)) {
             return;
         }
+        loadBoardPageProfilesFromPath(path);
+    }
+
+    private void loadBoardPageProfilesFromPath(Path path) {
         Properties properties = new Properties();
         try (var input = Files.newInputStream(path)) {
             properties.load(input);
@@ -3638,6 +3718,21 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private void migrateLegacyBoardProfilesIfNeeded() {
+        Path current = boardPageProfilesPath();
+        Path legacy = legacyBoardPageProfilesPath();
+        if (Files.exists(current) || !Files.exists(legacy)) {
+            return;
+        }
+        try {
+            Files.createDirectories(current.getParent());
+            Files.copy(legacy, current);
+            log("[INFO] Migrated board profiles from " + legacy + " to machine-local path " + current + ".");
+        } catch (IOException ex) {
+            log("[WARN] Failed to migrate legacy board profiles from " + legacy + ": " + ex.getMessage());
+        }
+    }
+
     private void enforceSafeBoardProfileDefaults() {
         if (!namedPageProfiles.containsKey(DEFAULT_PAGE_PROFILE_NAME)) {
             namedPageProfiles.put(DEFAULT_PAGE_PROFILE_NAME, defaultsForEveryBoard(true));
@@ -3692,6 +3787,58 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private void exportBoardProfilesToChosenPath() {
+        persistBoardPageProfiles();
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export board profiles");
+        chooser.setSelectedFile(new File("board_page_profiles.properties"));
+        int result = chooser.showSaveDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path destination = chooser.getSelectedFile().toPath().toAbsolutePath();
+        try {
+            if (destination.getParent() != null) {
+                Files.createDirectories(destination.getParent());
+            }
+            Files.copy(boardPageProfilesPath(), destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            log("[INFO] Exported board profiles to " + destination + ".");
+        } catch (IOException ex) {
+            log("[WARN] Failed to export board profiles to " + destination + ": " + ex.getMessage());
+        }
+    }
+
+    private void importBoardProfilesFromChosenPath() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import board profiles");
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path source = chooser.getSelectedFile().toPath().toAbsolutePath();
+        if (!Files.exists(source)) {
+            log("[WARN] Import failed: file not found: " + source);
+            return;
+        }
+        try {
+            boardPageSettings.clear();
+            namedPageProfiles.clear();
+            for (BoardProfileTarget board : BoardProfileTarget.values()) {
+                boardPageSettings.put(board.id(), BoardPageSettings.defaultsFor(board));
+            }
+            namedPageProfiles.putAll(defaultNamedProfiles());
+            loadBoardPageProfilesFromPath(source);
+            enforceSafeBoardProfileDefaults();
+            persistBoardPageProfiles();
+            refreshProfileSelectorChoices();
+            refreshBoardPageToggleView();
+            saveBoardPageSettingsAndSyncHeaders(false);
+            log("[INFO] Imported board profiles from " + source + ".");
+        } catch (Exception ex) {
+            log("[WARN] Failed to import board profiles from " + source + ": " + ex.getMessage());
+        }
+    }
+
     private String slugifyProfileName(String name) {
         String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("_+", "_");
         normalized = normalized.replaceAll("^_", "").replaceAll("_$", "");
@@ -3722,7 +3869,21 @@ public class UniversalMonitorControlCenter extends JFrame {
         boardPageCheckboxes.clear();
         for (PageDefinition page : board.pages()) {
             JCheckBox box = new JCheckBox(page.label(), settings.pageEnabled.getOrDefault(page.id(), true));
-            box.addActionListener(e -> settings.pageEnabled.put(page.id(), box.isSelected()));
+            box.addActionListener(e -> {
+                if ("home".equals(page.id()) && !box.isSelected()) {
+                    int answer = JOptionPane.showConfirmDialog(
+                            this,
+                            "The Home page may not be safe to disable the first time. Are you sure you want to disable it?",
+                            "Disable Home page?",
+                            JOptionPane.YES_NO_OPTION,
+                            JOptionPane.WARNING_MESSAGE
+                    );
+                    if (answer != JOptionPane.YES_OPTION) {
+                        box.setSelected(true);
+                    }
+                }
+                settings.pageEnabled.put(page.id(), box.isSelected());
+            });
             boardPageCheckboxes.put(page.id(), box);
             boardPageTogglePanel.add(box);
         }
@@ -3730,6 +3891,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshProfileSelectorChoices();
         boardPageTogglePanel.revalidate();
         boardPageTogglePanel.repaint();
+        applyTheme();
     }
 
     private void applySelectedProfileToCurrentBoard() {
@@ -3954,6 +4116,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiModeOffButton.setEnabled(enabled);
             wifiModeRefreshButton.setEnabled(enabled);
             unoR3ScreenSizeSelector.setEnabled(enabled);
+            megaScreenSizeSelector.setEnabled(enabled);
             r4RotationSelector.setEnabled(enabled);
             r3RotationSelector.setEnabled(enabled);
             megaRotationSelector.setEnabled(enabled);
@@ -3977,6 +4140,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             saveProfileAsButton.setEnabled(enabled);
             updateProfileButton.setEnabled(enabled);
             deleteProfileButton.setEnabled(enabled);
+            exportProfilesButton.setEnabled(enabled);
+            importProfilesButton.setEnabled(enabled);
             updateNetworkScanButtons();
             updateKillRunningTaskButton();
         });
@@ -4097,7 +4262,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 new PageDefinition("processes", "Processes"),
                 new PageDefinition("network", "Network"),
                 new PageDefinition("gpu", "GPU"),
-                new PageDefinition("storage", "Storage"),
+                new PageDefinition("storage", "Extra Statistics"),
                 new PageDefinition("usage_graph", "Usage Graph")
         )),
         UNO_R3_28("uno_r3_28", "UNO R3 2.8", List.of(
