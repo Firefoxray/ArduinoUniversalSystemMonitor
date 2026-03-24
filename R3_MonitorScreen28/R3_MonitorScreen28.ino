@@ -48,7 +48,7 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 const int SCREEN_W = 320;
 const int SCREEN_H = 240;
-const uint8_t TOTAL_PAGES = 5;
+const uint8_t TOTAL_PAGES = 7;
 const uint8_t GRAPH_POINTS = 16;
 const uint8_t FIELD_COUNT = 73;
 
@@ -94,6 +94,11 @@ char storage1[22] = "Disk: --";
 char storage2[22] = "Disk: --";
 char storage3[22] = "Disk: --";
 char ramUsageText[16] = "--";
+char batteryPctStr[10] = "--";
+char batteryStateStr[16] = "DESKTOP";
+char batteryModeStr[12] = "DESKTOP";
+char batteryLabel[3][16];
+char batteryState[3][14];
 
 // Streaming parser state (replaces giant line buffer)
 char fieldBuf[40];
@@ -241,9 +246,11 @@ static void drawProcRow(int y, const char* idx, const char* name, const char* cp
 static void drawCurrentLayout() {
   if (currentPage == 0) drawHeader(F("Ray Co. Universal System Monitor"), 1);
   else if (currentPage == 1) drawHeader(F("CPU + Processes"), 2);
-  else if (currentPage == 2) drawHeader(F("GPU + Network"), 3);
-  else if (currentPage == 3) drawHeader(F("Storage + Totals"), 4);
-  else drawHeader(F("Usage Graph"), 5);
+  else if (currentPage == 2) drawHeader(F("GPU"), 3);
+  else if (currentPage == 3) drawHeader(F("Network"), 4);
+  else if (currentPage == 4) drawHeader(F("Storage"), 5);
+  else if (currentPage == 5) drawHeader(F("Power"), 6);
+  else drawHeader(F("Usage Graph"), 7);
 }
 
 static void updateHome() {
@@ -276,35 +283,51 @@ static void updateCpuProc() {
   drawKV(184, F("Disk1"), d1, ORANGE);
 }
 
-static void updateGpuNet() {
+static void updateGpu() {
   char gpuShort[20]; shortGPU(gpuShort, sizeof(gpuShort), gpuName);
   char vramBuf[14], clockBuf[10];
   snprintf(vramBuf, sizeof(vramBuf), "%u/%uM", gpuMemUsed, gpuMemTotal);
   snprintf(clockBuf, sizeof(clockBuf), "%uMHz", gpuClock);
-  drawPctRow(30, F("GPU"), gpuPct, CYAN);
-  drawPctRow(46, F("VRAM"), gpuMemPct, MAGENTA);
-  drawKV(68, F("GTemp"), gpuTemp, CYAN);
-  drawKV(82, F("VRAM"), vramBuf, YELLOW);
-  drawKV(96, F("Clock"), clockBuf, ORANGE);
-  drawKV(110, F("Name"), gpuShort, WHITE);
-  drawKV(132, F("Down"), downStr, GREEN);
-  drawKV(146, F("Up"), upStr, YELLOW);
-  drawKV(160, F("Host"), hostName, WHITE);
-  drawKV(174, F("IP"), ipAddr, WHITE);
-  drawKV(188, F("UpT"), upTotalStr, ORANGE);
+  drawBigPctRow(32, F("GPU"), gpuPct, CYAN);
+  drawBigPctRow(62, F("VRAM"), gpuMemPct, MAGENTA);
+  drawBigKV(98, F("Temp"), gpuTemp, CYAN);
+  drawBigKV(116, F("Clock"), clockBuf, ORANGE);
+  drawBigKV(134, F("Mem"), vramBuf, YELLOW);
+  drawBigKV(152, F("Name"), gpuShort, WHITE);
+}
+
+static void updateNetwork() {
+  drawBigKV(34, F("Down"), downStr, GREEN);
+  drawBigKV(56, F("Up"), upStr, YELLOW);
+  drawBigKV(78, F("DnTot"), downTotalStr, CYAN);
+  drawBigKV(100, F("UpTot"), upTotalStr, ORANGE);
+  drawBigKV(122, F("Host"), hostName, WHITE);
+  drawBigKV(144, F("IP"), ipAddr, CYAN);
+  drawBigKV(166, F("OS"), osName, ORANGE);
+  drawBigKV(188, F("Up"), uptimeStr, WHITE);
 }
 
 static void updateStorage() {
-  drawKV(30, F("S1"), storage1, WHITE);
-  drawKV(44, F("S2"), storage2, WHITE);
-  drawKV(58, F("S3"), storage3, WHITE);
-  drawKV(76, F("RAM"), ramUsageText, CYAN);
-  drawKV(96, F("DnTot"), downTotalStr, GREEN);
-  drawKV(110, F("UpTot"), upTotalStr, YELLOW);
-  drawKV(128, F("OS"), osName, ORANGE);
-  drawKV(142, F("Host"), hostName, WHITE);
-  drawKV(156, F("IP"), ipAddr, WHITE);
-  drawKV(170, F("Up"), uptimeStr, WHITE);
+  drawBigKV(34, F("Drive1"), storage1, WHITE);
+  drawBigKV(58, F("Drive2"), storage2, CYAN);
+  drawBigKV(82, F("Drive3"), storage3, YELLOW);
+  drawBigKV(110, F("RAM"), ramUsageText, CYAN);
+  char d0[6], d1[6];
+  snprintf(d0, sizeof(d0), "%u%%", diskPct);
+  snprintf(d1, sizeof(d1), "%u%%", disk1Pct);
+  drawBigKV(138, F("Disk0"), d0, ORANGE);
+  drawBigKV(156, F("Disk1"), d1, MAGENTA);
+}
+
+static void updatePower() {
+  drawBigKV(34, F("Mode"), batteryModeStr, WHITE);
+  drawBigKV(56, F("System"), batteryPctStr, GREEN);
+  drawBigKV(78, F("State"), batteryStateStr, ORANGE);
+  drawBigKV(108, F("Bat1"), batteryLabel[0], CYAN);
+  drawBigKV(126, F("St1"), batteryState[0], WHITE);
+  drawBigKV(150, F("Bat2"), batteryLabel[1], CYAN);
+  drawBigKV(168, F("St2"), batteryState[1], WHITE);
+  drawBigKV(192, F("Host"), hostName, GREEN);
 }
 
 static void updateGraph() {
@@ -349,8 +372,10 @@ static void updateCurrentPage() {
 
   if (currentPage == 0) updateHome();
   else if (currentPage == 1) updateCpuProc();
-  else if (currentPage == 2) updateGpuNet();
-  else if (currentPage == 3) updateStorage();
+  else if (currentPage == 2) updateGpu();
+  else if (currentPage == 3) updateNetwork();
+  else if (currentPage == 4) updateStorage();
+  else if (currentPage == 5) updatePower();
   else updateGraph();
 }
 
@@ -438,15 +463,15 @@ static void applyField(uint8_t idx, const char* value) {
     case 56: safeCopy(storage1, sizeof(storage1), value); break;
     case 57: safeCopy(storage2, sizeof(storage2), value); break;
     case 58: safeCopy(storage3, sizeof(storage3), value); break;
-    case 64: break; // battery_pct ignored on 2.8 layout
-    case 65: break; // battery_state ignored on 2.8 layout
-    case 66: break; // battery_mode ignored on 2.8 layout
-    case 67: break; // extra battery label 0 ignored
-    case 68: break; // extra battery label 1 ignored
-    case 69: break; // extra battery label 2 ignored
-    case 70: break; // extra battery state 0 ignored
-    case 71: break; // extra battery state 1 ignored
-    case 72: break; // extra battery state 2 ignored
+    case 64: safeCopy(batteryPctStr, sizeof(batteryPctStr), value); break;
+    case 65: safeCopy(batteryStateStr, sizeof(batteryStateStr), value); break;
+    case 66: safeCopy(batteryModeStr, sizeof(batteryModeStr), value); break;
+    case 67: safeCopy(batteryLabel[0], sizeof(batteryLabel[0]), value); break;
+    case 68: safeCopy(batteryLabel[1], sizeof(batteryLabel[1]), value); break;
+    case 69: safeCopy(batteryLabel[2], sizeof(batteryLabel[2]), value); break;
+    case 70: safeCopy(batteryState[0], sizeof(batteryState[0]), value); break;
+    case 71: safeCopy(batteryState[1], sizeof(batteryState[1]), value); break;
+    case 72: safeCopy(batteryState[2], sizeof(batteryState[2]), value); break;
     default: break;
   }
 }
@@ -503,6 +528,10 @@ void setup() {
     ramHistory[i] = 0;
     gpuHistory[i] = 0;
     vramHistory[i] = 0;
+  }
+  for (uint8_t i = 0; i < 3; i++) {
+    safeCopy(batteryLabel[i], sizeof(batteryLabel[i]), "--");
+    safeCopy(batteryState[i], sizeof(batteryState[i]), "--");
   }
 
   resetLineParser();

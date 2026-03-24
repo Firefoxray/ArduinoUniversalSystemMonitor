@@ -1,5 +1,12 @@
 # Changelog
 
+## v9.5.3 - 2026-03-23
+- Bumped the shared project version to v9.5.3 so the repo VERSION file, generated Arduino headers, Python monitor startup banner, Control Center title/header, and flashing output stay aligned.
+- Simplified the Mega and UNO R3 2.8-inch touch flow to full-screen tap-to-advance paging with clean looping and no footer navigation buttons.
+- Split the Mega / R3 combined GPU + Network screen into separate GPU and Network pages and enlarged the key values for readability.
+- Split the 2.8-inch combined Storage + Power details into dedicated Storage and Power pages with less cramped layouts.
+- Added hostname and uptime as footer text on the UNO R4 WiFi Usage Graph page without intruding on the graph area.
+
 ## v9.5.2 - 2026-03-22
 - Added update pre-check logic so the Control Center only runs the full update flow when the remote branch is newer, and now shows a clear already-up-to-date message otherwise.
 - Added centralized generated app version headers for the Arduino Mega 3.5, UNO R3 2.8, and UNO R3 3.5 sketches, and rendered the version in each display header so the program header stays on v9.5.2.

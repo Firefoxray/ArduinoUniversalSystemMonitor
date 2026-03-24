@@ -918,32 +918,45 @@ void updateGraph() {
   clearArea(0, 198, SCREEN_W, 88);
   tft.setTextSize(2);
   tft.setTextColor(GREEN);
-  tft.setCursor(20, 206);
+  tft.setCursor(20, 204);
   tft.print("CPU");
   tft.setTextColor(WHITE);
-  tft.setCursor(90, 206);
+  tft.setCursor(90, 204);
   tft.print(String(cpuTotal) + "%");
 
   tft.setTextColor(YELLOW);
-  tft.setCursor(250, 206);
+  tft.setCursor(250, 204);
   tft.print("GPU");
   tft.setTextColor(WHITE);
-  tft.setCursor(320, 206);
+  tft.setCursor(320, 204);
   tft.print(String(gpuPct) + "%");
 
   tft.setTextColor(CYAN);
-  tft.setCursor(20, 232);
+  tft.setCursor(20, 228);
   tft.print("RAM");
   tft.setTextColor(WHITE);
-  tft.setCursor(90, 232);
+  tft.setCursor(90, 228);
   tft.print(String(ramPct) + "%");
 
   tft.setTextColor(MAGENTA);
-  tft.setCursor(250, 232);
+  tft.setCursor(250, 228);
   tft.print("VRAM");
   tft.setTextColor(WHITE);
-  tft.setCursor(350, 232);
+  tft.setCursor(350, 228);
   tft.print(String(gpuMemPct) + "%");
+
+  tft.drawFastHLine(0, 252, SCREEN_W, GRAY);
+  tft.setTextSize(1);
+  tft.setTextColor(CYAN);
+  tft.setCursor(18, 262);
+  tft.print("Host ");
+  tft.setTextColor(WHITE);
+  tft.print(fitText(hostName, 24));
+  tft.setTextColor(YELLOW);
+  tft.setCursor(18, 278);
+  tft.print("Up ");
+  tft.setTextColor(WHITE);
+  tft.print(fitText(uptimeStr, 18));
 }
 
 void drawCurrentLayout() {
