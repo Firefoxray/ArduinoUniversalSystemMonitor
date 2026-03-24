@@ -4,6 +4,9 @@
 #else
 #include "display_config.h"
 #endif
+#if __has_include("page_config.local.h")
+#include "page_config.local.h"
+#endif
 #include <Adafruit_GFX.h>
 #include <TouchScreen.h>
 #include <string.h>
@@ -18,6 +21,28 @@
 
 #ifndef DISPLAY_ROTATION_VALUE
 #define DISPLAY_ROTATION_VALUE 1
+#endif
+
+#ifndef UASM_PAGE_HOME_ENABLED
+#define UASM_PAGE_HOME_ENABLED 1
+#endif
+#ifndef UASM_PAGE_CPU_ENABLED
+#define UASM_PAGE_CPU_ENABLED 1
+#endif
+#ifndef UASM_PAGE_GPU_ENABLED
+#define UASM_PAGE_GPU_ENABLED 1
+#endif
+#ifndef UASM_PAGE_NETWORK_ENABLED
+#define UASM_PAGE_NETWORK_ENABLED 1
+#endif
+#ifndef UASM_PAGE_STORAGE_ENABLED
+#define UASM_PAGE_STORAGE_ENABLED 1
+#endif
+#ifndef UASM_PAGE_POWER_ENABLED
+#define UASM_PAGE_POWER_ENABLED 1
+#endif
+#ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
+#define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
 
 MCUFRIEND_kbv tft;
@@ -56,6 +81,16 @@ uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
+
+const bool PAGE_ENABLED[TOTAL_PAGES] = {
+  UASM_PAGE_HOME_ENABLED != 0,
+  UASM_PAGE_CPU_ENABLED != 0,
+  UASM_PAGE_GPU_ENABLED != 0,
+  UASM_PAGE_NETWORK_ENABLED != 0,
+  UASM_PAGE_STORAGE_ENABLED != 0,
+  UASM_PAGE_POWER_ENABLED != 0,
+  UASM_PAGE_USAGE_GRAPH_ENABLED != 0
+};
 
 uint8_t currentPage = 0;
 bool touchHeld = false;
@@ -173,6 +208,33 @@ static void clearBody() {
   tft.fillRect(0, 22, SCREEN_W, SCREEN_H - 36, BLACK);
 }
 
+
+static uint8_t enabledPageCount() {
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) count++;
+  return count > 0 ? count : TOTAL_PAGES;
+}
+
+static uint8_t firstEnabledPage() {
+  for (uint8_t i = 0; i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) return i;
+  return 0;
+}
+
+static uint8_t nextEnabledPage(uint8_t page) {
+  for (uint8_t step = 1; step <= TOTAL_PAGES; step++) {
+    uint8_t candidate = (page + step) % TOTAL_PAGES;
+    if (PAGE_ENABLED[candidate]) return candidate;
+  }
+  return firstEnabledPage();
+}
+
+static uint8_t pageDisplayNumber(uint8_t physicalPageOneBased) {
+  uint8_t physicalIndex = physicalPageOneBased - 1;
+  uint8_t display = 0;
+  for (uint8_t i = 0; i <= physicalIndex && i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) display++;
+  return display > 0 ? display : 1;
+}
+
 static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.fillScreen(BLACK);
   tft.setTextColor(CYAN);
@@ -183,7 +245,7 @@ static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.drawFastHLine(0, 22, SCREEN_W, WHITE);
   tft.setTextColor(WHITE);
   tft.setCursor(6, 229); tft.print(F("Tap "));
-  tft.print(pageNum); tft.print('/'); tft.print(TOTAL_PAGES);
+  tft.print(pageDisplayNumber(pageNum)); tft.print('/'); tft.print(enabledPageCount());
 }
 
 static void drawKV(int y, const __FlashStringHelper* label, const char* value, uint16_t color) {
@@ -400,7 +462,8 @@ static void handleTouch() {
   if (pressed && !touchHeld && millis() - lastTouchTime > touchDebounceMs) {
     touchHeld = true;
     lastTouchTime = millis();
-    currentPage = (currentPage + 1) % TOTAL_PAGES;
+    currentPage = nextEnabledPage(currentPage);
+    if (!PAGE_ENABLED[currentPage]) currentPage = firstEnabledPage();
     drawCurrentLayout();
     updateCurrentPage();
   }

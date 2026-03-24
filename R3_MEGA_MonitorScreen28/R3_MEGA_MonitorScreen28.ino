@@ -4,6 +4,9 @@
 #else
 #include "display_config.h"
 #endif
+#if __has_include("page_config.local.h")
+#include "page_config.local.h"
+#endif
 #include <Adafruit_GFX.h>
 #include <TouchScreen.h>
 #include <string.h>
@@ -18,6 +21,31 @@
 
 #ifndef DISPLAY_ROTATION_VALUE
 #define DISPLAY_ROTATION_VALUE 1
+#endif
+
+#ifndef UASM_PAGE_HOME_ENABLED
+#define UASM_PAGE_HOME_ENABLED 1
+#endif
+#ifndef UASM_PAGE_CPU_ENABLED
+#define UASM_PAGE_CPU_ENABLED 1
+#endif
+#ifndef UASM_PAGE_PROCESSES_ENABLED
+#define UASM_PAGE_PROCESSES_ENABLED 1
+#endif
+#ifndef UASM_PAGE_GPU_ENABLED
+#define UASM_PAGE_GPU_ENABLED 1
+#endif
+#ifndef UASM_PAGE_NETWORK_ENABLED
+#define UASM_PAGE_NETWORK_ENABLED 1
+#endif
+#ifndef UASM_PAGE_STORAGE_ENABLED
+#define UASM_PAGE_STORAGE_ENABLED 1
+#endif
+#ifndef UASM_PAGE_POWER_ENABLED
+#define UASM_PAGE_POWER_ENABLED 1
+#endif
+#ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
+#define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
 
 MCUFRIEND_kbv tft;
@@ -59,6 +87,17 @@ uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
+
+const bool PAGE_ENABLED[TOTAL_PAGES] = {
+  UASM_PAGE_HOME_ENABLED != 0,
+  UASM_PAGE_CPU_ENABLED != 0,
+  UASM_PAGE_PROCESSES_ENABLED != 0,
+  UASM_PAGE_GPU_ENABLED != 0,
+  UASM_PAGE_NETWORK_ENABLED != 0,
+  UASM_PAGE_STORAGE_ENABLED != 0,
+  UASM_PAGE_POWER_ENABLED != 0,
+  UASM_PAGE_USAGE_GRAPH_ENABLED != 0
+};
 
 uint8_t currentPage = 0;
 bool touchHeld = false;
@@ -186,6 +225,33 @@ static void clearArea(int x, int y, int w, int h) {
   tft.fillRect(x, y, w, h, BLACK);
 }
 
+
+static uint8_t enabledPageCount() {
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) count++;
+  return count > 0 ? count : TOTAL_PAGES;
+}
+
+static uint8_t firstEnabledPage() {
+  for (uint8_t i = 0; i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) return i;
+  return 0;
+}
+
+static uint8_t nextEnabledPage(uint8_t page) {
+  for (uint8_t step = 1; step <= TOTAL_PAGES; step++) {
+    uint8_t candidate = (page + step) % TOTAL_PAGES;
+    if (PAGE_ENABLED[candidate]) return candidate;
+  }
+  return firstEnabledPage();
+}
+
+static uint8_t pageDisplayNumber(uint8_t physicalPageOneBased) {
+  uint8_t physicalIndex = physicalPageOneBased - 1;
+  uint8_t display = 0;
+  for (uint8_t i = 0; i <= physicalIndex && i < TOTAL_PAGES; i++) if (PAGE_ENABLED[i]) display++;
+  return display > 0 ? display : 1;
+}
+
 static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.fillScreen(BLACK);
   tft.setTextSize(1);
@@ -196,9 +262,9 @@ static void drawHeader(const __FlashStringHelper* title, uint8_t pageNum) {
   tft.setCursor(212, 7);
   tft.print(APP_VERSION);
   tft.setCursor(286, 7);
-  tft.print(pageNum);
+  tft.print(pageDisplayNumber(pageNum));
   tft.print('/');
-  tft.print(TOTAL_PAGES);
+  tft.print(enabledPageCount());
   tft.drawFastHLine(0, 20, SCREEN_W, WHITE);
 }
 
@@ -446,6 +512,8 @@ static bool readTouchPoint(int& screenX, int& screenY) {
 
 static void goToPage(uint8_t page) {
   currentPage = page % TOTAL_PAGES;
+  if (!PAGE_ENABLED[currentPage]) currentPage = nextEnabledPage(currentPage);
+  if (!PAGE_ENABLED[currentPage]) currentPage = firstEnabledPage();
   drawCurrentLayout();
   updateCurrentPage();
 }
@@ -458,7 +526,7 @@ static void handleTouch() {
   if (pressed && !touchHeld && millis() - lastTouchTime > touchDebounceMs) {
     touchHeld = true;
     lastTouchTime = millis();
-    goToPage((currentPage + 1) % TOTAL_PAGES);
+    goToPage(nextEnabledPage(currentPage));
   }
 
   if (!pressed) touchHeld = false;
