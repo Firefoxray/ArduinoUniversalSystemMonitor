@@ -404,7 +404,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         top.setBorder(BorderFactory.createTitledBorder("Board Page Settings / Profiles"));
         top.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
 
-        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         rowOne.add(new JLabel("Board Type:"));
         rowOne.add(profileBoardSelector);
         rowOne.add(new JLabel("Active Profile:"));
@@ -412,9 +412,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         activeBoardProfileSelector.setPreferredSize(new Dimension(220, activeBoardProfileSelector.getPreferredSize().height));
         rowOne.add(activeBoardProfileSelector);
         rowOne.add(applyBoardProfileButton);
+        rowOne.setAlignmentX(Component.LEFT_ALIGNMENT);
         top.add(rowOne);
+        top.add(Box.createVerticalStrut(6));
 
-        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         rowTwo.add(saveBoardSettingsButton);
         rowTwo.add(newProfileButton);
         rowTwo.add(saveProfileAsButton);
@@ -425,19 +427,29 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowTwo.add(saveAllBoardsAndProfilesButton);
         boardProfileStatusLabel.setBorder(new EmptyBorder(0, 12, 0, 0));
         rowTwo.add(boardProfileStatusLabel);
+        rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
         top.add(rowTwo);
+        top.add(Box.createVerticalStrut(8));
 
-        JLabel helper = new JLabel("<html><b>Settings / Profiles quick guide:</b><br>"
-                + "A <b>profile</b> is a reusable page-toggle preset. Each profile stores page visibility <b>per board type</b> (R4, UNO R3, Mega), so one profile name can hold different page maps for each board.<br>"
-                + "<b>Enable/disable pages</b> to control touch navigation availability after flashing. Disabled pages are skipped on-device.<br>"
-                + "<b>Apply Profile</b>: loads the selected profile onto this board's toggles.<br>"
-                + "<b>Save Board Page Settings</b>: writes current toggles + active profile and updates board page headers used at compile time.<br>"
-                + "<b>Save As / New Profile</b>: create a named custom profile from current toggles. <b>Update</b> overwrites the selected profile for this board. <b>Delete</b> removes a custom profile.<br>"
-                + "<b>Import / Export</b>: move profile definitions between systems using board_page_profiles.properties.<br>"
-                + "<b>Flash Arduinos'</b> compiles/flashes the <i>current repo sketches</i> with the <i>current generated local headers</i> (rotations, page toggles, and local Wi-Fi header values). Reflash is required for profile/toggle changes to take effect on hardware.</html>");
-        helper.setBorder(new EmptyBorder(0, 8, 8, 8));
+        JPanel helperPanel = new JPanel(new BorderLayout());
+        helperPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        helperPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Settings / Profiles quick guide"),
+                new EmptyBorder(10, 14, 12, 14)));
+
+        JLabel helper = new JLabel("<html><div style='width: 960px; line-height: 1.45;'>"
+                + "<b>What is a profile?</b> A reusable page-toggle preset. Each profile stores page visibility <b>per board type</b> (R4, UNO R3, Mega), so one profile name can hold different page maps for each board.<br><br>"
+                + "<b>Enable/disable pages</b> to control touch navigation availability after flashing. Disabled pages are skipped on-device.<br><br>"
+                + "<b>Apply Profile</b>: loads the selected profile onto this board's toggles.<br><br>"
+                + "<b>Save Board Page Settings</b>: writes current toggles + active profile and updates board page headers used at compile time.<br><br>"
+                + "<b>Save As / New Profile</b>: create a named custom profile from current toggles. <b>Update</b> overwrites the selected profile for this board. <b>Delete</b> removes a custom profile.<br><br>"
+                + "<b>Import / Export</b>: move profile definitions between systems using board_page_profiles.properties.<br><br>"
+                + "<b>Flash Arduinos'</b> compiles/flashes the <i>current repo sketches</i> with the <i>current generated local headers</i> (rotations, page toggles, and local Wi-Fi header values). Reflash is required for profile/toggle changes to take effect on hardware."
+                + "</div></html>");
+        helper.setBorder(new EmptyBorder(0, 0, 0, 0));
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
-        top.add(helper);
+        helperPanel.add(helper, BorderLayout.WEST);
+        top.add(helperPanel);
 
         boardPageTogglePanel.setBorder(new EmptyBorder(6, 6, 6, 6));
         boardPageTogglePanel.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
