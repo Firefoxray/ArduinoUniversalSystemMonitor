@@ -117,6 +117,8 @@ def load_config() -> Dict[str, object]:
         "wifi_discovery_timeout": 1.2,
         "wifi_discovery_refresh": 30,
         "wifi_discovery_magic": "UAM_DISCOVER",
+        "wifi_discovery_debug": False,
+        "wifi_discovery_ignore_board_filter": False,
     }
     for path in (DEFAULT_CONFIG_PATH, CONFIG_PATH, LOCAL_CONFIG_PATH):
         try:
@@ -274,6 +276,11 @@ WIFI_DISCOVERY_PORT = max(1, to_int(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVE
 WIFI_DISCOVERY_TIMEOUT = max(0.2, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_TIMEOUT", CONFIG.get("wifi_discovery_timeout")), 1.2))
 WIFI_DISCOVERY_REFRESH = max(5.0, to_float(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_REFRESH", CONFIG.get("wifi_discovery_refresh")), 30.0))
 WIFI_DISCOVERY_MAGIC = str(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_MAGIC") or CONFIG.get("wifi_discovery_magic") or "UAM_DISCOVER").strip()
+WIFI_DISCOVERY_DEBUG = to_bool(os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_DEBUG", CONFIG.get("wifi_discovery_debug")), False)
+WIFI_DISCOVERY_IGNORE_BOARD_FILTER = to_bool(
+    os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_IGNORE_BOARD_FILTER", CONFIG.get("wifi_discovery_ignore_board_filter")),
+    False,
+)
 WIFI_DEVICE_NAME = normalize_identity_value(read_wifi_header_define("WIFI_DEVICE_NAME_VALUE", "R4_WIFI35"), 32) or "R4_WIFI35"
 WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOST_VALUE", ""), 64)
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
@@ -644,37 +651,50 @@ def identity_matches(expected: str, actual: str) -> bool:
     return expected_value == actual_value
 
 
-def board_matches_expected(record: WifiDiscoveryRecord) -> bool:
-    if WIFI_DEVICE_NAME and WIFI_DEVICE_NAME != "R4_WIFI35" and not identity_matches(record.name, WIFI_DEVICE_NAME):
-        return False
+def evaluate_discovery_record(record: WifiDiscoveryRecord) -> Tuple[bool, List[str]]:
+    reasons: List[str] = []
+    if (
+        not WIFI_DISCOVERY_IGNORE_BOARD_FILTER
+        and WIFI_DEVICE_NAME
+        and WIFI_DEVICE_NAME != "R4_WIFI35"
+        and not identity_matches(record.name, WIFI_DEVICE_NAME)
+    ):
+        reasons.append(f"board name mismatch (expected '{WIFI_DEVICE_NAME}', got '{record.name}')")
     if WIFI_TARGET_HOST and not identity_matches(record.target_host, WIFI_TARGET_HOST):
-        return False
+        reasons.append(f"pairing target_host mismatch (expected '{WIFI_TARGET_HOST}', got '{record.target_host or '--'}')")
     if WIFI_TARGET_HOSTNAME and not identity_matches(record.target_hostname, WIFI_TARGET_HOSTNAME):
-        return False
+        reasons.append(
+            f"pairing target_hostname mismatch (expected '{WIFI_TARGET_HOSTNAME}', got '{record.target_hostname or '--'}')"
+        )
 
     local_host_ip = get_ip()
     local_hostname = get_hostname()
     if record.target_host and not identity_matches(record.target_host, local_host_ip):
-        return False
+        reasons.append(f"pairing mismatch: reply targets host '{record.target_host}', local host is '{local_host_ip}'")
     if record.target_hostname and not identity_matches(record.target_hostname, local_hostname):
-        return False
-    return True
+        reasons.append(
+            f"pairing mismatch: reply targets hostname '{record.target_hostname}', local hostname is '{local_hostname}'"
+        )
+    if record.port <= 0 or record.port > 65535:
+        reasons.append(f"port mismatch/invalid reply TCP port '{record.port}'")
+
+    return len(reasons) == 0, reasons
 
 
-def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Optional[WifiDiscoveryRecord]:
+def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Tuple[Optional[WifiDiscoveryRecord], Optional[str]]:
     text = (message or "").strip()
     parts = text.split("|")
     if len(parts) < 3 or parts[0] != "UAM_HERE":
-        return None
+        return None, f"malformed reply (unexpected format): '{text}'"
     host = parts[1].strip() or addr[0]
     try:
         port = int(parts[2].strip())
     except Exception:
-        return None
+        return None, f"malformed reply (invalid TCP port): '{text}'"
     name = parts[3].strip() if len(parts) > 3 and parts[3].strip() else host
     target_host = parts[4].strip() if len(parts) > 4 else ""
     target_hostname = parts[5].strip() if len(parts) > 5 else ""
-    return WifiDiscoveryRecord(host, port, name, target_host, target_hostname)
+    return WifiDiscoveryRecord(host, port, name, target_host, target_hostname), None
 
 
 def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[WifiDiscoveryRecord]:
@@ -688,15 +708,46 @@ def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[WifiDisco
         sock.settimeout(wait_time)
         sock.bind(("", 0))
         sock.sendto(WIFI_DISCOVERY_MAGIC.encode("utf-8"), ("255.255.255.255", WIFI_DISCOVERY_PORT))
+        print(
+            f"Wi-Fi discovery sent: UDP broadcast 255.255.255.255:{WIFI_DISCOVERY_PORT} "
+            f"magic='{WIFI_DISCOVERY_MAGIC}' timeout={wait_time:.2f}s"
+        )
         deadline = time.time() + wait_time
+        all_records: List[WifiDiscoveryRecord] = []
         while time.time() < deadline:
             try:
                 data, addr = sock.recvfrom(512)
             except socket.timeout:
                 break
-            parsed = parse_discovery_response(data.decode("utf-8", errors="ignore"), addr)
-            if parsed is not None and board_matches_expected(parsed):
+            message = data.decode("utf-8", errors="ignore")
+            parsed, parse_error = parse_discovery_response(message, addr)
+            if parse_error:
+                print(f"Wi-Fi discovery reply from {addr[0]}:{addr[1]} rejected: {parse_error}")
+                continue
+            if parsed is None:
+                continue
+            all_records.append(parsed)
+            accepted, reasons = evaluate_discovery_record(parsed)
+            reason_text = "; ".join(reasons) if reasons else "matched all active filters"
+            print(
+                "Wi-Fi discovery reply: "
+                f"reply_ip={addr[0]} reply_port={addr[1]} tcp_target={parsed.host}:{parsed.port} "
+                f"board='{parsed.name}' paired_host='{parsed.target_host or '--'}' "
+                f"paired_hostname='{parsed.target_hostname or '--'}' "
+                f"-> {'ACCEPTED' if accepted else 'REJECTED'} ({reason_text})"
+            )
+            if accepted:
                 return parsed
+        if WIFI_DISCOVERY_DEBUG:
+            print(f"Wi-Fi discovery debug: discovered {len(all_records)} board reply/replies in this scan.")
+            for idx, record in enumerate(all_records, start=1):
+                accepted, reasons = evaluate_discovery_record(record)
+                reason_text = "; ".join(reasons) if reasons else "matched all active filters"
+                print(
+                    f"  [{idx}] board='{record.name}' tcp={record.host}:{record.port} "
+                    f"paired_host='{record.target_host or '--'}' paired_hostname='{record.target_hostname or '--'}' "
+                    f"=> {'ACCEPTED' if accepted else 'REJECTED'} ({reason_text})"
+                )
     except OSError:
         return None
     finally:
@@ -1649,7 +1700,7 @@ def main() -> None:
         if WIFI_AUTO_DISCOVERY:
             fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
             filters: List[str] = []
-            if WIFI_DEVICE_NAME and WIFI_DEVICE_NAME != "R4_WIFI35":
+            if WIFI_DEVICE_NAME and WIFI_DEVICE_NAME != "R4_WIFI35" and not WIFI_DISCOVERY_IGNORE_BOARD_FILTER:
                 filters.append(f"board={WIFI_DEVICE_NAME}")
             if WIFI_TARGET_HOST:
                 filters.append(f"target_host={WIFI_TARGET_HOST}")
@@ -1657,6 +1708,10 @@ def main() -> None:
                 filters.append(f"target_hostname={WIFI_TARGET_HOSTNAME}")
             filter_suffix = f" [{', '.join(filters)}]" if filters else ""
             print(f"Wi-Fi target: auto-discovery on UDP {WIFI_DISCOVERY_PORT}{fallback}{filter_suffix}")
+            if WIFI_DISCOVERY_DEBUG:
+                print("Wi-Fi discovery debug mode enabled.")
+            if WIFI_DISCOVERY_IGNORE_BOARD_FILTER:
+                print("Wi-Fi discovery diagnostic override: board-name filter is temporarily bypassed.")
         else:
             print(f"Wi-Fi target: {WIFI_HOST}:{WIFI_PORT}")
     else:
