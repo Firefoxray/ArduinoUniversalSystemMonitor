@@ -119,6 +119,9 @@ def load_config() -> Dict[str, object]:
         "wifi_discovery_magic": "UAM_DISCOVER",
         "wifi_discovery_debug": False,
         "wifi_discovery_ignore_board_filter": False,
+        "program_mode": "System Monitor",
+        "macro_trigger_model": "Whole-screen tap cycles entries",
+        "macro_entries": [],
     }
     for path in (DEFAULT_CONFIG_PATH, CONFIG_PATH, LOCAL_CONFIG_PATH):
         try:
@@ -281,6 +284,13 @@ WIFI_DISCOVERY_IGNORE_BOARD_FILTER = to_bool(
     os.environ.get("ARDUINO_MONITOR_WIFI_DISCOVERY_IGNORE_BOARD_FILTER", CONFIG.get("wifi_discovery_ignore_board_filter")),
     False,
 )
+PROGRAM_MODE = str(os.environ.get("ARDUINO_MONITOR_PROGRAM_MODE") or CONFIG.get("program_mode") or "System Monitor").strip() or "System Monitor"
+MACRO_TRIGGER_MODEL = str(CONFIG.get("macro_trigger_model") or "Whole-screen tap cycles entries").strip() or "Whole-screen tap cycles entries"
+raw_macro_entries = CONFIG.get("macro_entries")
+if isinstance(raw_macro_entries, list):
+    MACRO_ENTRIES = [str(entry).strip() for entry in raw_macro_entries if str(entry).strip()][:8]
+else:
+    MACRO_ENTRIES = []
 WIFI_DEVICE_NAME = normalize_identity_value(read_wifi_header_define("WIFI_DEVICE_NAME_VALUE", "R4_WIFI35"), 32) or "R4_WIFI35"
 WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOST_VALUE", ""), 64)
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
@@ -1695,6 +1705,9 @@ def main() -> None:
     print(f"Primary disk mount: {ROOT_MOUNT}")
     print(f"Secondary disk mount: {static['secondary_mount']}")
     print(f"Transport mode: {'Simultaneous USB + Wi-Fi outputs' if WIFI_ENABLED else 'USB only'}")
+    print(f"Program mode: {PROGRAM_MODE}")
+    if PROGRAM_MODE == "Macro Mode":
+        print(f"Macro mode staging: {len(MACRO_ENTRIES)} macro entries configured; trigger model='{MACRO_TRIGGER_MODEL}'.")
     if WIFI_ENABLED:
         print(f"Wi-Fi TCP port source: {WIFI_PORT_SOURCE} -> {WIFI_PORT}")
         if WIFI_AUTO_DISCOVERY:

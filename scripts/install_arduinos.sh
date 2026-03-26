@@ -43,7 +43,18 @@ esac
 
 
 R4_FQBN="arduino:renesas_uno:unor4wifi"
-R4_SKETCH_DIR="$PROJECT_DIR/R4_WIFI35"
+UASM_PROGRAM_MODE="${UASM_PROGRAM_MODE:-System Monitor}"
+
+case "$UASM_PROGRAM_MODE" in
+    "System Monitor"|"Gaming Mode"|"Macro Mode")
+        R4_SKETCH_DIR="$PROJECT_DIR/R4_WIFI35"
+        ;;
+    *)
+        echo "Unknown UASM_PROGRAM_MODE '$UASM_PROGRAM_MODE'; defaulting to System Monitor behavior."
+        UASM_PROGRAM_MODE="System Monitor"
+        R4_SKETCH_DIR="$PROJECT_DIR/R4_WIFI35"
+        ;;
+esac
 
 REQUIRED_LIBS=(
     "MCUFRIEND_kbv|MCUFRIEND_kbv|MCUFRIEND_kbv.h"
@@ -55,6 +66,7 @@ REQUIRED_LIBS=(
 APP_VERSION="$(read_project_version "$PROJECT_DIR")"
 
 echo "==== Ray Co Arduino Auto Flasher $APP_VERSION ===="
+echo "Program mode profile: $UASM_PROGRAM_MODE"
 
 cd "$PROJECT_DIR"
 
@@ -198,13 +210,14 @@ sync_generated_version_files() {
 }
 
 print_effective_flash_settings() {
-    python3 - "$MONITOR_LOCAL_CONFIG_PATH" "$UNO_R3_SCREEN_SIZE" "$MEGA_SCREEN_SIZE" <<'PY2'
+    python3 - "$MONITOR_LOCAL_CONFIG_PATH" "$UNO_R3_SCREEN_SIZE" "$MEGA_SCREEN_SIZE" "$UASM_PROGRAM_MODE" <<'PY2'
 import json, sys
 from pathlib import Path
 config_path = Path(sys.argv[1])
 repo = config_path.parent.parent
 uno = sys.argv[2]
 mega = sys.argv[3]
+program_mode = sys.argv[4]
 config = {}
 if config_path.exists():
     try:
@@ -232,6 +245,7 @@ def read_define(path, name, default=""):
     return default
 
 print("Applied flash settings preview:")
+print(f"  Program mode profile: {program_mode}")
 print(f"  UNO R3 screen size: {uno}")
 print(f"  R4 rotation => {rotation('r4_display_rotation')}")
 print(f"  R3 rotation => {rotation('r3_display_rotation')}")

@@ -42,6 +42,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String DEFAULT_WIFI_BOARD_NAME = "R4_WIFI35";
     private static final String WIFI_MODE_AUTO_DISCOVERY = "Auto Discovery (UDP)";
     private static final String WIFI_MODE_MANUAL = "Manual / Fixed IP";
+    private static final String PROGRAM_MODE_SYSTEM_MONITOR = "System Monitor";
+    private static final String PROGRAM_MODE_GAMING = "Gaming Mode";
+    private static final String PROGRAM_MODE_MACRO = "Macro Mode";
+    private static final int MAX_MACRO_ENTRIES = 8;
     private static final int DISPLAY_ROTATION_NORMAL = 1;
     private static final int DISPLAY_ROTATION_FLIPPED = 3;
     private static final int FLASH_SERVICE_RESTART_DELAY_SECONDS = 2;
@@ -113,6 +117,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> megaRotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
     private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
     private final JComboBox<String> wifiConnectionModeSelector = new JComboBox<>(new String[]{WIFI_MODE_AUTO_DISCOVERY, WIFI_MODE_MANUAL});
+    private final JCheckBox wifiDiscoveryDebugToggle = new JCheckBox("Wi-Fi Discovery Debug");
+    private final JCheckBox wifiDiscoveryIgnoreBoardFilterToggle = new JCheckBox("Ignore Board Filter (Wi-Fi Discovery Debug)");
+    private final JComboBox<String> programModeSelector = new JComboBox<>(new String[]{
+            PROGRAM_MODE_SYSTEM_MONITOR,
+            PROGRAM_MODE_GAMING,
+            PROGRAM_MODE_MACRO
+    });
     private final JTextField wifiPortField = new JTextField(6);
     private final JTextField wifiHostField = new JTextField(14);
     private final JTextField wifiBoardNameField = new JTextField(14);
@@ -123,6 +134,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
+    private final JTextArea macroEntriesArea = new JTextArea(6, 52);
+    private final JComboBox<String> macroTriggerModelSelector = new JComboBox<>(new String[]{
+            "Whole-screen tap cycles entries",
+            "Large left/right screen halves",
+            "Dedicated full-screen zones",
+            "External button trigger"
+    });
     private final JLabel customSketchIndicator = new JLabel("No sketch selected");
     private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
     private final JLabel previewWifiStateLabel = new JLabel("Disabled");
@@ -246,6 +264,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
         wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
         wifiConnectionModeSelector.setToolTipText("Choose whether this PC discovers R4 Wi-Fi boards automatically or connects to a fixed board IP/hostname.");
+        wifiDiscoveryDebugToggle.setToolTipText("Diagnostic toggle for verbose UDP auto-discovery matching logs in Python monitor output (wifi_discovery_debug).");
+        wifiDiscoveryIgnoreBoardFilterToggle.setToolTipText("Diagnostic override that bypasses board-name filtering during discovery troubleshooting (wifi_discovery_ignore_board_filter).");
+        programModeSelector.setToolTipText("Select overall program/board mode. Stored in JSON config as program_mode and passed into flash workflows.");
         wifiHostField.setToolTipText("Use this only in Manual / Fixed IP mode. Put the Arduino board address that THIS PC should talk to, like 192.168.1.50 or a hostname. Leave it alone in Auto Discovery mode.");
         wifiBoardNameField.setToolTipText("Easy nickname for the Arduino board, like OFFICE_PC_SCREEN or LIVING_ROOM_MONITOR. This helps Auto Discovery match the right board to the right PC when you have more than one.");
         wifiTargetHostField.setToolTipText("Optional: the IP address or network name of the PC this Arduino belongs to. Example: 192.168.1.20. Use this when each Arduino should pair with one specific computer.");
@@ -254,6 +275,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
         resetWifiPairingButton.setToolTipText("Explicitly clears the saved EEPROM Wi-Fi pairing on one connected UNO R4 WiFi over USB so the next PC can claim it without reflashing.");
+        macroEntriesArea.setToolTipText("One macro text entry per line. Used by Macro Mode groundwork and stored in monitor config.");
+        macroEntriesArea.setLineWrap(true);
+        macroEntriesArea.setWrapStyleWord(true);
+        macroTriggerModelSelector.setToolTipText("Staged trigger approach for unreliable touch calibration. Stores macro_trigger_model for future firmware behavior.");
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -714,16 +739,38 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel rowThree = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowThree.setAlignmentX(Component.LEFT_ALIGNMENT);
-        wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
-        rowThree.add(wifiPortSourceLabel);
-        rowThree.add(loadMonitorSettingsButton);
-        rowThree.add(saveMonitorSettingsButton);
-        rowThree.add(resetWifiPairingButton);
+        rowThree.add(new JLabel("Program Mode:"));
+        rowThree.add(programModeSelector);
+        rowThree.add(Box.createHorizontalStrut(8));
+        rowThree.add(wifiDiscoveryDebugToggle);
+        rowThree.add(wifiDiscoveryIgnoreBoardFilterToggle);
         monitorSettingsPanel.add(rowThree);
+
+        JPanel rowFour = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowFour.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rowFour.add(new JLabel("Macro Trigger Model:"));
+        rowFour.add(macroTriggerModelSelector);
+        rowFour.add(Box.createHorizontalStrut(8));
+        rowFour.add(new JLabel("Macro Entries (one per line):"));
+        JScrollPane macroScrollPane = new JScrollPane(macroEntriesArea);
+        macroScrollPane.setPreferredSize(new Dimension(520, 110));
+        rowFour.add(macroScrollPane);
+        monitorSettingsPanel.add(rowFour);
+
+        JPanel rowFive = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowFive.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
+        rowFive.add(wifiPortSourceLabel);
+        rowFive.add(loadMonitorSettingsButton);
+        rowFive.add(saveMonitorSettingsButton);
+        rowFive.add(resetWifiPairingButton);
+        monitorSettingsPanel.add(rowFive);
 
         JLabel helper = new JLabel("<html><b>Easy setup:</b> choose <b>Auto Discovery</b> if this PC should automatically find its Arduino on your Wi-Fi. Choose <b>Manual / Fixed IP</b> only if you want this PC to always talk to one exact Arduino address.<br>"
                 + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC in Manual mode. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
                 + "If you have one Arduino per PC, give each board its own name and flash them <b>one at a time</b> so each one keeps the correct target PC info.<br>"
+                + "<b>Program Mode</b> is a staged top-level selector (System Monitor, Gaming Mode, Macro Mode). It is saved to config now and passed into flash workflows so mode-specific sketch behavior can be expanded safely later.<br>"
+                + "<b>Macro Mode groundwork</b>: macro entries + trigger model are saved in config now (Phase 1). Use large/whole-screen-safe trigger options instead of tiny touch targets until touch calibration is reliable.<br>"
                 + "<b>Load Monitor Settings</b> reloads the saved config files from this computer, including your last local values if you already saved them. That lets you review them before flashing again.<br>"
                 + "<b>Save Monitor Settings & Flash R4 WiFi</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.<br>"
                 + "<b>Reset Wi-Fi Pairing</b> uses a deliberate USB admin command to clear only the saved EEPROM pairing on one connected UNO R4 WiFi so you can move that board to another PC without reflashing.</html>");
@@ -894,7 +941,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         String boardName = normalizeWifiBoardName(wifiBoardNameField.getText().trim());
         String targetHost = wifiTargetHostField.getText().trim();
         String targetHostname = wifiTargetHostnameField.getText().trim();
+        String programMode = normalizeProgramMode(String.valueOf(programModeSelector.getSelectedItem()));
+        List<String> macroEntries = normalizeMacroEntries(macroEntriesArea.getText());
         StringBuilder out = new StringBuilder();
+        out.append("Program mode: ").append(programMode).append('\n');
+        out.append("Macro trigger model: ").append(normalizeMacroTriggerModel(String.valueOf(macroTriggerModelSelector.getSelectedItem()))).append('\n');
+        out.append("Macro entries: ").append(macroEntries.size()).append('\n');
+        if (!macroEntries.isEmpty()) {
+            for (int i = 0; i < macroEntries.size(); i++) {
+                out.append("  ").append(i + 1).append(". ").append(macroEntries.get(i)).append('\n');
+            }
+        }
+        out.append('\n');
         appendFlashBoardPreview(out, "R4 / UNO R4 WiFi", r4DisplayConfigPath(), r4Rotation, true, boardName, targetHost, targetHostname);
         out.append("\n");
         appendFlashBoardPreview(out, "R3 / UNO R3", r3DisplayConfig28Path(), r3Rotation, false, "N/A", "N/A", "N/A");
@@ -1204,6 +1262,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (unoScreenSize != null && megaScreenSize != null) {
                 command.append("UNO_R3_SCREEN_SIZE=").append(escape(unoScreenSize)).append(' ');
                 command.append("MEGA_SCREEN_SIZE=").append(escape(megaScreenSize)).append(' ');
+                String selectedProgramMode = normalizeProgramMode(String.valueOf(programModeSelector.getSelectedItem()));
+                command.append("UASM_PROGRAM_MODE=").append(escape(selectedProgramMode)).append(' ');
             }
         }
 
@@ -1669,6 +1729,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "wifi_discovery_timeout",
                 "wifi_discovery_refresh",
                 "wifi_discovery_magic",
+                "wifi_discovery_debug",
+                "wifi_discovery_ignore_board_filter",
+                "program_mode",
+                "macro_trigger_model",
+                "macro_entries",
                 "r4_display_rotation",
                 "r3_display_rotation",
                 "mega_display_rotation",
@@ -1735,11 +1800,49 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String upsertRawConfigValue(String text, String key, String rawValue) {
-        String pattern = "\\\"" + key + "\\\"\\s*:\\s*(\\\"(?:\\\\.|[^\\\"])*\\\"|true|false|-?\\d+(?:\\.\\d+)?)";
+        String pattern = "\\\"" + key + "\\\"\\s*:\\s*(\\\"(?:\\\\.|[^\\\"])*\\\"|true|false|-?\\d+(?:\\.\\d+)?|\\[(?:.|\\R)*?\\])";
         String replacement = "\"" + key + "\": " + rawValue;
         return text.matches("(?s).*" + pattern + ".*")
                 ? text.replaceAll(pattern, replacement)
                 : appendConfigEntry(text, "  \"" + key + "\": " + rawValue);
+    }
+
+    private String normalizeProgramMode(String selectedValue) {
+        if (PROGRAM_MODE_GAMING.equals(selectedValue)) {
+            return PROGRAM_MODE_GAMING;
+        }
+        if (PROGRAM_MODE_MACRO.equals(selectedValue)) {
+            return PROGRAM_MODE_MACRO;
+        }
+        return PROGRAM_MODE_SYSTEM_MONITOR;
+    }
+
+    private String normalizeMacroTriggerModel(String selectedValue) {
+        List<String> allowed = List.of(
+                "Whole-screen tap cycles entries",
+                "Large left/right screen halves",
+                "Dedicated full-screen zones",
+                "External button trigger"
+        );
+        return allowed.contains(selectedValue) ? selectedValue : allowed.get(0);
+    }
+
+    private List<String> normalizeMacroEntries(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return List.of();
+        }
+        List<String> entries = new ArrayList<>();
+        for (String line : rawText.split("\\R")) {
+            String cleaned = line == null ? "" : line.strip();
+            if (cleaned.isBlank()) {
+                continue;
+            }
+            entries.add(cleaned);
+            if (entries.size() >= MAX_MACRO_ENTRIES) {
+                break;
+            }
+        }
+        return entries;
     }
 
     private void refreshMonitorPortChoices(boolean verbose) {
@@ -1790,6 +1893,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 arduinoPortSelector.setSelectedItem("AUTO");
                 wifiPortField.setText("5000");
                 wifiConnectionModeSelector.setSelectedItem(WIFI_MODE_AUTO_DISCOVERY);
+                wifiDiscoveryDebugToggle.setSelected(false);
+                wifiDiscoveryIgnoreBoardFilterToggle.setSelected(false);
+                programModeSelector.setSelectedItem(PROGRAM_MODE_SYSTEM_MONITOR);
+                macroTriggerModelSelector.setSelectedItem("Whole-screen tap cycles entries");
+                macroEntriesArea.setText("");
                 wifiHostField.setText("");
                 wifiBoardNameField.setText(DEFAULT_WIFI_BOARD_NAME);
                 wifiTargetHostField.setText("");
@@ -1809,10 +1917,20 @@ public class UniversalMonitorControlCenter extends JFrame {
             String arduinoPort = readStringConfigValue(text, "arduino_port", "AUTO");
             WifiPortResolution wifiResolution = resolveEffectiveWifiPort();
             boolean wifiAutoDiscovery = readBooleanConfigValue(text, "wifi_auto_discovery", true);
+            boolean wifiDiscoveryDebug = readBooleanConfigValue(text, "wifi_discovery_debug", false);
+            boolean wifiDiscoveryIgnoreBoardFilter = readBooleanConfigValue(text, "wifi_discovery_ignore_board_filter", false);
             String wifiHost = readStringConfigValue(text, "wifi_host", "");
+            String selectedProgramMode = normalizeProgramMode(readStringConfigValue(text, "program_mode", PROGRAM_MODE_SYSTEM_MONITOR));
+            String macroTriggerModel = normalizeMacroTriggerModel(readStringConfigValue(text, "macro_trigger_model", "Whole-screen tap cycles entries"));
+            List<String> macroEntries = readStringArrayConfigValue(text, "macro_entries");
             arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
             wifiPortField.setText(String.valueOf(wifiResolution.port()));
             wifiConnectionModeSelector.setSelectedItem(wifiAutoDiscovery ? WIFI_MODE_AUTO_DISCOVERY : WIFI_MODE_MANUAL);
+            wifiDiscoveryDebugToggle.setSelected(wifiDiscoveryDebug);
+            wifiDiscoveryIgnoreBoardFilterToggle.setSelected(wifiDiscoveryIgnoreBoardFilter);
+            programModeSelector.setSelectedItem(selectedProgramMode);
+            macroTriggerModelSelector.setSelectedItem(macroTriggerModel);
+            macroEntriesArea.setText(String.join("\n", macroEntries));
             wifiHostField.setText(wifiHost == null ? "" : wifiHost.trim());
             wifiBoardNameField.setText(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME));
             wifiTargetHostField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""));
@@ -1828,6 +1946,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 log("[INFO] Loaded merged monitor connection settings (default/shared/local). Effective Wi-Fi TCP port source: "
                         + wifiResolution.source() + " (" + wifiResolution.port() + ")."
                         + " Connection mode=" + (wifiAutoDiscovery ? "auto discovery" : "manual/fixed IP")
+                        + ", wifi_discovery_debug=" + wifiDiscoveryDebug
+                        + ", wifi_discovery_ignore_board_filter=" + wifiDiscoveryIgnoreBoardFilter
+                        + ", program_mode=" + selectedProgramMode
+                        + ", macro_trigger_model=" + macroTriggerModel
+                        + ", macro_entries=" + macroEntries.size()
                         + ", wifi_host=" + (wifiHost == null || wifiHost.isBlank() ? "<unset>" : wifiHost.trim()) + "."
                         + " Board name=" + normalizeWifiBoardName(wifiBoardNameField.getText().trim())
                         + ", target host/ip=" + wifiTargetHostField.getText().trim()
@@ -1881,6 +2004,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         String megaScreenSize = resolveScreenSizeSelectorValue(megaScreenSizeSelector, "35");
         String wifiTargetHost = wifiTargetHostField.getText() == null ? "" : wifiTargetHostField.getText().trim();
         String wifiTargetHostname = wifiTargetHostnameField.getText() == null ? "" : wifiTargetHostnameField.getText().trim();
+        boolean wifiDiscoveryDebug = wifiDiscoveryDebugToggle.isSelected();
+        boolean wifiDiscoveryIgnoreBoardFilter = wifiDiscoveryIgnoreBoardFilterToggle.isSelected();
+        String programMode = normalizeProgramMode(String.valueOf(programModeSelector.getSelectedItem()));
+        String macroTriggerModel = normalizeMacroTriggerModel(String.valueOf(macroTriggerModelSelector.getSelectedItem()));
+        List<String> macroEntries = normalizeMacroEntries(macroEntriesArea.getText());
 
         boolean savedMonitorConfig = false;
         boolean syncedWifiHeader = false;
@@ -1891,8 +2019,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
             updated = upsertStringConfigValue(updated, "wifi_host", wifiAutoDiscovery ? "" : wifiHost);
             updated = upsertBooleanConfigValue(updated, "wifi_auto_discovery", wifiAutoDiscovery);
+            updated = upsertBooleanConfigValue(updated, "wifi_discovery_debug", wifiDiscoveryDebug);
+            updated = upsertBooleanConfigValue(updated, "wifi_discovery_ignore_board_filter", wifiDiscoveryIgnoreBoardFilter);
             updated = upsertBooleanConfigValue(updated, "wifi_enabled", true);
             updated = upsertBooleanConfigValue(updated, "prefer_usb", false);
+            updated = upsertStringConfigValue(updated, "program_mode", programMode);
+            updated = upsertStringConfigValue(updated, "macro_trigger_model", macroTriggerModel);
+            updated = upsertStringArrayConfigValue(updated, "macro_entries", macroEntries);
             updated = upsertNumberConfigValue(updated, "r4_display_rotation", r4Rotation);
             updated = upsertNumberConfigValue(updated, "r3_display_rotation", r3Rotation);
             updated = upsertNumberConfigValue(updated, "mega_display_rotation", megaRotation);
@@ -1904,6 +2037,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + " (arduino_port=" + arduinoPort
                         + ", wifi_enabled=true, prefer_usb=false, wifi_port=" + wifiPort
                         + ", wifi_auto_discovery=" + wifiAutoDiscovery
+                        + ", wifi_discovery_debug=" + wifiDiscoveryDebug
+                        + ", wifi_discovery_ignore_board_filter=" + wifiDiscoveryIgnoreBoardFilter
+                        + ", program_mode=" + programMode
+                        + ", macro_trigger_model=" + macroTriggerModel
+                        + ", macro_entries=" + macroEntries.size()
                         + ", wifi_host=" + ((wifiAutoDiscovery || wifiHost.isBlank()) ? "<unset>" : wifiHost)
                         + ", r4_display_rotation=" + r4Rotation
                         + ", r3_display_rotation=" + r3Rotation
@@ -1939,6 +2077,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort
                 + ", connection mode " + (wifiAutoDiscovery ? "Auto Discovery (UDP)" : "Manual / Fixed IP")
+                + ", program mode " + programMode
+                + ", macro trigger model " + macroTriggerModel
+                + ", macro entries " + macroEntries.size()
                 + ", wifi host/ip " + (wifiAutoDiscovery || wifiHost.isBlank() ? "<unset>" : wifiHost)
                 + ", board name " + wifiBoardName + ", target host/ip " + (wifiTargetHost.isBlank() ? "<unset>" : wifiTargetHost)
                 + ", target hostname " + (wifiTargetHostname.isBlank() ? "<unset>" : wifiTargetHostname)
@@ -2310,6 +2451,43 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private List<String> readStringArrayConfigValue(String text, String key) {
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = text.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return List.of();
+        }
+        int colonIndex = text.indexOf(':', keyIndex + quotedKey.length());
+        if (colonIndex < 0) {
+            return List.of();
+        }
+        int openIndex = text.indexOf('[', colonIndex + 1);
+        if (openIndex < 0) {
+            return List.of();
+        }
+        int closeIndex = text.indexOf(']', openIndex + 1);
+        if (closeIndex < 0) {
+            return List.of();
+        }
+        String raw = text.substring(openIndex + 1, closeIndex);
+        List<String> values = new ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"((?:\\\\.|[^\\\\\"])*)\"").matcher(raw);
+        while (matcher.find()) {
+            String value = matcher.group(1)
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\")
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r");
+            if (!value.isBlank()) {
+                values.add(value.strip());
+            }
+            if (values.size() >= MAX_MACRO_ENTRIES) {
+                break;
+            }
+        }
+        return values;
+    }
+
     private String upsertStringConfigValue(String text, String key, String value) {
         String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\\"[^\\\"]*\\\"";
         String replacement = "\"" + key + "\": \"" + escapeJson(value) + "\"";
@@ -2332,6 +2510,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         return text.matches("(?s).*" + pattern + ".*")
                 ? text.replaceAll(pattern, replacement)
                 : appendConfigEntry(text, "  \"" + key + "\": " + (value ? "true" : "false"));
+    }
+
+    private String upsertStringArrayConfigValue(String text, String key, List<String> values) {
+        String rawValue = values.stream()
+                .map(value -> "\"" + escapeJson(value) + "\"")
+                .collect(java.util.stream.Collectors.joining(", "));
+        return upsertRawConfigValue(text, key, "[" + rawValue + "]");
     }
 
     private String appendConfigEntry(String text, String newEntry) {
@@ -4352,6 +4537,11 @@ public class UniversalMonitorControlCenter extends JFrame {
             megaRotationSelector.setEnabled(enabled);
             arduinoPortSelector.setEnabled(enabled);
             wifiConnectionModeSelector.setEnabled(enabled);
+            wifiDiscoveryDebugToggle.setEnabled(enabled);
+            wifiDiscoveryIgnoreBoardFilterToggle.setEnabled(enabled);
+            programModeSelector.setEnabled(enabled);
+            macroTriggerModelSelector.setEnabled(enabled);
+            macroEntriesArea.setEnabled(enabled);
             wifiPortField.setEnabled(enabled);
             wifiHostField.setEnabled(enabled && WIFI_MODE_MANUAL.equals(String.valueOf(wifiConnectionModeSelector.getSelectedItem())));
             wifiBoardNameField.setEnabled(enabled);
