@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett
-**Version:** v9.6.0
+**Version:** v9.7
 **Last Modified:** March 24, 2026
 
 ---
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.6.0 Includes
+## What v9.7 Includes
 
-Release **v9.6.0** focuses on Control Center profile reliability and board mapping accuracy: profile settings now stay machine-local with manual import/export support, UNO R3 and Mega screen-size flashing selectors are independent, R4 profile naming now shows Extra Statistics, Home-page disable prompts protect first-time setup, and profile toggle/theme behavior was hardened so board page choices stick as expected.
+Release **v9.7** focuses on Control Center profile reliability and board mapping accuracy: profile settings now stay machine-local with manual import/export support, UNO R3 and Mega screen-size flashing selectors are independent, R4 profile naming now shows Extra Statistics, Home-page disable prompts protect first-time setup, and profile toggle/theme behavior was hardened so board page choices stick as expected.
 
 ### Major highlights
 
