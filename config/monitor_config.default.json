@@ -16,5 +16,10 @@
   "wifi_discovery_port": 5001,
   "wifi_discovery_timeout": 1.2,
   "wifi_discovery_refresh": 30,
-  "wifi_discovery_magic": "UAM_DISCOVER"
+  "wifi_discovery_magic": "UAM_DISCOVER",
+  "wifi_discovery_debug": false,
+  "wifi_discovery_ignore_board_filter": false,
+  "program_mode": "System Monitor",
+  "macro_trigger_model": "Whole-screen tap cycles entries",
+  "macro_entries": []
 }
