@@ -1,7 +1,7 @@
 # Changelog
 
-## v9.6.0 - 2026-03-24
-- Bumped the shared project version to v9.6.0 so VERSION-driven Python/Java/Arduino version displays stay aligned.
+## v9.7 - 2026-03-24
+- Bumped the shared project version to v9.7 so VERSION-driven Python/Java/Arduino version displays stay aligned.
 - Made the Control Center Update button use a positive green theme style and renamed the default flash action to "Flash Arduino's".
 - Added independent UNO R3 and Mega screen-size selectors for flashing so Mega no longer inherits UNO mode by default.
 - Fixed profile page toggle behavior by adding a Home-page disable confirmation prompt and preventing profile-toggle checkbox theme regressions that turned controls white while switching/pressing.

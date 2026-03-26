@@ -37,6 +37,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String APP_VERSION_DISPLAY = APP_VERSION;
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final String WIFI_SETTINGS_BACKUP_FILE = ".control_center_wifi_settings.properties";
+    private static final String REMOTE_TARGETS_FILE = ".control_center_remote_targets.properties";
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
     private static final String DEFAULT_WIFI_PORT = "5000";
     private static final String DEFAULT_WIFI_BOARD_NAME = "R4_WIFI35";
@@ -81,6 +82,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton desktopAppletButton = new JButton("Install Desktop Applet");
     private final JButton uninstallButton = new JButton("Uninstall");
     private final JButton updateButton = new JButton("Update and Restart GUI");
+    private final JComboBox<String> remoteActionSelector = new JComboBox<>();
+    private final JButton runRemoteActionButton = new JButton("Run Action");
+    private final JCheckBox remoteUseSshToggle = new JCheckBox("Run over SSH");
+    private final JTextField remoteHostField = new JTextField(13);
+    private final JTextField remoteUserField = new JTextField(10);
+    private final JTextField remotePortField = new JTextField("22", 4);
+    private final JTextField remoteRepoField = new JTextField(26);
+    private final JComboBox<String> remoteProfileSelector = new JComboBox<>();
+    private final JButton saveRemoteProfileButton = new JButton("Save Target");
+    private final JButton deleteRemoteProfileButton = new JButton("Delete Target");
     private final JButton flashButton = new JButton("Flash Arduinos'");
     private final JButton flashPreviewButton = new JButton("Show Flash Diff");
     private final JButton customFlashButton = new JButton("Upload Custom Sketch");
@@ -170,6 +181,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Map<String, BoardPageSettings> boardPageSettings = new LinkedHashMap<>();
     private final Map<String, Map<String, Map<String, Boolean>>> namedPageProfiles = new LinkedHashMap<>();
     private final Map<String, JCheckBox> boardPageCheckboxes = new LinkedHashMap<>();
+    private final Map<String, RemoteTargetProfile> remoteTargetProfiles = new LinkedHashMap<>();
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -266,6 +278,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiConnectionModeSelector.setToolTipText("Choose whether this PC discovers R4 Wi-Fi boards automatically or connects to a fixed board IP/hostname.");
         wifiDiscoveryDebugToggle.setToolTipText("Diagnostic toggle for verbose UDP auto-discovery matching logs in Python monitor output (wifi_discovery_debug).");
         wifiDiscoveryIgnoreBoardFilterToggle.setToolTipText("Diagnostic override that bypasses board-name filtering during discovery troubleshooting (wifi_discovery_ignore_board_filter).");
+        remoteActionSelector.setToolTipText("Structured command actions only (safe starter set). Pick one then click Run Action.");
+        runRemoteActionButton.setToolTipText("Runs the selected action locally or through SSH using the target fields.");
+        remoteUseSshToggle.setToolTipText("When enabled, the selected action runs on a remote Linux host over SSH.");
+        remoteHostField.setToolTipText("Remote hostname or IP, for example 192.168.1.20.");
+        remoteUserField.setToolTipText("Remote SSH username, for example pi or your Linux account.");
+        remotePortField.setToolTipText("Remote SSH port (default 22).");
+        remoteRepoField.setToolTipText("Project path on the target machine where install/update/flash scripts live.");
+        remoteProfileSelector.setToolTipText("Saved SSH targets. Choose one to fill host/user/port/repo quickly.");
         programModeSelector.setToolTipText("Select overall program/board mode. Stored in JSON config as program_mode and passed into flash workflows.");
         wifiHostField.setToolTipText("Use this only in Manual / Fixed IP mode. Put the Arduino board address that THIS PC should talk to, like 192.168.1.50 or a hostname. Leave it alone in Auto Discovery mode.");
         wifiBoardNameField.setToolTipText("Easy nickname for the Arduino board, like OFFICE_PC_SCREEN or LIVING_ROOM_MONITOR. This helps Auto Discovery match the right board to the right PC when you have more than one.");
@@ -303,6 +323,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
         initializeBoardProfileState();
+        initializeRemoteActionState();
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
         updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
@@ -647,6 +668,57 @@ public class UniversalMonitorControlCenter extends JFrame {
         return panel;
     }
 
+    private JPanel buildCliRemoteToolsPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(BorderFactory.createTitledBorder("CLI / Remote Tools (safe predefined actions)"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        actionRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        actionRow.add(new JLabel("Action:"));
+        remoteActionSelector.setPreferredSize(new Dimension(260, remoteActionSelector.getPreferredSize().height));
+        actionRow.add(remoteActionSelector);
+        actionRow.add(runRemoteActionButton);
+        actionRow.add(remoteUseSshToggle);
+        panel.add(actionRow);
+
+        JPanel sshRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        sshRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sshRow.add(new JLabel("User:"));
+        sshRow.add(remoteUserField);
+        sshRow.add(new JLabel("Host/IP:"));
+        sshRow.add(remoteHostField);
+        sshRow.add(new JLabel("Port:"));
+        sshRow.add(remotePortField);
+        panel.add(sshRow);
+
+        JPanel repoRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        repoRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        repoRow.add(new JLabel("Target project path:"));
+        repoRow.add(remoteRepoField);
+        panel.add(repoRow);
+
+        JPanel profileRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        profileRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        profileRow.add(new JLabel("Saved target:"));
+        remoteProfileSelector.setEditable(false);
+        remoteProfileSelector.setPreferredSize(new Dimension(220, remoteProfileSelector.getPreferredSize().height));
+        profileRow.add(remoteProfileSelector);
+        profileRow.add(saveRemoteProfileButton);
+        profileRow.add(deleteRemoteProfileButton);
+        panel.add(profileRow);
+
+        JLabel helper = new JLabel("<html><b>Phase 1 local actions:</b> update project, flash Arduinos, restart/status monitor service, and run Wi-Fi discovery debug logs.<br>"
+                + "<b>Phase 2 SSH:</b> enable <b>Run over SSH</b> to run those same actions on another Linux machine using this structured target config.<br>"
+                + "This panel intentionally runs only predefined commands (not a free-form shell) for safer remote management.</html>");
+        helper.setBorder(new EmptyBorder(4, 8, 8, 8));
+        helper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(helper);
+
+        return panel;
+    }
+
     private JPanel buildPreviewControlsPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
@@ -689,6 +761,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(buildRepoPanel());
         panel.add(Box.createVerticalStrut(6));
         panel.add(buildAppManagementPanel());
+        panel.add(Box.createVerticalStrut(6));
+        panel.add(buildCliRemoteToolsPanel());
         panel.add(Box.createVerticalStrut(6));
         panel.add(buildPreviewControlsPanel());
         panel.setMinimumSize(new Dimension(560, 600));
@@ -745,6 +819,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowThree.add(wifiDiscoveryDebugToggle);
         rowThree.add(wifiDiscoveryIgnoreBoardFilterToggle);
         monitorSettingsPanel.add(rowThree);
+
+        JLabel wifiDebugHelper = new JLabel("<html><b>Wi-Fi discovery debug help:</b><br>"
+                + "<b>Wi-Fi Discovery Debug</b> turns on detailed UDP discovery logging in the Python monitor. Use it when Auto Discovery is not finding your board, pairing is inconsistent, or the wrong board appears selected. Expect many extra log lines showing broadcast attempts, replies seen, board-name matching decisions, and fallback decisions.<br>"
+                + "<b>Ignore Board Filter</b> temporarily bypasses board-name matching while debug is enabled. Use it when you suspect your configured board name is wrong/mismatched and you want to confirm any UNO R4 WiFi is replying on the network. Expect logs to show replies that would normally be filtered out, which can include boards for other PCs.<br>"
+                + "Typical workflow: enable debug first, retry discovery, review output for dropped/mismatched replies, then enable Ignore Board Filter only as a temporary diagnostic and disable it after fixing board names.</html>");
+        wifiDebugHelper.setBorder(new EmptyBorder(0, 10, 2, 10));
+        wifiDebugHelper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        monitorSettingsPanel.add(wifiDebugHelper);
 
         JPanel rowFour = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowFour.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -840,6 +922,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopAppletButton.addActionListener(e -> runRepoScript("install_control_center_desktop.sh", true));
         uninstallButton.addActionListener(e -> runRepoScript("uninstall_monitor.sh", true));
         updateButton.addActionListener(e -> runUpdateWorkflow());
+        runRemoteActionButton.addActionListener(e -> runSelectedRemoteAction());
+        remoteUseSshToggle.addActionListener(e -> updateRemoteTargetFieldState());
+        saveRemoteProfileButton.addActionListener(e -> saveCurrentRemoteTargetProfile());
+        deleteRemoteProfileButton.addActionListener(e -> deleteSelectedRemoteTargetProfile());
+        remoteProfileSelector.addActionListener(e -> applySelectedRemoteTargetProfile());
         flashButton.addActionListener(e -> runDefaultFlashWorkflow());
         flashPreviewButton.addActionListener(e -> showFlashPreviewDialog());
         customFlashButton.addActionListener(e -> uploadCustomSketch());
@@ -1269,6 +1356,226 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         command.append("./").append(scriptName);
         return command.toString();
+    }
+
+    private void initializeRemoteActionState() {
+        remoteActionSelector.removeAllItems();
+        for (RemoteAction action : RemoteAction.values()) {
+            remoteActionSelector.addItem(action.label);
+        }
+        remoteRepoField.setText(repoPath().toString());
+        loadRemoteTargetProfiles();
+        refreshRemoteProfileChoices();
+        updateRemoteTargetFieldState();
+    }
+
+    private void runSelectedRemoteAction() {
+        RemoteAction action = selectedRemoteAction();
+        if (action == null) {
+            log("[WARN] No CLI/remote action is selected.");
+            return;
+        }
+        boolean overSsh = remoteUseSshToggle.isSelected();
+        String command = buildRemoteActionCommand(action, repoPath().toString());
+        String label = "CLI action: " + action.label + (overSsh ? " (SSH)" : " (local)");
+        if (!overSsh) {
+            runCommand(command, repoPath().toFile(), label, action.needsSudo, true);
+            return;
+        }
+
+        String sshHost = remoteHostField.getText().trim();
+        String sshUser = remoteUserField.getText().trim();
+        String sshPort = remotePortField.getText().trim();
+        String remoteRepo = remoteRepoField.getText().trim();
+        if (sshHost.isBlank() || sshUser.isBlank()) {
+            log("[WARN] SSH action canceled: fill both remote user and host.");
+            return;
+        }
+        if (sshPort.isBlank()) {
+            sshPort = "22";
+            remotePortField.setText(sshPort);
+        }
+        if (remoteRepo.isBlank()) {
+            log("[WARN] SSH action canceled: set the target project path.");
+            return;
+        }
+
+        String remoteCommand = buildRemoteActionCommand(action, remoteRepo);
+        String sshWrappedCommand = "ssh -p " + escape(sshPort) + " " + escape(sshUser + "@" + sshHost) + " " + escape(remoteCommand);
+        runCommand(sshWrappedCommand, repoPath().toFile(), label + " -> " + sshUser + "@" + sshHost, false, true);
+    }
+
+    private RemoteAction selectedRemoteAction() {
+        String selected = String.valueOf(remoteActionSelector.getSelectedItem());
+        for (RemoteAction action : RemoteAction.values()) {
+            if (action.label.equals(selected)) {
+                return action;
+            }
+        }
+        return null;
+    }
+
+    private String buildRemoteActionCommand(RemoteAction action, String targetRepoPath) {
+        return switch (action) {
+            case UPDATE_PROJECT -> "cd " + escape(targetRepoPath) + " && chmod +x update.sh && ./update.sh";
+            case FLASH_ARDUINOS -> "cd " + escape(targetRepoPath) + " && chmod +x arduino_install.sh && ./arduino_install.sh";
+            case RESTART_MONITOR_SERVICE -> "systemctl restart " + SERVICE_NAME;
+            case SHOW_MONITOR_STATUS -> "systemctl status --no-pager " + SERVICE_NAME;
+            case WIFI_DISCOVERY_DEBUG_LOGS ->
+                    "journalctl -u " + SERVICE_NAME + " -n 200 --no-pager | grep -i 'wifi\\|discovery\\|udp\\|board' || true";
+        };
+    }
+
+    private void updateRemoteTargetFieldState() {
+        boolean sshEnabled = remoteUseSshToggle.isSelected();
+        remoteHostField.setEnabled(sshEnabled);
+        remoteUserField.setEnabled(sshEnabled);
+        remotePortField.setEnabled(sshEnabled);
+        remoteRepoField.setEnabled(sshEnabled);
+        remoteProfileSelector.setEnabled(sshEnabled);
+        saveRemoteProfileButton.setEnabled(sshEnabled);
+        deleteRemoteProfileButton.setEnabled(sshEnabled);
+    }
+
+    private void saveCurrentRemoteTargetProfile() {
+        if (!remoteUseSshToggle.isSelected()) {
+            log("[WARN] Enable 'Run over SSH' before saving a remote target profile.");
+            return;
+        }
+        String name = JOptionPane.showInputDialog(this, "Target profile name:", "Save SSH Target", JOptionPane.PLAIN_MESSAGE);
+        if (name == null) {
+            return;
+        }
+        String trimmedName = name.trim();
+        if (trimmedName.isBlank()) {
+            log("[WARN] Remote target profile was not saved because the name was blank.");
+            return;
+        }
+        RemoteTargetProfile profile = new RemoteTargetProfile(
+                remoteHostField.getText().trim(),
+                remoteUserField.getText().trim(),
+                remotePortField.getText().trim().isBlank() ? "22" : remotePortField.getText().trim(),
+                remoteRepoField.getText().trim()
+        );
+        if (profile.host.isBlank() || profile.user.isBlank() || profile.repoPath.isBlank()) {
+            log("[WARN] Fill user, host, and target project path before saving a remote target.");
+            return;
+        }
+        remoteTargetProfiles.put(trimmedName, profile);
+        persistRemoteTargetProfiles();
+        refreshRemoteProfileChoices();
+        remoteProfileSelector.setSelectedItem(trimmedName);
+        log("[INFO] Saved SSH target profile '" + trimmedName + "'.");
+    }
+
+    private void deleteSelectedRemoteTargetProfile() {
+        Object selectedItem = remoteProfileSelector.getSelectedItem();
+        String selected = selectedItem == null ? "" : String.valueOf(selectedItem).trim();
+        if (selected.isBlank() || "<none>".equals(selected)) {
+            log("[WARN] Select a saved SSH target profile before deleting.");
+            return;
+        }
+        if (remoteTargetProfiles.remove(selected) != null) {
+            persistRemoteTargetProfiles();
+            refreshRemoteProfileChoices();
+            log("[INFO] Deleted SSH target profile '" + selected + "'.");
+        }
+    }
+
+    private void applySelectedRemoteTargetProfile() {
+        Object selectedItem = remoteProfileSelector.getSelectedItem();
+        String selected = selectedItem == null ? "" : String.valueOf(selectedItem).trim();
+        if (selected.isBlank() || "<none>".equals(selected)) {
+            return;
+        }
+        RemoteTargetProfile profile = remoteTargetProfiles.get(selected);
+        if (profile == null) {
+            return;
+        }
+        remoteHostField.setText(profile.host);
+        remoteUserField.setText(profile.user);
+        remotePortField.setText(profile.port);
+        remoteRepoField.setText(profile.repoPath);
+    }
+
+    private void loadRemoteTargetProfiles() {
+        remoteTargetProfiles.clear();
+        Path path = repoPath().resolve(REMOTE_TARGETS_FILE);
+        if (!Files.isRegularFile(path)) {
+            return;
+        }
+        Properties properties = new Properties();
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            properties.load(reader);
+            Set<String> names = new java.util.TreeSet<>();
+            for (String key : properties.stringPropertyNames()) {
+                int idx = key.indexOf('.');
+                if (idx > 0) {
+                    names.add(key.substring(0, idx));
+                }
+            }
+            for (String name : names) {
+                String host = properties.getProperty(name + ".host", "").trim();
+                String user = properties.getProperty(name + ".user", "").trim();
+                String port = properties.getProperty(name + ".port", "22").trim();
+                String repoPathValue = properties.getProperty(name + ".repo", "").trim();
+                if (!host.isBlank() && !user.isBlank() && !repoPathValue.isBlank()) {
+                    remoteTargetProfiles.put(name, new RemoteTargetProfile(host, user, port.isBlank() ? "22" : port, repoPathValue));
+                }
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed to load saved remote targets: " + ex.getMessage());
+        }
+    }
+
+    private void persistRemoteTargetProfiles() {
+        Properties properties = new Properties();
+        for (Map.Entry<String, RemoteTargetProfile> entry : remoteTargetProfiles.entrySet()) {
+            String name = entry.getKey();
+            RemoteTargetProfile profile = entry.getValue();
+            properties.setProperty(name + ".host", profile.host);
+            properties.setProperty(name + ".user", profile.user);
+            properties.setProperty(name + ".port", profile.port);
+            properties.setProperty(name + ".repo", profile.repoPath);
+        }
+        Path path = repoPath().resolve(REMOTE_TARGETS_FILE);
+        try {
+            try (java.io.BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                properties.store(writer, "Control Center saved SSH targets");
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed to save remote targets: " + ex.getMessage());
+        }
+    }
+
+    private void refreshRemoteProfileChoices() {
+        remoteProfileSelector.removeAllItems();
+        if (remoteTargetProfiles.isEmpty()) {
+            remoteProfileSelector.addItem("<none>");
+            return;
+        }
+        for (String name : remoteTargetProfiles.keySet()) {
+            remoteProfileSelector.addItem(name);
+        }
+    }
+
+    private record RemoteTargetProfile(String host, String user, String port, String repoPath) {}
+
+    private enum RemoteAction {
+        UPDATE_PROJECT("Update project", true),
+        FLASH_ARDUINOS("Flash Arduinos", true),
+        RESTART_MONITOR_SERVICE("Restart monitor service", true),
+        SHOW_MONITOR_STATUS("Show monitor status", true),
+        WIFI_DISCOVERY_DEBUG_LOGS("Run Wi-Fi discovery debug logs", true);
+
+        final String label;
+        final boolean needsSudo;
+
+        RemoteAction(String label, boolean needsSudo) {
+            this.label = label;
+            this.needsSudo = needsSudo;
+        }
     }
 
     private String resolveUnoR3ScreenSizeForControlCenter() {
@@ -4507,6 +4814,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             desktopAppletButton.setEnabled(enabled);
             uninstallButton.setEnabled(enabled);
             updateButton.setEnabled(enabled);
+            remoteActionSelector.setEnabled(enabled);
+            runRemoteActionButton.setEnabled(enabled);
+            remoteUseSshToggle.setEnabled(enabled);
             flashButton.setEnabled(enabled);
             flashPreviewButton.setEnabled(enabled);
             customFlashButton.setEnabled(enabled);
@@ -4566,6 +4876,17 @@ public class UniversalMonitorControlCenter extends JFrame {
             saveAllBoardsAndProfilesButton.setEnabled(enabled);
             updateNetworkScanButtons();
             updateKillRunningTaskButton();
+            if (enabled) {
+                updateRemoteTargetFieldState();
+            } else {
+                remoteHostField.setEnabled(false);
+                remoteUserField.setEnabled(false);
+                remotePortField.setEnabled(false);
+                remoteRepoField.setEnabled(false);
+                remoteProfileSelector.setEnabled(false);
+                saveRemoteProfileButton.setEnabled(false);
+                deleteRemoteProfileButton.setEnabled(false);
+            }
         });
     }
 
