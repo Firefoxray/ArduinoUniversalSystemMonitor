@@ -309,6 +309,9 @@ WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
 WIFI_PAIRING_MAGIC = "UAM_PAIR"
 QBITTORRENT_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_ENABLED", CONFIG.get("qbittorrent_enabled")), True)
+PAGE_PROCESSES_ENABLED = to_bool(CONFIG.get("page_processes_enabled"), True)
+PAGE_GPU_ENABLED = to_bool(CONFIG.get("page_gpu_enabled"), True)
+PAGE_STORAGE_ENABLED = to_bool(CONFIG.get("page_storage_enabled"), True)
 
 
 def resolve_qbittorrent_url(config: Dict[str, object]) -> str:
@@ -1743,9 +1746,20 @@ def build_snapshot(last_net, last_time):
     down_bps = (now_net.bytes_recv - last_net.bytes_recv) / elapsed
     up_bps = (now_net.bytes_sent - last_net.bytes_sent) / elapsed
 
-    gpu_util, gpu_temp, gpu_mem_used, gpu_mem_total, gpu_mem_pct, gpu_clock, gpu_name = get_cached_gpu_stats()
-    procs = get_cached_top_processes()
-    storage_lines = get_cached_storage_lines()
+    if PAGE_GPU_ENABLED:
+        gpu_util, gpu_temp, gpu_mem_used, gpu_mem_total, gpu_mem_pct, gpu_clock, gpu_name = get_cached_gpu_stats()
+    else:
+        gpu_util, gpu_temp, gpu_mem_used, gpu_mem_total, gpu_mem_pct, gpu_clock, gpu_name = ("0", "N/A", "0", "0", "0", "0", "GPU page disabled")
+
+    if PAGE_PROCESSES_ENABLED:
+        procs = get_cached_top_processes()
+    else:
+        procs = [("--", "--", "--") for _ in range(PROCESS_ROWS)]
+
+    if PAGE_STORAGE_ENABLED:
+        storage_lines = get_cached_storage_lines()
+    else:
+        storage_lines = ["Storage page disabled"]
     battery_pct, battery_state, battery_mode, extra_batteries = get_cached_battery_status()
     qbittorrent = get_cached_qbittorrent_status()
 

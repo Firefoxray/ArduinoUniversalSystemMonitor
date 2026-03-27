@@ -157,6 +157,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings and Flash WiFi R4");
+    private final JButton saveAndRestartMonitorButton = new JButton("Save & Restart Python Monitor");
     private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
     private final JTextArea macroEntriesArea = new JTextArea(6, 52);
@@ -212,6 +213,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color darkFieldBackground = new Color(18, 29, 48);
     private final Color darkButtonBackground = new Color(70, 109, 171);
     private final Color darkCriticalButtonBackground = new Color(176, 58, 58);
+    private final Color darkRestartButtonBackground = new Color(196, 74, 74);
     private final Color darkPositiveButtonBackground = new Color(49, 145, 86);
     private final Color lightBackground = new Color(236, 242, 252);
     private final Color lightPanelBackground = new Color(248, 251, 255);
@@ -220,6 +222,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color lightFieldBackground = Color.WHITE;
     private final Color lightButtonBackground = new Color(214, 226, 245);
     private final Color lightCriticalButtonBackground = new Color(221, 92, 92);
+    private final Color lightRestartButtonBackground = new Color(235, 112, 112);
     private final Color lightPositiveButtonBackground = new Color(91, 182, 127);
 
     private boolean darkMode;
@@ -318,6 +321,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
+        saveAndRestartMonitorButton.setToolTipText("Saves machine-local monitor/module/profile settings and restarts the Python monitor service only (no Arduino flashing).");
         flashFromProfilesButton.setToolTipText("Quick flash button near profiles so page/module/profile changes can be applied to hardware immediately.");
         runProfileActionButton.setToolTipText("Runs the selected profile action from the compact menu.");
         profileActionSelector.setToolTipText("Compact profile action menu (new/save as/update/delete/import/export).");
@@ -330,7 +334,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JTabbedPane mainTabs = buildMainTabs();
 
-        add(mainTabs, BorderLayout.CENTER);
+        JPanel root = new JPanel(new BorderLayout(10, 10));
+        root.add(mainTabs, BorderLayout.CENTER);
+        root.add(buildPersistentOutputFooter(), BorderLayout.SOUTH);
+        add(root, BorderLayout.CENTER);
 
         lightModeToggle.setSelected(!darkMode);
 
@@ -544,7 +551,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JScrollPane moduleScroll = new JScrollPane(moduleTogglePanel);
         moduleScroll.setBorder(BorderFactory.createTitledBorder("Enabled Modules for Active Profile"));
         modulePanel.add(moduleScroll, BorderLayout.CENTER);
-        JLabel moduleHelper = new JLabel("<html>Profiles can enable modules independently from page toggles. Use Settings / Profiles to pick profile, then toggle modules here.</html>");
+        JLabel moduleHelper = new JLabel("<html>Profiles can enable modules independently from page toggles. If a page requires a module (for example qBittorrent), the module is auto-enabled and disabling it while dependent pages are active is blocked with a warning.</html>");
         moduleHelper.setBorder(new EmptyBorder(4, 8, 8, 8));
         modulePanel.add(moduleHelper, BorderLayout.SOUTH);
         modulePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -922,7 +929,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowFive.setAlignmentX(Component.LEFT_ALIGNMENT);
         wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
         saveMonitorSettingsButton.setFont(saveMonitorSettingsButton.getFont().deriveFont(Font.BOLD));
+        saveAndRestartMonitorButton.setFont(saveAndRestartMonitorButton.getFont().deriveFont(Font.BOLD));
         rowFive.add(saveMonitorSettingsButton);
+        rowFive.add(saveAndRestartMonitorButton);
         rowFive.add(loadMonitorSettingsButton);
         rowFive.add(wifiPortSourceLabel);
         rowFive.add(testQbittorrentConnectionButton);
@@ -937,6 +946,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + "<b>qBittorrent fields</b> map directly to monitor config keys (qbittorrent_host, qbittorrent_port, qbittorrent_username, qbittorrent_password). Use <b>Test qBittorrent Connection</b> to verify API access before restarting the service.<br>"
                 + "<b>Macro Mode groundwork</b>: macro entries + trigger model are saved in config now (Phase 1). Use large/whole-screen-safe trigger options instead of tiny touch targets until touch calibration is reliable.<br>"
                 + "<b>Load Monitor Settings</b> reloads the saved config files from this computer, including your last local values if you already saved them. That lets you review them before flashing again.<br>"
+                + "<b>Workflow:</b> choose profile, adjust pages/modules, save settings, then restart Python monitor if host-side changes were made, and flash Arduino when firmware/page headers changed.<br>"
+                + "<b>Save & Restart Python Monitor</b> writes local monitor/module state and restarts only the Python monitor service (no Arduino flash).<br>"
                 + "<b>Save Monitor Settings and Flash WiFi R4</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.<br>"
                 + "<b>Reset Wi-Fi Pairing</b> uses a deliberate USB admin command to clear only the saved EEPROM pairing on one connected UNO R4 WiFi so you can move that board to another PC without reflashing.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
@@ -985,6 +996,14 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private JPanel buildOutputPanel() {
         return buildOutputPanel(outputArea, "Command Output / Logs");
+    }
+
+    private JPanel buildPersistentOutputFooter() {
+        settingsOutputArea.setRows(7);
+        JPanel panel = buildOutputPanel(settingsOutputArea, "Command Output / Logs (Persistent Footer)");
+        panel.setPreferredSize(new Dimension(1200, 180));
+        panel.setMinimumSize(new Dimension(400, 140));
+        return panel;
     }
 
     private JPanel buildOutputPanel(JTextArea area, String title) {
@@ -1042,7 +1061,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
-        saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
+        saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
+        saveAndRestartMonitorButton.addActionListener(e -> saveMonitorConnectionSettings(false));
         testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
         resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
@@ -2424,7 +2444,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private void saveMonitorConnectionSettings() {
+    private void saveMonitorConnectionSettings(boolean flashWifiBoards) {
         String arduinoPort = "";
         Object portValue = arduinoPortSelector.isEditable()
                 ? arduinoPortSelector.getEditor().getItem()
@@ -2484,6 +2504,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         String macroTriggerModel = normalizeMacroTriggerModel(String.valueOf(macroTriggerModelSelector.getSelectedItem()));
         List<String> macroEntries = normalizeMacroEntries(macroEntriesArea.getText());
 
+        applyAutoModuleDependenciesForAllBoards(true);
+        applyMonitorModuleStateFromProfiles(true);
+
+        boolean qbittorrentEnabled = resolveEffectiveModuleEnabled(MonitorModule.QBITTORRENT);
+        boolean gamingEnabled = resolveEffectiveModuleEnabled(MonitorModule.GAMING);
+        boolean macroEnabled = resolveEffectiveModuleEnabled(MonitorModule.MACRO);
+        boolean qbittorrentPageEnabled = isPageEnabledInAnyBoard("qbittorrent");
         boolean savedMonitorConfig = false;
         boolean syncedWifiHeader = false;
         Path configPath = monitorLocalConfigPath();
@@ -2500,7 +2527,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertStringConfigValue(updated, "program_mode", programMode);
             updated = upsertStringConfigValue(updated, "macro_trigger_model", macroTriggerModel);
             updated = upsertStringArrayConfigValue(updated, "macro_entries", macroEntries);
-            updated = upsertBooleanConfigValue(updated, "qbittorrent_enabled", true);
+            updated = upsertBooleanConfigValue(updated, "qbittorrent_enabled", qbittorrentEnabled && qbittorrentPageEnabled);
+            updated = upsertBooleanConfigValue(updated, "gaming_enabled", gamingEnabled);
+            updated = upsertBooleanConfigValue(updated, "macro_enabled", macroEnabled);
+            updated = upsertBooleanConfigValue(updated, "page_qbittorrent_enabled", qbittorrentPageEnabled);
+            updated = upsertBooleanConfigValue(updated, "page_processes_enabled", isPageEnabledInAnyBoard("processes"));
+            updated = upsertBooleanConfigValue(updated, "page_gpu_enabled", isPageEnabledInAnyBoard("gpu"));
+            updated = upsertBooleanConfigValue(updated, "page_storage_enabled", isPageEnabledInAnyBoard("storage"));
             updated = upsertStringConfigValue(updated, "qbittorrent_host", qbittorrentHost);
             updated = upsertNumberConfigValue(updated, "qbittorrent_port", qbittorrentPort);
             updated = upsertStringConfigValue(updated, "qbittorrent_url", qbittorrentUrl);
@@ -2522,6 +2555,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", program_mode=" + programMode
                         + ", macro_trigger_model=" + macroTriggerModel
                         + ", macro_entries=" + macroEntries.size()
+                        + ", qbittorrent_enabled=" + (qbittorrentEnabled && qbittorrentPageEnabled)
+                        + ", gaming_enabled=" + gamingEnabled
+                        + ", macro_enabled=" + macroEnabled
                         + ", qbittorrent_host=" + qbittorrentHost
                         + ", qbittorrent_port=" + qbittorrentPort
                         + ", qbittorrent_username=" + (qbittorrentUsername.isBlank() ? "<unset>" : qbittorrentUsername)
@@ -2558,18 +2594,23 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (syncedPageHeaders) {
             log("[INFO] Synced board page toggle headers so disabled pages are skipped during on-device navigation.");
         }
-        log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort
-                + ", connection mode " + (wifiAutoDiscovery ? "Auto Discovery (UDP)" : "Manual / Fixed IP")
-                + ", program mode " + programMode
-                + ", macro trigger model " + macroTriggerModel
-                + ", macro entries " + macroEntries.size()
-                + ", wifi host/ip " + (wifiAutoDiscovery || wifiHost.isBlank() ? "<unset>" : wifiHost)
-                + ", board name " + wifiBoardName + ", target host/ip " + (wifiTargetHost.isBlank() ? "<unset>" : wifiTargetHost)
-                + ", target hostname " + (wifiTargetHostname.isBlank() ? "<unset>" : wifiTargetHostname)
-                + ", R4 rotation " + rotationLabel(r4Rotation)
-                + ", R3 rotation " + rotationLabel(r3Rotation)
-                + ", and Mega rotation " + rotationLabel(megaRotation) + " apply right away.");
-        reflashWifiBoardsAndRestartMonitor(wifiPort);
+        if (flashWifiBoards) {
+            log("[INFO] Save Monitor Settings now recompiles/uploads the R4 WiFi sketch so TCP port " + wifiPort
+                    + ", connection mode " + (wifiAutoDiscovery ? "Auto Discovery (UDP)" : "Manual / Fixed IP")
+                    + ", program mode " + programMode
+                    + ", macro trigger model " + macroTriggerModel
+                    + ", macro entries " + macroEntries.size()
+                    + ", wifi host/ip " + (wifiAutoDiscovery || wifiHost.isBlank() ? "<unset>" : wifiHost)
+                    + ", board name " + wifiBoardName + ", target host/ip " + (wifiTargetHost.isBlank() ? "<unset>" : wifiTargetHost)
+                    + ", target hostname " + (wifiTargetHostname.isBlank() ? "<unset>" : wifiTargetHostname)
+                    + ", R4 rotation " + rotationLabel(r4Rotation)
+                    + ", R3 rotation " + rotationLabel(r3Rotation)
+                    + ", and Mega rotation " + rotationLabel(megaRotation) + " apply right away.");
+            reflashWifiBoardsAndRestartMonitor(wifiPort);
+        } else {
+            log("[INFO] Save & Restart Python Monitor saved monitor/profile/module settings and is restarting only the Python monitor service (no Arduino flash).");
+            restartMonitorServiceForSettingsChange();
+        }
     }
 
     private String normalizeQbittorrentHost(String rawHost, String fallbackUrl) {
@@ -3771,10 +3812,11 @@ public class UniversalMonitorControlCenter extends JFrame {
             Color fieldBackground = darkMode ? darkFieldBackground : lightFieldBackground;
             Color buttonBackground = darkMode ? darkButtonBackground : lightButtonBackground;
             Color criticalButtonBackground = darkMode ? darkCriticalButtonBackground : lightCriticalButtonBackground;
+            Color restartButtonBackground = darkMode ? darkRestartButtonBackground : lightRestartButtonBackground;
             Color positiveButtonBackground = darkMode ? darkPositiveButtonBackground : lightPositiveButtonBackground;
 
             getContentPane().setBackground(background);
-            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, positiveButtonBackground);
+            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
             outputArea.setCaretColor(textColor);
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
@@ -3787,7 +3829,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent,
-                                    Color fieldBackground, Color buttonBackground, Color criticalButtonBackground, Color positiveButtonBackground) {
+                                    Color fieldBackground, Color buttonBackground, Color criticalButtonBackground, Color restartButtonBackground, Color positiveButtonBackground) {
         if (component instanceof JPanel panel) {
             panel.setOpaque(true);
             panel.setBackground(panelBackground);
@@ -3848,14 +3890,15 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         } else if (component instanceof AbstractButton button) {
             boolean isCriticalFlashButton = button == flashButton || button == saveMonitorSettingsButton || button == flashFromProfilesButton;
+            boolean isRestartButton = button == saveAndRestartMonitorButton;
             Color resolvedButtonBackground = isCriticalFlashButton
                     ? criticalButtonBackground
-                    : (button == updateButton ? positiveButtonBackground : buttonBackground);
+                    : (isRestartButton ? restartButtonBackground : (button == updateButton ? positiveButtonBackground : buttonBackground));
             button.setBackground(resolvedButtonBackground);
             button.setForeground(textColor);
             button.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(
-                            (isCriticalFlashButton || button == updateButton)
+                            (isCriticalFlashButton || isRestartButton || button == updateButton)
                                     ? resolvedButtonBackground.darker() : accent
                     ),
                     BorderFactory.createEmptyBorder(6, 10, 6, 10)
@@ -3891,7 +3934,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) {
-                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, positiveButtonBackground);
+                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
             }
         }
     }
@@ -4862,6 +4905,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                     persistBoardPageProfiles();
                 }
                 settings.pageEnabled.put(page.id(), box.isSelected());
+                if (box.isSelected()) {
+                    enforcePageModuleDependencies(board, settings.activeProfile, settings.pageEnabled, true);
+                    refreshModuleToggleView();
+                }
             });
             boardPageCheckboxes.put(page.id(), box);
             JPanel card = new JPanel(new BorderLayout());
@@ -4874,6 +4921,66 @@ public class UniversalMonitorControlCenter extends JFrame {
         boardPageTogglePanel.revalidate();
         boardPageTogglePanel.repaint();
         applyTheme();
+    }
+
+    private void applyAutoModuleDependenciesForAllBoards(boolean verbose) {
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            BoardPageSettings settings = boardPageSettings.get(board.id());
+            if (settings == null) continue;
+            enforcePageModuleDependencies(board, settings.activeProfile, settings.pageEnabled, verbose);
+        }
+        refreshModuleToggleView();
+    }
+
+    private boolean enforcePageModuleDependencies(BoardProfileTarget board, String profileName, Map<String, Boolean> pageState, boolean verbose) {
+        Set<String> enabledModules = profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
+        boolean changed = false;
+        for (PageDefinition page : board.pages()) {
+            if (!pageState.getOrDefault(page.id(), pageDefaultEnabled(board, page.id()))) continue;
+            MonitorModule dependency = requiredModuleForPage(board, page.id());
+            if (dependency != null && !enabledModules.contains(dependency.id())) {
+                enabledModules.add(dependency.id());
+                changed = true;
+                if (verbose) {
+                    log("[INFO] Auto-enabled module '" + dependency.label() + "' because page '" + page.label() + "' is enabled in profile '" + profileName + "'.");
+                }
+            }
+        }
+        if (changed) persistBoardPageProfiles();
+        return changed;
+    }
+
+    private MonitorModule requiredModuleForPage(BoardProfileTarget board, String pageId) {
+        if (board == BoardProfileTarget.R4_WIFI && "qbittorrent".equals(pageId)) {
+            return MonitorModule.QBITTORRENT;
+        }
+        return null;
+    }
+
+    private boolean resolveEffectiveModuleEnabled(MonitorModule module) {
+        BoardPageSettings r4 = boardPageSettings.get(BoardProfileTarget.R4_WIFI.id());
+        String profileName = r4 == null ? DEFAULT_PAGE_PROFILE_NAME : r4.activeProfile;
+        Set<String> enabledModules = profileEnabledModules.getOrDefault(profileName, Set.of());
+        return enabledModules.contains(module.id());
+    }
+
+    private boolean isPageEnabledInAnyBoard(String pageId) {
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            BoardPageSettings settings = boardPageSettings.get(board.id());
+            if (settings == null) continue;
+            if (settings.pageEnabled.getOrDefault(pageId, pageDefaultEnabled(board, pageId))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void applyMonitorModuleStateFromProfiles(boolean verbose) {
+        boolean qbittorrentPageEnabled = isPageEnabledInAnyBoard("qbittorrent");
+        boolean qbittorrentEnabled = resolveEffectiveModuleEnabled(MonitorModule.QBITTORRENT) && qbittorrentPageEnabled;
+        if (!qbittorrentEnabled && verbose) {
+            log("[INFO] qBittorrent module/page combination is disabled, so Python monitor polling for qBittorrent will remain inactive after restart.");
+        }
     }
 
     private void runSelectedProfileAction() {
@@ -4906,6 +5013,14 @@ public class UniversalMonitorControlCenter extends JFrame {
                 if (box.isSelected()) {
                     enabledModules.add(module.id());
                 } else {
+                    if (moduleHasEnabledDependentPages(module, profileName)) {
+                        JOptionPane.showMessageDialog(this,
+                                "One or more enabled pages in this profile depend on " + module.label() + ". Disable those pages first or keep the module enabled.",
+                                "Module dependency",
+                                JOptionPane.WARNING_MESSAGE);
+                        box.setSelected(true);
+                        return;
+                    }
                     enabledModules.remove(module.id());
                 }
                 persistBoardPageProfiles();
@@ -4918,6 +5033,22 @@ public class UniversalMonitorControlCenter extends JFrame {
         moduleTogglePanel.revalidate();
         moduleTogglePanel.repaint();
         applyTheme();
+    }
+
+    private boolean moduleHasEnabledDependentPages(MonitorModule module, String profileName) {
+        for (BoardProfileTarget board : BoardProfileTarget.values()) {
+            BoardPageSettings settings = boardPageSettings.get(board.id());
+            if (settings == null || !profileName.equals(settings.activeProfile)) {
+                continue;
+            }
+            for (PageDefinition page : board.pages()) {
+                MonitorModule dependency = requiredModuleForPage(board, page.id());
+                if (dependency == module && settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id()))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void applySelectedProfileToCurrentBoard() {
@@ -5098,6 +5229,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private boolean saveBoardPageSettingsAndSyncHeaders(boolean verbose) {
         ensureAtLeastOnePageEnabledPerBoard();
+        applyAutoModuleDependenciesForAllBoards(verbose);
         persistBoardPageProfiles();
         boolean synced = syncBoardPageConfigHeaders();
         if (verbose) {
