@@ -1,5 +1,13 @@
 # Changelog
 
+## v9.7.1 - 2026-03-27
+- Bumped the shared project version to v9.7.1 so VERSION-driven Python/Java/Arduino version displays stay aligned.
+- Changed Wi-Fi connection priority so a configured fixed `wifi_host` is attempted first over direct TCP, with UDP discovery treated as optional fallback/debug behavior.
+- Updated monitor startup/runtime logging to explicitly call out direct host/IP attempts versus discovery fallback attempts.
+- Improved UDP discovery robustness by broadcasting to interface-derived directed broadcast addresses in addition to `255.255.255.255`.
+- Updated Control Center Wi-Fi wording/modes to make fixed host/IP the recommended default workflow and discovery the secondary fallback path.
+- Kept discovery troubleshooting tooling available (including debug toggles and network scan) while improving scan broadcast coverage on multi-interface Linux hosts.
+
 ## v9.7 - 2026-03-24
 - Bumped the shared project version to v9.7 so VERSION-driven Python/Java/Arduino version displays stay aligned.
 - Made the Control Center Update button use a positive green theme style and renamed the default flash action to "Flash Arduino's".
@@ -8,6 +16,12 @@
 - Corrected the R4 profile-page label mapping from "Storage" to "Extra Statistics" while preserving the existing firmware page macro IDs.
 - Moved board profile persistence to a machine-local config path with legacy migration support, and added Control Center import/export actions for manual backup/restore to any filesystem location.
 - Ensured imported/saved board profile settings are immediately re-applied/synced to generated page_config.local.h headers so explicit profile choices remain the source of truth.
+
+## v9.6.0 - 2026-03-23
+- Updated Control Center profile persistence/import-export behavior so board profile changes are easier to keep consistent per machine.
+- Fixed board page naming/styling mismatches in the Control Center profile flow.
+- Separated UNO R3 vs Mega screen-size flashing selectors so board families no longer share one size choice.
+- Tightened profile-to-page application behavior so selected profile choices apply more predictably.
 
 ## v9.5.3 - 2026-03-23
 - Bumped the shared project version to v9.5.3 so the repo VERSION file, generated Arduino headers, Python monitor startup banner, Control Center title/header, and flashing output stay aligned.

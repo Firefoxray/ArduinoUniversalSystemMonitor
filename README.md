@@ -3,8 +3,8 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett
-**Version:** v9.7
-**Last Modified:** March 24, 2026
+**Version:** v9.7.1
+**Last Modified:** March 27, 2026
 
 ---
 
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.7 Includes
+## What v9.7.1 Includes
 
-Release **v9.7** focuses on Control Center profile reliability and board mapping accuracy: profile settings now stay machine-local with manual import/export support, UNO R3 and Mega screen-size flashing selectors are independent, R4 profile naming now shows Extra Statistics, Home-page disable prompts protect first-time setup, and profile toggle/theme behavior was hardened so board page choices stick as expected.
+Release **v9.7.1** keeps the v9.7 profile/board reliability work and now prioritizes fixed host/IP Wi-Fi workflows: direct TCP host/IP connection is treated as the primary path, UDP discovery is now positioned as optional fallback/debug behavior, Control Center wording/modes were updated to recommend fixed-IP first, and discovery broadcast handling was made more interface-aware for tougher Linux network paths.
 
 ### Major highlights
 
@@ -247,7 +247,7 @@ The Control Center treats the JSON monitor config as the main source of truth an
 
 If you have more than one UNO R4 WiFi on the same network, the recommended setup order is:
 
-1. Start with **manual / fixed IP mode**
+1. Start with **Fixed Host/IP Only (Recommended)**
 2. Give each board a **unique Wi-Fi device name**
 3. Optionally move back to discovery after pairing fields are correct
 
@@ -522,6 +522,8 @@ debug_tools/FakeArduinoDisplay/README.md
 9.5.2 - Added smarter update pre-checks, restored the full changelog presence in the docs, kept the program headers on v9.5.2, and refreshed the README preview image set.
 9.5.3 - Bumped the project to v9.5.3 and reworked the Arduino page layouts for better readability, simpler tap-to-advance navigation on the Mega / R3 variants, split GPU/network and storage/power views, and added hostname + uptime to the R4 graph footer.
 9.6.0 - Updated Control Center profile persistence/import-export, fixed board page naming/styling issues, separated UNO R3 vs Mega screen-size flashing selectors, and tightened profile-to-page application behavior.
+9.7.0 - Hardened Control Center profile reliability, board mapping accuracy, and profile persistence/import-export safeguards.
+9.7.1 - Promoted fixed host/IP Wi-Fi to the primary recommended path, made UDP discovery an optional fallback/debug flow, and improved Linux discovery broadcast targeting.
 ```
 
 ---
