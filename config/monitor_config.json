@@ -21,5 +21,13 @@
   "wifi_discovery_ignore_board_filter": false,
   "program_mode": "System Monitor",
   "macro_trigger_model": "Whole-screen tap cycles entries",
-  "macro_entries": []
+  "macro_entries": [],
+  "qbittorrent_enabled": true,
+  "qbittorrent_host": "127.0.0.1",
+  "qbittorrent_port": 8080,
+  "qbittorrent_url": "http://127.0.0.1:8080",
+  "qbittorrent_username": "",
+  "qbittorrent_password": "",
+  "qbittorrent_timeout": 1.5,
+  "qbittorrent_poll_interval": 2.0
 }
