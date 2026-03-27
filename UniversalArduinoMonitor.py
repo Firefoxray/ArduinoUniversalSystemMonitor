@@ -126,7 +126,7 @@ def load_config() -> Dict[str, object]:
         "program_mode": "System Monitor",
         "macro_trigger_model": "Whole-screen tap cycles entries",
         "macro_entries": [],
-        "qbittorrent_enabled": True,
+        "qbittorrent_enabled": False,
         "qbittorrent_host": "127.0.0.1",
         "qbittorrent_port": 8080,
         "qbittorrent_url": "http://127.0.0.1:8080",
@@ -308,7 +308,7 @@ WIFI_DEVICE_NAME = normalize_identity_value(read_wifi_header_define("WIFI_DEVICE
 WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOST_VALUE", ""), 64)
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
 WIFI_PAIRING_MAGIC = "UAM_PAIR"
-QBITTORRENT_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_ENABLED", CONFIG.get("qbittorrent_enabled")), True)
+QBITTORRENT_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_ENABLED", CONFIG.get("qbittorrent_enabled")), False)
 PAGE_PROCESSES_ENABLED = to_bool(CONFIG.get("page_processes_enabled"), True)
 PAGE_GPU_ENABLED = to_bool(CONFIG.get("page_gpu_enabled"), True)
 PAGE_STORAGE_ENABLED = to_bool(CONFIG.get("page_storage_enabled"), True)

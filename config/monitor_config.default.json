@@ -22,7 +22,7 @@
   "program_mode": "System Monitor",
   "macro_trigger_model": "Whole-screen tap cycles entries",
   "macro_entries": [],
-  "qbittorrent_enabled": true,
+  "qbittorrent_enabled": false,
   "qbittorrent_host": "127.0.0.1",
   "qbittorrent_port": 8080,
   "qbittorrent_url": "http://127.0.0.1:8080",

@@ -4600,7 +4600,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private boolean pageDefaultEnabled(BoardProfileTarget board, String pageId) {
-        return !(board == BoardProfileTarget.R4_WIFI && "qbittorrent".equals(pageId));
+        return !"qbittorrent".equals(pageId);
     }
 
     private Map<String, Map<String, Boolean>> defaultsForEveryBoard(boolean enabled) {
@@ -4951,7 +4951,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private MonitorModule requiredModuleForPage(BoardProfileTarget board, String pageId) {
-        if (board == BoardProfileTarget.R4_WIFI && "qbittorrent".equals(pageId)) {
+        if ("qbittorrent".equals(pageId)) {
             return MonitorModule.QBITTORRENT;
         }
         return null;
@@ -5567,14 +5567,16 @@ public class UniversalMonitorControlCenter extends JFrame {
                 new PageDefinition("network", "Network"),
                 new PageDefinition("storage", "Storage"),
                 new PageDefinition("power", "Power"),
-                new PageDefinition("usage_graph", "Usage Graph")
+                new PageDefinition("usage_graph", "Usage Graph"),
+                new PageDefinition("qbittorrent", "qBittorrent")
         )),
         UNO_R3_35("uno_r3_35", "UNO R3 3.5", List.of(
                 new PageDefinition("home", "Home"),
                 new PageDefinition("cpu", "CPU + Processes"),
                 new PageDefinition("gpu", "GPU + Network"),
                 new PageDefinition("storage", "Storage + Totals"),
-                new PageDefinition("usage_graph", "Usage Graph")
+                new PageDefinition("usage_graph", "Usage Graph"),
+                new PageDefinition("qbittorrent", "qBittorrent")
         )),
         MEGA_28("mega_28", "Mega 2.8", List.of(
                 new PageDefinition("home", "Home"),
@@ -5593,7 +5595,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 new PageDefinition("network", "Network"),
                 new PageDefinition("gpu", "GPU"),
                 new PageDefinition("storage", "Storage"),
-                new PageDefinition("usage_graph", "Usage Graph")
+                new PageDefinition("usage_graph", "Usage Graph"),
+                new PageDefinition("qbittorrent", "qBittorrent")
         ));
 
         private final String id;
@@ -5623,7 +5626,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         static BoardPageSettings defaultsFor(BoardProfileTarget board) {
             BoardPageSettings settings = new BoardPageSettings();
             for (PageDefinition page : board.pages()) {
-                boolean enabledByDefault = !(board == BoardProfileTarget.R4_WIFI && "qbittorrent".equals(page.id()));
+                boolean enabledByDefault = !"qbittorrent".equals(page.id());
                 settings.pageEnabled.put(page.id(), enabledByDefault);
             }
             return settings;

@@ -44,6 +44,9 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_PAGE_QBITTORRENT_ENABLED
+#define UASM_PAGE_QBITTORRENT_ENABLED 0
+#endif
 
 MCUFRIEND_kbv tft;
 
@@ -73,7 +76,7 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 const int SCREEN_W = 320;
 const int SCREEN_H = 240;
-const uint8_t TOTAL_PAGES = 7;
+const uint8_t TOTAL_PAGES = 8;
 const uint8_t GRAPH_POINTS = 16;
 const uint8_t FIELD_COUNT = 73;
 
@@ -89,7 +92,8 @@ const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_NETWORK_ENABLED != 0,
   UASM_PAGE_STORAGE_ENABLED != 0,
   UASM_PAGE_POWER_ENABLED != 0,
-  UASM_PAGE_USAGE_GRAPH_ENABLED != 0
+  UASM_PAGE_USAGE_GRAPH_ENABLED != 0,
+  UASM_PAGE_QBITTORRENT_ENABLED != 0
 };
 
 uint8_t currentPage = 0;
@@ -134,12 +138,20 @@ char batteryStateStr[16] = "DESKTOP";
 char batteryModeStr[12] = "DESKTOP";
 char batteryLabel[3][16];
 char batteryState[3][14];
+char qbtStatus[24] = "qBt unavailable";
+char qbtActiveDownloads[8] = "--";
+char qbtDownSpeed[14] = "--";
+char qbtUpSpeed[14] = "--";
+char qbtTopTorrent[20] = "--";
+char qbtProgress[10] = "--";
+char qbtEta[12] = "--";
 
 // Streaming parser state (replaces giant line buffer)
 char fieldBuf[40];
 uint8_t fieldPos = 0;
 uint8_t fieldIndex = 0;
 bool lineOverflow = false;
+bool commandLine = false;
 
 static void safeCopy(char* dst, size_t dstSize, const char* src) {
   if (!dst || dstSize == 0) return;
@@ -312,7 +324,8 @@ static void drawCurrentLayout() {
   else if (currentPage == 3) drawHeader(F("Network"), 4);
   else if (currentPage == 4) drawHeader(F("Storage"), 5);
   else if (currentPage == 5) drawHeader(F("Power"), 6);
-  else drawHeader(F("Usage Graph"), 7);
+  else if (currentPage == 6) drawHeader(F("Usage Graph"), 7);
+  else drawHeader(F("qBittorrent"), 8);
 }
 
 static void updateHome() {
@@ -428,6 +441,18 @@ static void updateGraph() {
   tft.setTextColor(MAGENTA); tft.setCursor(228, 162); tft.print(F("VRM ")); tft.print(gpuMemPct); tft.print('%');
 }
 
+
+static void updateQbittorrent() {
+  drawBigKV(34, F("State"), qbtStatus, CYAN);
+  drawBigKV(56, F("Act"), qbtActiveDownloads, GREEN);
+  drawBigKV(78, F("Down"), qbtDownSpeed, GREEN);
+  drawBigKV(100, F("Up"), qbtUpSpeed, YELLOW);
+  drawBigKV(122, F("Prog"), qbtProgress, ORANGE);
+  drawBigKV(144, F("ETA"), qbtEta, MAGENTA);
+  drawBigKV(166, F("Top"), qbtTopTorrent, WHITE);
+  drawBigKV(188, F("Host"), hostName, WHITE);
+}
+
 static void updateCurrentPage() {
   if (millis() - lastScreenUpdate < minRedrawIntervalMs) return;
   lastScreenUpdate = millis();
@@ -438,7 +463,8 @@ static void updateCurrentPage() {
   else if (currentPage == 3) updateNetwork();
   else if (currentPage == 4) updateStorage();
   else if (currentPage == 5) updatePower();
-  else updateGraph();
+  else if (currentPage == 6) updateGraph();
+  else updateQbittorrent();
 }
 
 static bool readTouchPressed() {
@@ -474,7 +500,19 @@ static void resetLineParser() {
   fieldPos = 0;
   fieldIndex = 0;
   lineOverflow = false;
+  commandLine = false;
   fieldBuf[0] = '\0';
+}
+
+
+static void applyQbtField(uint8_t idx, const char* value) {
+  if (idx == 1) safeCopy(qbtStatus, sizeof(qbtStatus), value);
+  else if (idx == 2) safeCopy(qbtActiveDownloads, sizeof(qbtActiveDownloads), value);
+  else if (idx == 3) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
+  else if (idx == 4) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
+  else if (idx == 5) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
+  else if (idx == 6) safeCopy(qbtProgress, sizeof(qbtProgress), value);
+  else if (idx == 7) safeCopy(qbtEta, sizeof(qbtEta), value);
 }
 
 static void applyField(uint8_t idx, const char* value) {
@@ -542,8 +580,15 @@ static void applyField(uint8_t idx, const char* value) {
 static void finalizeField() {
   if (lineOverflow) return;
   fieldBuf[fieldPos] = '\0';
+  if (fieldIndex == 0 && strcmp(fieldBuf, "QBT") == 0) {
+    commandLine = true;
+    fieldIndex = 1;
+    fieldPos = 0;
+    return;
+  }
   if (fieldIndex < FIELD_COUNT) {
-    applyField(fieldIndex, fieldBuf);
+    if (commandLine) applyQbtField(fieldIndex, fieldBuf);
+    else applyField(fieldIndex, fieldBuf);
     fieldIndex++;
   } else {
     lineOverflow = true;
@@ -556,7 +601,9 @@ static void feedIncomingChar(char c) {
 
   if (c == '\n') {
     finalizeField();
-    if (!lineOverflow && fieldIndex == FIELD_COUNT) {
+    if (commandLine) {
+      if (!lineOverflow && fieldIndex == 8) dataDirty = true;
+    } else if (!lineOverflow && fieldIndex == FIELD_COUNT) {
       pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
       dataDirty = true;
     }
