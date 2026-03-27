@@ -23,6 +23,9 @@ import subprocess
 import time
 import fcntl
 import ipaddress
+import urllib.parse
+import urllib.request
+import http.cookiejar
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
@@ -123,6 +126,12 @@ def load_config() -> Dict[str, object]:
         "program_mode": "System Monitor",
         "macro_trigger_model": "Whole-screen tap cycles entries",
         "macro_entries": [],
+        "qbittorrent_enabled": True,
+        "qbittorrent_url": "http://127.0.0.1:8080",
+        "qbittorrent_username": "",
+        "qbittorrent_password": "",
+        "qbittorrent_timeout": 1.5,
+        "qbittorrent_poll_interval": 2.0,
     }
     for path in (DEFAULT_CONFIG_PATH, CONFIG_PATH, LOCAL_CONFIG_PATH):
         try:
@@ -237,6 +246,7 @@ STATIC_CACHE_TTL = 30.0
 TEMP_CACHE_TTL = 1.0
 STORAGE_CACHE_TTL = 10.0
 BATTERY_CACHE_TTL = 10.0
+QBT_CACHE_TTL = max(0.5, to_float(CONFIG.get("qbittorrent_poll_interval"), 2.0))
 
 ROOT_MOUNT = str(CONFIG.get("root_mount") or os.environ.get("ARDUINO_MONITOR_ROOT") or "/")
 CONFIG_SECONDARY_MOUNT = str(CONFIG.get("secondary_mount") or "").strip()
@@ -296,6 +306,20 @@ WIFI_DEVICE_NAME = normalize_identity_value(read_wifi_header_define("WIFI_DEVICE
 WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOST_VALUE", ""), 64)
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
 WIFI_PAIRING_MAGIC = "UAM_PAIR"
+QBITTORRENT_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_ENABLED", CONFIG.get("qbittorrent_enabled")), True)
+QBITTORRENT_URL = str(
+    os.environ.get("ARDUINO_MONITOR_QBITTORRENT_URL", CONFIG.get("qbittorrent_url", "http://127.0.0.1:8080"))
+).strip().rstrip("/")
+QBITTORRENT_USERNAME = str(
+    os.environ.get("ARDUINO_MONITOR_QBITTORRENT_USERNAME", CONFIG.get("qbittorrent_username", ""))
+).strip()
+QBITTORRENT_PASSWORD = str(
+    os.environ.get("ARDUINO_MONITOR_QBITTORRENT_PASSWORD", CONFIG.get("qbittorrent_password", ""))
+).strip()
+QBITTORRENT_TIMEOUT = max(
+    0.5,
+    to_float(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_TIMEOUT", CONFIG.get("qbittorrent_timeout")), 1.5),
+)
 
 
 _gpu_cache = {"ts": 0.0, "data": None}
@@ -304,6 +328,7 @@ _static_cache = {"ts": 0.0, "data": None}
 _temp_cache = {"ts": 0.0, "data": None}
 _storage_cache = {"ts": 0.0, "data": None}
 _battery_cache = {"ts": 0.0, "data": None}
+_qbt_cache = {"ts": 0.0, "data": None}
 
 
 def clean_field(text: object, max_len: int = 32) -> str:
@@ -425,6 +450,27 @@ def format_total_bytes(num_bytes: float) -> str:
     if num_bytes >= 1024:
         return f"{num_bytes / 1024:.0f} KB"
     return f"{num_bytes:.0f} B"
+
+
+def format_eta(seconds: object) -> str:
+    try:
+        secs = int(float(seconds))
+    except Exception:
+        return "--"
+    if secs < 0:
+        return "∞"
+    if secs < 60:
+        return f"{secs}s"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins}m"
+    hours = mins // 60
+    mins = mins % 60
+    if hours < 24:
+        return f"{hours}h {mins}m"
+    days = hours // 24
+    hours = hours % 24
+    return f"{days}d {hours}h"
 
 
 def format_ram_usage_gb() -> str:
@@ -1267,6 +1313,89 @@ def get_cached_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
     return _battery_cache["data"]
 
 
+def get_qbittorrent_status() -> Dict[str, str]:
+    fallback = {
+        "status": "qBittorrent unavailable",
+        "active_downloads": "--",
+        "down_speed": "--",
+        "up_speed": "--",
+        "top_torrent": "--",
+        "progress": "--",
+        "eta": "--",
+    }
+    if not QBITTORRENT_ENABLED:
+        fallback["status"] = "qBittorrent disabled"
+        return fallback
+    if not QBITTORRENT_URL:
+        return fallback
+
+    try:
+        cookie_jar = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+        opener.addheaders = [("Referer", QBITTORRENT_URL), ("User-Agent", "UASM/1.0")]
+
+        if QBITTORRENT_USERNAME:
+            login_url = f"{QBITTORRENT_URL}/api/v2/auth/login"
+            login_body = urllib.parse.urlencode({
+                "username": QBITTORRENT_USERNAME,
+                "password": QBITTORRENT_PASSWORD,
+            }).encode("utf-8")
+            with opener.open(login_url, data=login_body, timeout=QBITTORRENT_TIMEOUT) as resp:
+                login_resp = resp.read().decode("utf-8", errors="ignore").strip()
+            if "ok" not in login_resp.lower():
+                return fallback
+
+        data_url = f"{QBITTORRENT_URL}/api/v2/sync/maindata"
+        with opener.open(data_url, timeout=QBITTORRENT_TIMEOUT) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+        server_state = payload.get("server_state", {}) if isinstance(payload, dict) else {}
+        torrents_raw = payload.get("torrents", {}) if isinstance(payload, dict) else {}
+        torrents = list(torrents_raw.values()) if isinstance(torrents_raw, dict) else []
+        download_states = {"downloading", "stalleddl", "metadl", "queueddl", "forceddl", "checkingdl"}
+        active = []
+        for torrent in torrents:
+            if isinstance(torrent, dict) and str(torrent.get("state", "")).lower() in download_states:
+                active.append(torrent)
+
+        dl_speed = float(server_state.get("dl_info_speed", 0.0) or 0.0)
+        up_speed = float(server_state.get("up_info_speed", 0.0) or 0.0)
+
+        if active:
+            top = max(active, key=lambda t: float(t.get("dlspeed", 0.0) or 0.0))
+            progress_value = float(top.get("progress", 0.0) or 0.0) * 100.0
+            eta_value = format_eta(top.get("eta", -1))
+            return {
+                "status": "Active downloads",
+                "active_downloads": str(len(active)),
+                "down_speed": format_speed(dl_speed),
+                "up_speed": format_speed(up_speed),
+                "top_torrent": clean_field(top.get("name", "--"), 60),
+                "progress": f"{progress_value:.1f}%",
+                "eta": eta_value,
+            }
+
+        return {
+            "status": "No active torrents",
+            "active_downloads": "0",
+            "down_speed": format_speed(dl_speed),
+            "up_speed": format_speed(up_speed),
+            "top_torrent": "--",
+            "progress": "--",
+            "eta": "--",
+        }
+    except Exception:
+        return fallback
+
+
+def get_cached_qbittorrent_status() -> Dict[str, str]:
+    now = time.time()
+    if _qbt_cache["data"] is None or (now - _qbt_cache["ts"]) >= QBT_CACHE_TTL:
+        _qbt_cache["data"] = get_qbittorrent_status()
+        _qbt_cache["ts"] = now
+    return _qbt_cache["data"]
+
+
 def get_optical_status() -> str:
     dev = Path("/dev/sr0")
     if not dev.exists():
@@ -1578,6 +1707,7 @@ def build_snapshot(last_net, last_time):
     procs = get_cached_top_processes()
     storage_lines = get_cached_storage_lines()
     battery_pct, battery_state, battery_mode, extra_batteries = get_cached_battery_status()
+    qbittorrent = get_cached_qbittorrent_status()
 
     snapshot = {
         "cpu_total": int(round(cpu_total_val)),
@@ -1611,6 +1741,7 @@ def build_snapshot(last_net, last_time):
         "battery_state": clean_field(battery_state, 18),
         "battery_mode": clean_field(battery_mode, 10),
         "extra_batteries": extra_batteries,
+        "qbittorrent": qbittorrent,
     }
 
     return snapshot, now_net, now_time
@@ -1669,6 +1800,21 @@ def build_arduino_payload(snapshot) -> str:
             f"Arduino payload field count mismatch: built {len(fields)} fields, "
             f"expected {ARDUINO_PAYLOAD_FIELD_COUNT}"
         )
+    return "|".join(fields) + "\n"
+
+
+def build_qbittorrent_payload(snapshot) -> str:
+    qbt = snapshot["qbittorrent"]
+    fields = [
+        "QBT",
+        clean_field(qbt.get("status", "qBittorrent unavailable"), 36),
+        clean_field(qbt.get("active_downloads", "--"), 6),
+        clean_field(qbt.get("down_speed", "--"), 18),
+        clean_field(qbt.get("up_speed", "--"), 18),
+        clean_field(qbt.get("top_torrent", "--"), 60),
+        clean_field(qbt.get("progress", "--"), 10),
+        clean_field(qbt.get("eta", "--"), 18),
+    ]
     return "|".join(fields) + "\n"
 
 
@@ -1813,6 +1959,8 @@ def main() -> None:
 
                 snapshot, last_net, last_time = build_snapshot(last_net, last_time)
                 payload = build_arduino_payload(snapshot)
+                qbt_payload = build_qbittorrent_payload(snapshot)
+                outbound_payload = payload + qbt_payload
 
                 wifi_retry_delay = current_wifi_retry_delay(monitor_start, last_wifi_success, now)
 
@@ -1871,10 +2019,10 @@ def main() -> None:
                     arduino_serials = connect_arduinos(arduino_serials)
 
                 if arduino_serials:
-                    arduino_serials = send_to_usb_devices(payload, arduino_serials)
+                    arduino_serials = send_to_usb_devices(outbound_payload, arduino_serials)
 
                 if wifi_sock is not None:
-                    wifi_sock = send_to_wifi_device(payload, wifi_sock)
+                    wifi_sock = send_to_wifi_device(outbound_payload, wifi_sock)
                     if wifi_sock is None:
                         last_wifi_attempt = now
                         if WIFI_AUTO_DISCOVERY and not WIFI_HOST:
