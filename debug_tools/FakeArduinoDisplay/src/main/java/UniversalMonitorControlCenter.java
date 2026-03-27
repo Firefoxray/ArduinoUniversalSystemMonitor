@@ -12,12 +12,18 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -46,6 +52,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String PROGRAM_MODE_SYSTEM_MONITOR = "System Monitor";
     private static final String PROGRAM_MODE_GAMING = "Gaming Mode";
     private static final String PROGRAM_MODE_MACRO = "Macro Mode";
+    private static final String DEFAULT_QBITTORRENT_HOST = "127.0.0.1";
+    private static final int DEFAULT_QBITTORRENT_PORT = 8080;
     private static final int MAX_MACRO_ENTRIES = 8;
     private static final int DISPLAY_ROTATION_NORMAL = 1;
     private static final int DISPLAY_ROTATION_FLIPPED = 3;
@@ -137,6 +145,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     });
     private final JTextField wifiPortField = new JTextField(6);
     private final JTextField wifiHostField = new JTextField(14);
+    private final JTextField qbittorrentHostField = new JTextField(14);
+    private final JTextField qbittorrentPortField = new JTextField(6);
+    private final JTextField qbittorrentUsernameField = new JTextField(12);
+    private final JPasswordField qbittorrentPasswordField = new JPasswordField(12);
     private final JTextField wifiBoardNameField = new JTextField(14);
     private final JTextField wifiTargetHostField = new JTextField(14);
     private final JTextField wifiTargetHostnameField = new JTextField(14);
@@ -144,6 +156,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
+    private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
     private final JTextArea macroEntriesArea = new JTextArea(6, 52);
     private final JComboBox<String> macroTriggerModelSelector = new JComboBox<>(new String[]{
@@ -288,12 +301,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         remoteProfileSelector.setToolTipText("Saved SSH targets. Choose one to fill host/user/port/repo quickly.");
         programModeSelector.setToolTipText("Select overall program/board mode. Stored in JSON config as program_mode and passed into flash workflows.");
         wifiHostField.setToolTipText("Primary/recommended path: set this to the Arduino board address this PC should talk to, like 192.168.1.50 or a hostname. The monitor always tries this first when set.");
+        qbittorrentHostField.setToolTipText("qBittorrent Web UI host/IP for API calls, for example 127.0.0.1 or 192.168.0.161.");
+        qbittorrentPortField.setToolTipText("qBittorrent Web UI port, for example 8080.");
+        qbittorrentUsernameField.setToolTipText("Optional qBittorrent Web UI username. Leave blank only if your Web UI API allows anonymous access.");
+        qbittorrentPasswordField.setToolTipText("Optional qBittorrent Web UI password used when username is set.");
         wifiBoardNameField.setToolTipText("Easy nickname for the Arduino board, like OFFICE_PC_SCREEN or LIVING_ROOM_MONITOR. This helps Auto Discovery match the right board to the right PC when you have more than one.");
         wifiTargetHostField.setToolTipText("Optional: the IP address or network name of the PC this Arduino belongs to. Example: 192.168.1.20. Use this when each Arduino should pair with one specific computer.");
         wifiTargetHostnameField.setToolTipText("Optional: the computer name this Arduino should look for, like GAMING-PC or OFFICE-DESKTOP. This is another way to lock one Arduino to one PC.");
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
+        testQbittorrentConnectionButton.setToolTipText("Tests qBittorrent Web UI API login/version reachability using the host, port, username, and password fields.");
         resetWifiPairingButton.setToolTipText("Explicitly clears the saved EEPROM Wi-Fi pairing on one connected UNO R4 WiFi over USB so the next PC can claim it without reflashing.");
         macroEntriesArea.setToolTipText("One macro text entry per line. Used by Macro Mode groundwork and stored in monitor config.");
         macroEntriesArea.setLineWrap(true);
@@ -820,6 +838,26 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowThree.add(wifiDiscoveryIgnoreBoardFilterToggle);
         monitorSettingsPanel.add(rowThree);
 
+        JPanel rowQbit = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        rowQbit.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel qbitHostLabel = new JLabel("qBittorrent Host:");
+        qbitHostLabel.setToolTipText(qbittorrentHostField.getToolTipText());
+        rowQbit.add(qbitHostLabel);
+        rowQbit.add(qbittorrentHostField);
+        JLabel qbitPortLabel = new JLabel("Port:");
+        qbitPortLabel.setToolTipText(qbittorrentPortField.getToolTipText());
+        rowQbit.add(qbitPortLabel);
+        rowQbit.add(qbittorrentPortField);
+        JLabel qbitUserLabel = new JLabel("Username:");
+        qbitUserLabel.setToolTipText(qbittorrentUsernameField.getToolTipText());
+        rowQbit.add(qbitUserLabel);
+        rowQbit.add(qbittorrentUsernameField);
+        JLabel qbitPasswordLabel = new JLabel("Password:");
+        qbitPasswordLabel.setToolTipText(qbittorrentPasswordField.getToolTipText());
+        rowQbit.add(qbitPasswordLabel);
+        rowQbit.add(qbittorrentPasswordField);
+        monitorSettingsPanel.add(rowQbit);
+
         JLabel wifiDebugHelper = new JLabel("<html><b>Wi-Fi discovery debug help:</b><br>"
                 + "<b>Wi-Fi Discovery Debug</b> turns on detailed UDP discovery logging in the Python monitor. Use it when Auto Discovery is not finding your board, pairing is inconsistent, or the wrong board appears selected. Expect many extra log lines showing broadcast attempts, replies seen, board-name matching decisions, and fallback decisions.<br>"
                 + "<b>Ignore Board Filter</b> temporarily bypasses board-name matching while debug is enabled. Use it when you suspect your configured board name is wrong/mismatched and you want to confirm any UNO R4 WiFi is replying on the network. Expect logs to show replies that would normally be filtered out, which can include boards for other PCs.<br>"
@@ -845,6 +883,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowFive.add(wifiPortSourceLabel);
         rowFive.add(loadMonitorSettingsButton);
         rowFive.add(saveMonitorSettingsButton);
+        rowFive.add(testQbittorrentConnectionButton);
         rowFive.add(resetWifiPairingButton);
         monitorSettingsPanel.add(rowFive);
 
@@ -853,6 +892,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
                 + "If you have one Arduino per PC, give each board its own name and flash them <b>one at a time</b> so each one keeps the correct target PC info.<br>"
                 + "<b>Program Mode</b> is a staged top-level selector (System Monitor, Gaming Mode, Macro Mode). It is saved to config now and passed into flash workflows so mode-specific sketch behavior can be expanded safely later.<br>"
+                + "<b>qBittorrent fields</b> map directly to monitor config keys (qbittorrent_host, qbittorrent_port, qbittorrent_username, qbittorrent_password). Use <b>Test qBittorrent Connection</b> to verify API access before restarting the service.<br>"
                 + "<b>Macro Mode groundwork</b>: macro entries + trigger model are saved in config now (Phase 1). Use large/whole-screen-safe trigger options instead of tiny touch targets until touch calibration is reliable.<br>"
                 + "<b>Load Monitor Settings</b> reloads the saved config files from this computer, including your last local values if you already saved them. That lets you review them before flashing again.<br>"
                 + "<b>Save Monitor Settings & Flash R4 WiFi</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.<br>"
@@ -960,6 +1000,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings());
+        testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
         resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
         profileBoardSelector.addActionListener(e -> refreshBoardPageToggleView());
@@ -2081,6 +2122,14 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "program_mode",
                 "macro_trigger_model",
                 "macro_entries",
+                "qbittorrent_enabled",
+                "qbittorrent_host",
+                "qbittorrent_port",
+                "qbittorrent_url",
+                "qbittorrent_username",
+                "qbittorrent_password",
+                "qbittorrent_timeout",
+                "qbittorrent_poll_interval",
                 "r4_display_rotation",
                 "r3_display_rotation",
                 "mega_display_rotation",
@@ -2246,6 +2295,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                 macroTriggerModelSelector.setSelectedItem("Whole-screen tap cycles entries");
                 macroEntriesArea.setText("");
                 wifiHostField.setText("");
+                qbittorrentHostField.setText(DEFAULT_QBITTORRENT_HOST);
+                qbittorrentPortField.setText(String.valueOf(DEFAULT_QBITTORRENT_PORT));
+                qbittorrentUsernameField.setText("");
+                qbittorrentPasswordField.setText("");
                 wifiBoardNameField.setText(DEFAULT_WIFI_BOARD_NAME);
                 wifiTargetHostField.setText("");
                 wifiTargetHostnameField.setText("");
@@ -2270,6 +2323,11 @@ public class UniversalMonitorControlCenter extends JFrame {
             String selectedProgramMode = normalizeProgramMode(readStringConfigValue(text, "program_mode", PROGRAM_MODE_SYSTEM_MONITOR));
             String macroTriggerModel = normalizeMacroTriggerModel(readStringConfigValue(text, "macro_trigger_model", "Whole-screen tap cycles entries"));
             List<String> macroEntries = readStringArrayConfigValue(text, "macro_entries");
+            String qbittorrentUrl = readStringConfigValue(text, "qbittorrent_url", "http://" + DEFAULT_QBITTORRENT_HOST + ":" + DEFAULT_QBITTORRENT_PORT);
+            String qbittorrentHost = normalizeQbittorrentHost(readStringConfigValue(text, "qbittorrent_host", ""), qbittorrentUrl);
+            int qbittorrentPort = resolveQbittorrentPort(readStringConfigValue(text, "qbittorrent_port", ""), qbittorrentUrl);
+            String qbittorrentUsername = readStringConfigValue(text, "qbittorrent_username", "");
+            String qbittorrentPassword = readStringConfigValue(text, "qbittorrent_password", "");
             arduinoPortSelector.setSelectedItem(arduinoPort == null || arduinoPort.isBlank() ? "AUTO" : arduinoPort);
             wifiPortField.setText(String.valueOf(wifiResolution.port()));
             wifiConnectionModeSelector.setSelectedItem(wifiAutoDiscovery ? WIFI_MODE_AUTO_DISCOVERY : WIFI_MODE_MANUAL);
@@ -2279,6 +2337,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             macroTriggerModelSelector.setSelectedItem(macroTriggerModel);
             macroEntriesArea.setText(String.join("\n", macroEntries));
             wifiHostField.setText(wifiHost == null ? "" : wifiHost.trim());
+            qbittorrentHostField.setText(qbittorrentHost);
+            qbittorrentPortField.setText(String.valueOf(qbittorrentPort));
+            qbittorrentUsernameField.setText(qbittorrentUsername == null ? "" : qbittorrentUsername.trim());
+            qbittorrentPasswordField.setText(qbittorrentPassword == null ? "" : qbittorrentPassword);
             wifiBoardNameField.setText(resolveEffectiveWifiHeaderValue("WIFI_DEVICE_NAME_VALUE", DEFAULT_WIFI_BOARD_NAME));
             wifiTargetHostField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOST_VALUE", ""));
             wifiTargetHostnameField.setText(resolveEffectiveWifiHeaderValue("WIFI_TARGET_HOSTNAME_VALUE", ""));
@@ -2299,6 +2361,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", macro_trigger_model=" + macroTriggerModel
                         + ", macro_entries=" + macroEntries.size()
                         + ", wifi_host=" + (wifiHost == null || wifiHost.isBlank() ? "<unset>" : wifiHost.trim()) + "."
+                        + " qBittorrent host=" + qbittorrentHost
+                        + ", port=" + qbittorrentPort
+                        + ", username=" + (qbittorrentUsername == null || qbittorrentUsername.isBlank() ? "<unset>" : qbittorrentUsername.trim()) + "."
                         + " Board name=" + normalizeWifiBoardName(wifiBoardNameField.getText().trim())
                         + ", target host/ip=" + wifiTargetHostField.getText().trim()
                         + ", target hostname=" + wifiTargetHostnameField.getText().trim()
@@ -2343,6 +2408,22 @@ public class UniversalMonitorControlCenter extends JFrame {
             log("[WARN] Wi-Fi host/IP is required when Fixed Host/IP Only (Recommended) mode is selected.");
             return;
         }
+        String qbittorrentHost = normalizeQbittorrentHost(qbittorrentHostField.getText() == null ? "" : qbittorrentHostField.getText().trim(), null);
+        String qbittorrentPortText = qbittorrentPortField.getText() == null ? "" : qbittorrentPortField.getText().trim();
+        int qbittorrentPort;
+        try {
+            qbittorrentPort = Integer.parseInt(qbittorrentPortText);
+        } catch (NumberFormatException ex) {
+            log("[WARN] qBittorrent port must be a number.");
+            return;
+        }
+        if (qbittorrentPort < 1 || qbittorrentPort > 65535) {
+            log("[WARN] qBittorrent port must be between 1 and 65535.");
+            return;
+        }
+        String qbittorrentUsername = qbittorrentUsernameField.getText() == null ? "" : qbittorrentUsernameField.getText().trim();
+        String qbittorrentPassword = new String(qbittorrentPasswordField.getPassword());
+        String qbittorrentUrl = buildQbittorrentBaseUrl(qbittorrentHost, qbittorrentPort);
         String wifiBoardName = normalizeWifiBoardName(wifiBoardNameField.getText() == null ? "" : wifiBoardNameField.getText().trim());
         int r4Rotation = selectedRotationValue(r4RotationSelector);
         int r3Rotation = selectedRotationValue(r3RotationSelector);
@@ -2373,6 +2454,12 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertStringConfigValue(updated, "program_mode", programMode);
             updated = upsertStringConfigValue(updated, "macro_trigger_model", macroTriggerModel);
             updated = upsertStringArrayConfigValue(updated, "macro_entries", macroEntries);
+            updated = upsertBooleanConfigValue(updated, "qbittorrent_enabled", true);
+            updated = upsertStringConfigValue(updated, "qbittorrent_host", qbittorrentHost);
+            updated = upsertNumberConfigValue(updated, "qbittorrent_port", qbittorrentPort);
+            updated = upsertStringConfigValue(updated, "qbittorrent_url", qbittorrentUrl);
+            updated = upsertStringConfigValue(updated, "qbittorrent_username", qbittorrentUsername);
+            updated = upsertStringConfigValue(updated, "qbittorrent_password", qbittorrentPassword);
             updated = upsertNumberConfigValue(updated, "r4_display_rotation", r4Rotation);
             updated = upsertNumberConfigValue(updated, "r3_display_rotation", r3Rotation);
             updated = upsertNumberConfigValue(updated, "mega_display_rotation", megaRotation);
@@ -2389,6 +2476,9 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", program_mode=" + programMode
                         + ", macro_trigger_model=" + macroTriggerModel
                         + ", macro_entries=" + macroEntries.size()
+                        + ", qbittorrent_host=" + qbittorrentHost
+                        + ", qbittorrent_port=" + qbittorrentPort
+                        + ", qbittorrent_username=" + (qbittorrentUsername.isBlank() ? "<unset>" : qbittorrentUsername)
                         + ", wifi_host=" + (wifiHost.isBlank() ? "<unset>" : wifiHost)
                         + ", r4_display_rotation=" + r4Rotation
                         + ", r3_display_rotation=" + r3Rotation
@@ -2434,6 +2524,128 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + ", R3 rotation " + rotationLabel(r3Rotation)
                 + ", and Mega rotation " + rotationLabel(megaRotation) + " apply right away.");
         reflashWifiBoardsAndRestartMonitor(wifiPort);
+    }
+
+    private String normalizeQbittorrentHost(String rawHost, String fallbackUrl) {
+        String candidate = rawHost == null ? "" : rawHost.trim();
+        if (candidate.isBlank() && fallbackUrl != null && !fallbackUrl.isBlank()) {
+            try {
+                URI parsed = URI.create(fallbackUrl.trim());
+                if (parsed.getHost() != null && !parsed.getHost().isBlank()) {
+                    candidate = parsed.getHost().trim();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (candidate.startsWith("http://") || candidate.startsWith("https://")) {
+            try {
+                URI parsed = URI.create(candidate);
+                if (parsed.getHost() != null && !parsed.getHost().isBlank()) {
+                    candidate = parsed.getHost().trim();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return candidate.isBlank() ? DEFAULT_QBITTORRENT_HOST : candidate;
+    }
+
+    private int resolveQbittorrentPort(String rawPort, String fallbackUrl) {
+        if (rawPort != null && !rawPort.isBlank()) {
+            try {
+                int parsed = Integer.parseInt(rawPort.trim());
+                if (parsed >= 1 && parsed <= 65535) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if (fallbackUrl != null && !fallbackUrl.isBlank()) {
+            try {
+                URI parsed = URI.create(fallbackUrl.trim());
+                if (parsed.getPort() > 0) {
+                    return parsed.getPort();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return DEFAULT_QBITTORRENT_PORT;
+    }
+
+    private String buildQbittorrentBaseUrl(String host, int port) {
+        return "http://" + host.trim() + ":" + port;
+    }
+
+    private void testQbittorrentConnection() {
+        String host = normalizeQbittorrentHost(qbittorrentHostField.getText() == null ? "" : qbittorrentHostField.getText().trim(), null);
+        String portText = qbittorrentPortField.getText() == null ? "" : qbittorrentPortField.getText().trim();
+        int port;
+        try {
+            port = Integer.parseInt(portText);
+        } catch (NumberFormatException ex) {
+            log("[WARN] qBittorrent connection test failed: port must be numeric.");
+            return;
+        }
+        if (port < 1 || port > 65535) {
+            log("[WARN] qBittorrent connection test failed: port must be between 1 and 65535.");
+            return;
+        }
+
+        String username = qbittorrentUsernameField.getText() == null ? "" : qbittorrentUsernameField.getText().trim();
+        String password = new String(qbittorrentPasswordField.getPassword());
+        String baseUrl = buildQbittorrentBaseUrl(host, port);
+        testQbittorrentConnectionButton.setEnabled(false);
+        log("[INFO] Testing qBittorrent API endpoint " + baseUrl + " ...");
+
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(3))
+                        .build();
+                try {
+                    if (!username.isBlank()) {
+                        String form = "username=" + URLEncoder.encode(username, StandardCharsets.UTF_8)
+                                + "&password=" + URLEncoder.encode(password, StandardCharsets.UTF_8);
+                        HttpRequest loginRequest = HttpRequest.newBuilder()
+                                .uri(URI.create(baseUrl + "/api/v2/auth/login"))
+                                .timeout(Duration.ofSeconds(5))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("Referer", baseUrl)
+                                .POST(HttpRequest.BodyPublishers.ofString(form))
+                                .build();
+                        HttpResponse<String> loginResponse = client.send(loginRequest, HttpResponse.BodyHandlers.ofString());
+                        String body = loginResponse.body() == null ? "" : loginResponse.body().trim().toLowerCase(Locale.ROOT);
+                        if (loginResponse.statusCode() != 200 || !body.contains("ok")) {
+                            log("[WARN] qBittorrent login failed (HTTP " + loginResponse.statusCode() + "). Check username/password and Web UI auth settings.");
+                            return null;
+                        }
+                    }
+
+                    HttpRequest versionRequest = HttpRequest.newBuilder()
+                            .uri(URI.create(baseUrl + "/api/v2/app/version"))
+                            .timeout(Duration.ofSeconds(5))
+                            .GET()
+                            .build();
+                    HttpResponse<String> versionResponse = client.send(versionRequest, HttpResponse.BodyHandlers.ofString());
+                    if (versionResponse.statusCode() == 200) {
+                        String version = versionResponse.body() == null ? "" : versionResponse.body().trim();
+                        log("[INFO] qBittorrent connection test succeeded (" + baseUrl + ", version "
+                                + (version.isBlank() ? "unknown" : version) + ").");
+                    } else {
+                        log("[WARN] qBittorrent connection test reached host but API returned HTTP " + versionResponse.statusCode() + ".");
+                    }
+                } catch (Exception ex) {
+                    log("[WARN] qBittorrent connection test failed for " + baseUrl + ": " + ex.getMessage());
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                testQbittorrentConnectionButton.setEnabled(true);
+            }
+        };
+        worker.execute();
     }
 
     private void resetWifiPairing() {
@@ -4898,6 +5110,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             macroEntriesArea.setEnabled(enabled);
             wifiPortField.setEnabled(enabled);
             wifiHostField.setEnabled(enabled);
+            qbittorrentHostField.setEnabled(enabled);
+            qbittorrentPortField.setEnabled(enabled);
+            qbittorrentUsernameField.setEnabled(enabled);
+            qbittorrentPasswordField.setEnabled(enabled);
             wifiBoardNameField.setEnabled(enabled);
             wifiTargetHostField.setEnabled(enabled);
             wifiTargetHostnameField.setEnabled(enabled);
@@ -4906,6 +5122,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             refreshMonitorPortsButton.setEnabled(enabled);
             loadMonitorSettingsButton.setEnabled(enabled);
             saveMonitorSettingsButton.setEnabled(enabled);
+            testQbittorrentConnectionButton.setEnabled(enabled);
             resetWifiPairingButton.setEnabled(enabled);
             profileBoardSelector.setEnabled(enabled);
             activeBoardProfileSelector.setEnabled(enabled);

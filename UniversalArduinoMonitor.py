@@ -127,6 +127,8 @@ def load_config() -> Dict[str, object]:
         "macro_trigger_model": "Whole-screen tap cycles entries",
         "macro_entries": [],
         "qbittorrent_enabled": True,
+        "qbittorrent_host": "127.0.0.1",
+        "qbittorrent_port": 8080,
         "qbittorrent_url": "http://127.0.0.1:8080",
         "qbittorrent_username": "",
         "qbittorrent_password": "",
@@ -307,9 +309,47 @@ WIFI_TARGET_HOST = normalize_identity_value(read_wifi_header_define("WIFI_TARGET
 WIFI_TARGET_HOSTNAME = normalize_identity_value(read_wifi_header_define("WIFI_TARGET_HOSTNAME_VALUE", ""), 64)
 WIFI_PAIRING_MAGIC = "UAM_PAIR"
 QBITTORRENT_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_ENABLED", CONFIG.get("qbittorrent_enabled")), True)
-QBITTORRENT_URL = str(
-    os.environ.get("ARDUINO_MONITOR_QBITTORRENT_URL", CONFIG.get("qbittorrent_url", "http://127.0.0.1:8080"))
-).strip().rstrip("/")
+
+
+def resolve_qbittorrent_url(config: Dict[str, object]) -> str:
+    env_url = str(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_URL") or "").strip()
+    env_host = str(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_HOST") or "").strip()
+    env_port = os.environ.get("ARDUINO_MONITOR_QBITTORRENT_PORT")
+
+    cfg_url = str(config.get("qbittorrent_url") or "").strip()
+    cfg_host = str(config.get("qbittorrent_host") or "").strip()
+    cfg_port = config.get("qbittorrent_port")
+
+    source_url = env_url or cfg_url
+    parsed = urllib.parse.urlparse(source_url) if source_url else None
+
+    raw_host = env_host or cfg_host or (parsed.hostname if parsed else "") or "127.0.0.1"
+    host = raw_host.strip()
+    scheme = (parsed.scheme if parsed and parsed.scheme else "http").strip().lower() or "http"
+
+    if env_port not in (None, ""):
+        port = to_int(env_port, 8080)
+    elif cfg_port not in (None, ""):
+        port = to_int(cfg_port, 8080)
+    elif parsed and parsed.port:
+        port = int(parsed.port)
+    else:
+        port = 8080
+
+    if host.startswith(("http://", "https://")):
+        host_parsed = urllib.parse.urlparse(host)
+        if host_parsed.hostname:
+            host = host_parsed.hostname
+        if host_parsed.scheme:
+            scheme = host_parsed.scheme.lower()
+        if env_port in (None, "") and cfg_port in (None, "") and host_parsed.port:
+            port = int(host_parsed.port)
+
+    port = max(1, min(65535, port))
+    return f"{scheme}://{host}:{port}".rstrip("/")
+
+
+QBITTORRENT_URL = resolve_qbittorrent_url(CONFIG)
 QBITTORRENT_USERNAME = str(
     os.environ.get("ARDUINO_MONITOR_QBITTORRENT_USERNAME", CONFIG.get("qbittorrent_username", ""))
 ).strip()
