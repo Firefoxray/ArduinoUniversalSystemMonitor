@@ -80,6 +80,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JTextArea outputArea = new JTextArea();
     private final JTextArea settingsOutputArea = new JTextArea();
+    private JPanel outputPanelTab;
 
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
     private final JButton stopFakePortsButton = new JButton("Stop Fake Ports");
@@ -155,7 +156,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel wifiPortSourceLabel = new JLabel("Effective source: unknown");
     private final JButton refreshMonitorPortsButton = new JButton("Refresh Port List");
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
-    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings & Flash R4 WiFi");
+    private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings and Flash WiFi R4");
     private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
     private final JTextArea macroEntriesArea = new JTextArea(6, 52);
@@ -179,20 +180,26 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JComboBox<BoardProfileTarget> profileBoardSelector = new JComboBox<>();
     private final JComboBox<String> activeBoardProfileSelector = new JComboBox<>();
-    private final JButton applyBoardProfileButton = new JButton("Apply Profile to Board");
+    private final JButton applyBoardProfileButton = new JButton("Apply Profile");
     private final JButton saveBoardSettingsButton = new JButton("Save Board Page Settings");
-    private final JButton newProfileButton = new JButton("New Profile");
-    private final JButton saveProfileAsButton = new JButton("Save As Profile");
-    private final JButton updateProfileButton = new JButton("Update Profile");
-    private final JButton deleteProfileButton = new JButton("Delete Profile");
-    private final JButton exportProfilesButton = new JButton("Export Profiles...");
-    private final JButton importProfilesButton = new JButton("Import Profiles...");
-    private final JButton saveAllBoardsAndProfilesButton = new JButton("Save All Boards & Current Profiles");
-    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 4, 6, 6));
+    private final JButton saveAllBoardsAndProfilesButton = new JButton("Save All & Sync Headers");
+    private final JComboBox<String> profileActionSelector = new JComboBox<>(new String[]{
+            "New Profile",
+            "Save As Profile",
+            "Update Profile",
+            "Delete Profile",
+            "Import Profiles...",
+            "Export Profiles..."
+    });
+    private final JButton runProfileActionButton = new JButton("Run");
+    private final JButton flashFromProfilesButton = new JButton("Flash Arduinos' (Apply Changes)");
+    private final JPanel boardPageTogglePanel = new JPanel(new GridLayout(0, 2, 6, 6));
+    private final JPanel moduleTogglePanel = new JPanel(new GridLayout(0, 2, 6, 6));
     private final JLabel boardProfileStatusLabel = new JLabel("No board profile loaded.");
 
     private final Map<String, BoardPageSettings> boardPageSettings = new LinkedHashMap<>();
     private final Map<String, Map<String, Map<String, Boolean>>> namedPageProfiles = new LinkedHashMap<>();
+    private final Map<String, Set<String>> profileEnabledModules = new LinkedHashMap<>();
     private final Map<String, JCheckBox> boardPageCheckboxes = new LinkedHashMap<>();
     private final Map<String, RemoteTargetProfile> remoteTargetProfiles = new LinkedHashMap<>();
 
@@ -311,6 +318,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorPortsButton.setToolTipText("Re-detects currently connected Arduino serial ports for the selector.");
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
+        flashFromProfilesButton.setToolTipText("Quick flash button near profiles so page/module/profile changes can be applied to hardware immediately.");
+        runProfileActionButton.setToolTipText("Runs the selected profile action from the compact menu.");
+        profileActionSelector.setToolTipText("Compact profile action menu (new/save as/update/delete/import/export).");
         testQbittorrentConnectionButton.setToolTipText("Tests qBittorrent Web UI API login/version reachability using the host, port, username, and password fields.");
         resetWifiPairingButton.setToolTipText("Explicitly clears the saved EEPROM Wi-Fi pairing on one connected UNO R4 WiFi over USB so the next PC can claim it without reflashing.");
         macroEntriesArea.setToolTipText("One macro text entry per line. Used by Macro Mode groundwork and stored in monitor config.");
@@ -321,9 +331,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         JTabbedPane mainTabs = buildMainTabs();
 
         add(mainTabs, BorderLayout.CENTER);
-        JPanel footerOutputPanel = buildOutputPanel();
-        footerOutputPanel.setPreferredSize(new Dimension(1000, 240));
-        add(footerOutputPanel, BorderLayout.SOUTH);
 
         lightModeToggle.setSelected(!darkMode);
 
@@ -411,6 +418,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         tabs.addTab("Dashboard", buildDashboardTab());
         tabs.addTab("Flash", buildFlashTab());
         tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
+        tabs.addTab("Monitor", buildMonitorModulesTab());
+        outputPanelTab = buildOutputPanel();
+        tabs.addTab("Logs", outputPanelTab);
         return tabs;
     }
 
@@ -449,8 +459,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.add(buildTransportPanel());
         content.add(Box.createVerticalStrut(6));
         content.add(buildDisplayAndFlashPanel());
-        content.add(Box.createVerticalStrut(6));
-        content.add(buildMonitorSettingsPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -471,46 +479,45 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel rowOne = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         rowOne.add(new JLabel("Board Type:"));
         rowOne.add(profileBoardSelector);
-        rowOne.add(new JLabel("Active Profile:"));
-        activeBoardProfileSelector.setEditable(true);
-        activeBoardProfileSelector.setPreferredSize(new Dimension(220, activeBoardProfileSelector.getPreferredSize().height));
+        rowOne.add(new JLabel("Profile:"));
+        activeBoardProfileSelector.setEditable(false);
+        activeBoardProfileSelector.setPreferredSize(new Dimension(240, activeBoardProfileSelector.getPreferredSize().height));
         rowOne.add(activeBoardProfileSelector);
         rowOne.add(applyBoardProfileButton);
         rowOne.setAlignmentX(Component.LEFT_ALIGNMENT);
         top.add(rowOne);
-        top.add(Box.createVerticalStrut(6));
 
         JPanel rowTwo = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         rowTwo.add(saveBoardSettingsButton);
-        rowTwo.add(newProfileButton);
-        rowTwo.add(saveProfileAsButton);
-        rowTwo.add(updateProfileButton);
-        rowTwo.add(deleteProfileButton);
-        rowTwo.add(exportProfilesButton);
-        rowTwo.add(importProfilesButton);
         rowTwo.add(saveAllBoardsAndProfilesButton);
+        rowTwo.add(new JLabel("Profile action:"));
+        profileActionSelector.setPreferredSize(new Dimension(190, profileActionSelector.getPreferredSize().height));
+        rowTwo.add(profileActionSelector);
+        rowTwo.add(runProfileActionButton);
         boardProfileStatusLabel.setBorder(new EmptyBorder(0, 12, 0, 0));
         rowTwo.add(boardProfileStatusLabel);
         rowTwo.setAlignmentX(Component.LEFT_ALIGNMENT);
         top.add(rowTwo);
-        top.add(Box.createVerticalStrut(8));
+
+        JPanel flashRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        flashFromProfilesButton.setFont(flashFromProfilesButton.getFont().deriveFont(Font.BOLD, flashFromProfilesButton.getFont().getSize2D() + 1f));
+        flashRow.add(flashFromProfilesButton);
+        JLabel flashHint = new JLabel("<html><b>Profile/page/module changes require flashing to affect board navigation.</b></html>");
+        flashRow.add(flashHint);
+        flashRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        top.add(flashRow);
 
         JPanel helperPanel = new JPanel(new BorderLayout());
         helperPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         helperPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createTitledBorder("Settings / Profiles quick guide"),
+                BorderFactory.createTitledBorder("Profiles quick guide"),
                 new EmptyBorder(10, 14, 12, 14)));
 
-        JLabel helper = new JLabel("<html><div style='width: 960px; line-height: 1.45;'>"
-                + "<b>What is a profile?</b> A reusable page-toggle preset. Each profile stores page visibility <b>per board type</b> (R4, UNO R3, Mega), so one profile name can hold different page maps for each board.<br><br>"
-                + "<b>Enable/disable pages</b> to control touch navigation availability after flashing. Disabled pages are skipped on-device.<br><br>"
-                + "<b>Apply Profile</b>: loads the selected profile onto this board's toggles.<br><br>"
-                + "<b>Save Board Page Settings</b>: writes current toggles + active profile and updates board page headers used at compile time.<br><br>"
-                + "<b>Save As / New Profile</b>: create a named custom profile from current toggles. <b>Update</b> overwrites the selected profile for this board. <b>Delete</b> removes a custom profile.<br><br>"
-                + "<b>Import / Export</b>: move profile definitions between systems using board_page_profiles.properties.<br><br>"
-                + "<b>Flash Arduinos'</b> compiles/flashes the <i>current repo sketches</i> with the <i>current generated local headers</i> (rotations, page toggles, and local Wi-Fi header values). Reflash is required for profile/toggle changes to take effect on hardware."
+        JLabel helper = new JLabel("<html><div style='width: 920px; line-height: 1.45;'>"
+                + "<b>Flow:</b> choose board type, choose profile, click <b>Apply Profile</b>, adjust page toggles, then <b>Save All & Sync Headers</b>.<br><br>"
+                + "Use <b>Profile action</b> menu to create/update/import/export profiles without showing many separate buttons.<br><br>"
+                + "<b>Flash Arduinos' (Apply Changes)</b> compiles/flashes the current repo sketches with saved page/profile/module settings."
                 + "</div></html>");
-        helper.setBorder(new EmptyBorder(0, 0, 0, 0));
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         helperPanel.add(helper, BorderLayout.WEST);
         top.add(helperPanel);
@@ -522,6 +529,35 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         panel.add(top, BorderLayout.NORTH);
         panel.add(togglesScroll, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildMonitorModulesTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel modulePanel = new JPanel(new BorderLayout(8, 8));
+        modulePanel.setBorder(BorderFactory.createTitledBorder("Monitor Modules (enabled per profile)"));
+        moduleTogglePanel.setBorder(new EmptyBorder(6, 6, 6, 6));
+        JScrollPane moduleScroll = new JScrollPane(moduleTogglePanel);
+        moduleScroll.setBorder(BorderFactory.createTitledBorder("Enabled Modules for Active Profile"));
+        modulePanel.add(moduleScroll, BorderLayout.CENTER);
+        JLabel moduleHelper = new JLabel("<html>Profiles can enable modules independently from page toggles. Use Settings / Profiles to pick profile, then toggle modules here.</html>");
+        moduleHelper.setBorder(new EmptyBorder(4, 8, 8, 8));
+        modulePanel.add(moduleHelper, BorderLayout.SOUTH);
+        modulePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        content.add(modulePanel);
+        content.add(Box.createVerticalStrut(6));
+        content.add(buildMonitorSettingsPanel());
+
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
 
@@ -654,13 +690,18 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         actionRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        flashButton.setFont(flashButton.getFont().deriveFont(Font.BOLD, flashButton.getFont().getSize2D() + 3f));
         actionRow.add(flashButton);
         actionRow.add(flashPreviewButton);
-        actionRow.add(customFlashButton);
+
+        JPanel secondaryActionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
+        secondaryActionRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        secondaryActionRow.add(customFlashButton);
         customSketchIndicator.setBorder(new EmptyBorder(0, 8, 0, 0));
         customSketchIndicator.setToolTipText("Shows the currently selected custom sketch folder.");
-        actionRow.add(customSketchIndicator);
+        secondaryActionRow.add(customSketchIndicator);
         rowTwo.add(actionRow);
+        rowTwo.add(secondaryActionRow);
 
         JPanel optionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         optionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -880,9 +921,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel rowFive = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         rowFive.setAlignmentX(Component.LEFT_ALIGNMENT);
         wifiPortSourceLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
-        rowFive.add(wifiPortSourceLabel);
-        rowFive.add(loadMonitorSettingsButton);
+        saveMonitorSettingsButton.setFont(saveMonitorSettingsButton.getFont().deriveFont(Font.BOLD));
         rowFive.add(saveMonitorSettingsButton);
+        rowFive.add(loadMonitorSettingsButton);
+        rowFive.add(wifiPortSourceLabel);
         rowFive.add(testQbittorrentConnectionButton);
         rowFive.add(resetWifiPairingButton);
         monitorSettingsPanel.add(rowFive);
@@ -895,7 +937,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + "<b>qBittorrent fields</b> map directly to monitor config keys (qbittorrent_host, qbittorrent_port, qbittorrent_username, qbittorrent_password). Use <b>Test qBittorrent Connection</b> to verify API access before restarting the service.<br>"
                 + "<b>Macro Mode groundwork</b>: macro entries + trigger model are saved in config now (Phase 1). Use large/whole-screen-safe trigger options instead of tiny touch targets until touch calibration is reliable.<br>"
                 + "<b>Load Monitor Settings</b> reloads the saved config files from this computer, including your last local values if you already saved them. That lets you review them before flashing again.<br>"
-                + "<b>Save Monitor Settings & Flash R4 WiFi</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.<br>"
+                + "<b>Save Monitor Settings and Flash WiFi R4</b> writes this PC's local settings, copies the pairing values into <b>R4_WIFI35/wifi_config.local.h</b>, reflashes detected UNO R4 WiFi boards, and restarts the monitor so the change applies now.<br>"
                 + "<b>Reset Wi-Fi Pairing</b> uses a deliberate USB admin command to clear only the saved EEPROM pairing on one connected UNO R4 WiFi so you can move that board to another PC without reflashing.</html>");
         helper.setFont(helper.getFont().deriveFont(helper.getFont().getSize2D() - 1f));
         helper.setBorder(new EmptyBorder(0, 10, 8, 10));
@@ -969,6 +1011,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         deleteRemoteProfileButton.addActionListener(e -> deleteSelectedRemoteTargetProfile());
         remoteProfileSelector.addActionListener(e -> applySelectedRemoteTargetProfile());
         flashButton.addActionListener(e -> runDefaultFlashWorkflow());
+        flashFromProfilesButton.addActionListener(e -> runDefaultFlashWorkflow());
         flashPreviewButton.addActionListener(e -> showFlashPreviewDialog());
         customFlashButton.addActionListener(e -> uploadCustomSketch());
         wifiCredentialsButton.addActionListener(e -> promptForWifiCredentials());
@@ -1003,15 +1046,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
         resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
-        profileBoardSelector.addActionListener(e -> refreshBoardPageToggleView());
+        profileBoardSelector.addActionListener(e -> { refreshBoardPageToggleView(); refreshModuleToggleView(); });
+        activeBoardProfileSelector.addActionListener(e -> {
+            BoardPageSettings settings = boardPageSettings.get(currentProfileBoardSelection().id());
+            Object selected = activeBoardProfileSelector.getSelectedItem();
+            if (settings != null && selected != null) {
+                settings.activeProfile = selected.toString();
+                refreshModuleToggleView();
+            }
+        });
         applyBoardProfileButton.addActionListener(e -> applySelectedProfileToCurrentBoard());
+        runProfileActionButton.addActionListener(e -> runSelectedProfileAction());
         saveBoardSettingsButton.addActionListener(e -> saveBoardPageSettingsAndSyncHeaders(true));
-        newProfileButton.addActionListener(e -> createNewProfile());
-        saveProfileAsButton.addActionListener(e -> saveCurrentBoardAsNamedProfile());
-        updateProfileButton.addActionListener(e -> updateSelectedProfileFromCurrentBoard());
-        deleteProfileButton.addActionListener(e -> deleteSelectedProfile());
-        exportProfilesButton.addActionListener(e -> exportBoardProfilesToChosenPath());
-        importProfilesButton.addActionListener(e -> importBoardProfilesFromChosenPath());
         saveAllBoardsAndProfilesButton.addActionListener(e -> saveAllBoardsAndProfiles());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
         lightModeToggle.addActionListener(e -> {
@@ -3801,14 +3847,15 @@ public class UniversalMonitorControlCenter extends JFrame {
                 checkBox.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
             }
         } else if (component instanceof AbstractButton button) {
-            Color resolvedButtonBackground = button == flashButton
+            boolean isCriticalFlashButton = button == flashButton || button == saveMonitorSettingsButton || button == flashFromProfilesButton;
+            Color resolvedButtonBackground = isCriticalFlashButton
                     ? criticalButtonBackground
                     : (button == updateButton ? positiveButtonBackground : buttonBackground);
             button.setBackground(resolvedButtonBackground);
             button.setForeground(textColor);
             button.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(
-                            (button == flashButton || button == updateButton)
+                            (isCriticalFlashButton || button == updateButton)
                                     ? resolvedButtonBackground.darker() : accent
                     ),
                     BorderFactory.createEmptyBorder(6, 10, 6, 10)
@@ -4469,11 +4516,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void initializeBoardProfileState() {
         boardPageSettings.clear();
         namedPageProfiles.clear();
+        profileEnabledModules.clear();
 
         for (BoardProfileTarget board : BoardProfileTarget.values()) {
             boardPageSettings.put(board.id(), BoardPageSettings.defaultsFor(board));
         }
         namedPageProfiles.putAll(defaultNamedProfiles());
+        profileEnabledModules.putAll(defaultProfileModules());
         migrateLegacyBoardProfilesIfNeeded();
         loadBoardPageProfilesFromDisk();
         enforceSafeBoardProfileDefaults();
@@ -4485,6 +4534,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         profileBoardSelector.setSelectedItem(BoardProfileTarget.R4_WIFI);
         refreshProfileSelectorChoices();
         refreshBoardPageToggleView();
+        refreshModuleToggleView();
         saveBoardPageSettingsAndSyncHeaders(false);
     }
 
@@ -4495,6 +4545,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         profiles.put("Gaming HUD", gamingHudForEveryBoard());
         profiles.put("Network Focus", networkFocusForEveryBoard());
         return profiles;
+    }
+
+    private Map<String, Set<String>> defaultProfileModules() {
+        Map<String, Set<String>> modules = new LinkedHashMap<>();
+        for (String profileName : defaultNamedProfiles().keySet()) {
+            modules.put(profileName, new java.util.LinkedHashSet<>());
+        }
+        modules.computeIfAbsent("Gaming HUD", ignored -> new java.util.LinkedHashSet<>()).add(MonitorModule.GAMING.id());
+        return modules;
     }
 
     private boolean pageDefaultEnabled(BoardProfileTarget board, String pageId) {
@@ -4611,6 +4670,13 @@ public class UniversalMonitorControlCenter extends JFrame {
                 }
             }
             namedPageProfiles.put(profileName, boardMap);
+            java.util.LinkedHashSet<String> enabledModules = new java.util.LinkedHashSet<>();
+            for (MonitorModule module : MonitorModule.values()) {
+                if (Boolean.parseBoolean(properties.getProperty("profile." + profileId + ".module." + module.id(), "false"))) {
+                    enabledModules.add(module.id());
+                }
+            }
+            profileEnabledModules.put(profileName, enabledModules);
         }
     }
 
@@ -4645,6 +4711,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                 settings.pageEnabled.putIfAbsent(page.id(), pageDefaultEnabled(board, page.id()));
             }
         }
+        for (String profileName : namedPageProfiles.keySet()) {
+            profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
+        }
+        profileEnabledModules.keySet().removeIf(name -> !namedPageProfiles.containsKey(name));
     }
 
     private void persistBoardPageProfiles() {
@@ -4670,6 +4740,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                 for (PageDefinition page : board.pages()) {
                     properties.setProperty("profile." + profileId + "." + board.id() + "." + page.id(), String.valueOf(pages.getOrDefault(page.id(), true)));
                 }
+            }
+            Set<String> enabledModules = profileEnabledModules.getOrDefault(profileName, Set.of());
+            for (MonitorModule module : MonitorModule.values()) {
+                properties.setProperty("profile." + profileId + ".module." + module.id(), String.valueOf(enabledModules.contains(module.id())));
             }
         }
 
@@ -4720,15 +4794,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         try {
             boardPageSettings.clear();
             namedPageProfiles.clear();
+            profileEnabledModules.clear();
             for (BoardProfileTarget board : BoardProfileTarget.values()) {
                 boardPageSettings.put(board.id(), BoardPageSettings.defaultsFor(board));
             }
             namedPageProfiles.putAll(defaultNamedProfiles());
+            profileEnabledModules.putAll(defaultProfileModules());
             loadBoardPageProfilesFromPath(source);
             enforceSafeBoardProfileDefaults();
             persistBoardPageProfiles();
             refreshProfileSelectorChoices();
             refreshBoardPageToggleView();
+            refreshModuleToggleView();
             saveBoardPageSettingsAndSyncHeaders(false);
             log("[INFO] Imported board profiles from " + source + ".");
         } catch (Exception ex) {
@@ -4799,9 +4876,54 @@ public class UniversalMonitorControlCenter extends JFrame {
         applyTheme();
     }
 
+    private void runSelectedProfileAction() {
+        String action = String.valueOf(profileActionSelector.getSelectedItem());
+        if (action == null) {
+            return;
+        }
+        switch (action) {
+            case "New Profile" -> createNewProfile();
+            case "Save As Profile" -> saveCurrentBoardAsNamedProfile();
+            case "Update Profile" -> updateSelectedProfileFromCurrentBoard();
+            case "Delete Profile" -> deleteSelectedProfile();
+            case "Import Profiles..." -> importBoardProfilesFromChosenPath();
+            case "Export Profiles..." -> exportBoardProfilesToChosenPath();
+            default -> log("[WARN] Unknown profile action: " + action);
+        }
+    }
+
+    private void refreshModuleToggleView() {
+        BoardProfileTarget board = currentProfileBoardSelection();
+        BoardPageSettings settings = boardPageSettings.get(board.id());
+        String profileName = settings == null ? DEFAULT_PAGE_PROFILE_NAME : settings.activeProfile;
+        Set<String> enabledModules = profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
+
+        moduleTogglePanel.removeAll();
+        for (MonitorModule module : MonitorModule.values()) {
+            JCheckBox box = new JCheckBox(module.label(), enabledModules.contains(module.id()));
+            box.putClientProperty("uasmProfilePageToggle", Boolean.TRUE);
+            box.addActionListener(e -> {
+                if (box.isSelected()) {
+                    enabledModules.add(module.id());
+                } else {
+                    enabledModules.remove(module.id());
+                }
+                persistBoardPageProfiles();
+            });
+            JPanel card = new JPanel(new BorderLayout());
+            card.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
+            card.add(box, BorderLayout.CENTER);
+            moduleTogglePanel.add(card);
+        }
+        moduleTogglePanel.revalidate();
+        moduleTogglePanel.repaint();
+        applyTheme();
+    }
+
     private void applySelectedProfileToCurrentBoard() {
         BoardProfileTarget board = currentProfileBoardSelection();
-        String profileName = String.valueOf(activeBoardProfileSelector.getEditor().getItem()).trim();
+        Object selectedProfile = activeBoardProfileSelector.getSelectedItem();
+        String profileName = selectedProfile == null ? "" : selectedProfile.toString().trim();
         if (profileName.isBlank()) {
             log("[WARN] Choose or type a profile name before applying.");
             return;
@@ -4821,13 +4943,18 @@ public class UniversalMonitorControlCenter extends JFrame {
             settings.pageEnabled.put(page.id(), boardProfile.getOrDefault(page.id(), true));
         }
         settings.activeProfile = profileName;
+        profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
+        persistBoardPageProfiles();
+        boolean synced = saveBoardPageSettingsAndSyncHeaders(false);
         refreshBoardPageToggleView();
-        log("[INFO] Applied profile '" + profileName + "' to " + board.label() + ".");
+        refreshModuleToggleView();
+        log("[INFO] Applied profile '" + profileName + "' to " + board.label() + (synced ? " and synced page headers." : " (header sync reported warnings)."));
     }
 
     private void saveCurrentBoardAsNamedProfile() {
         BoardProfileTarget board = currentProfileBoardSelection();
-        String profileName = String.valueOf(activeBoardProfileSelector.getEditor().getItem()).trim();
+        Object selectedProfile = activeBoardProfileSelector.getSelectedItem();
+        String profileName = selectedProfile == null ? "" : selectedProfile.toString().trim();
         if (profileName.isBlank()) {
             log("[WARN] Profile name cannot be empty.");
             return;
@@ -4840,9 +4967,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         profile.put(board.id(), boardProfile);
         settings.activeProfile = profileName;
+        profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
         persistBoardPageProfiles();
         refreshProfileSelectorChoices();
         activeBoardProfileSelector.setSelectedItem(profileName);
+        refreshModuleToggleView();
         log("[INFO] Saved board profile '" + profileName + "' for " + board.label() + ".");
     }
 
@@ -4870,10 +4999,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         profile.put(board.id(), boardProfile);
         namedPageProfiles.put(profileName, profile);
+        profileEnabledModules.put(profileName, new java.util.LinkedHashSet<>());
         settings.activeProfile = profileName;
+        profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
         persistBoardPageProfiles();
         refreshProfileSelectorChoices();
         activeBoardProfileSelector.setSelectedItem(profileName);
+        refreshModuleToggleView();
         log("[INFO] Created new profile '" + profileName + "' from current " + board.label() + " toggles.");
     }
 
@@ -4932,7 +5064,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         profile.put(board.id(), boardProfile);
         settings.activeProfile = profileName;
+        profileEnabledModules.computeIfAbsent(profileName, ignored -> new java.util.LinkedHashSet<>());
         persistBoardPageProfiles();
+        refreshModuleToggleView();
         log("[INFO] Updated profile '" + profileName + "' using current " + board.label() + " toggles.");
     }
 
@@ -4952,11 +5086,13 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
         namedPageProfiles.remove(profileName);
+        profileEnabledModules.remove(profileName);
         for (BoardPageSettings settings : boardPageSettings.values()) {
             if (profileName.equals(settings.activeProfile)) settings.activeProfile = DEFAULT_PAGE_PROFILE_NAME;
         }
         persistBoardPageProfiles();
         refreshProfileSelectorChoices();
+        refreshModuleToggleView();
         log("[INFO] Deleted profile '" + profileName + "'.");
     }
 
@@ -5128,13 +5264,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             activeBoardProfileSelector.setEnabled(enabled);
             applyBoardProfileButton.setEnabled(enabled);
             saveBoardSettingsButton.setEnabled(enabled);
-            newProfileButton.setEnabled(enabled);
-            saveProfileAsButton.setEnabled(enabled);
-            updateProfileButton.setEnabled(enabled);
-            deleteProfileButton.setEnabled(enabled);
-            exportProfilesButton.setEnabled(enabled);
-            importProfilesButton.setEnabled(enabled);
+            runProfileActionButton.setEnabled(enabled);
+            profileActionSelector.setEnabled(enabled);
             saveAllBoardsAndProfilesButton.setEnabled(enabled);
+            flashFromProfilesButton.setEnabled(enabled);
             updateNetworkScanButtons();
             updateKillRunningTaskButton();
             if (enabled) {
@@ -5266,6 +5399,23 @@ public class UniversalMonitorControlCenter extends JFrame {
 
 
     private record PageDefinition(String id, String label) {}
+
+    private enum MonitorModule {
+        GAMING("gaming", "Gaming module"),
+        MACRO("macro", "Macro module"),
+        QBITTORRENT("qbittorrent", "qBittorrent module");
+
+        private final String id;
+        private final String label;
+
+        MonitorModule(String id, String label) {
+            this.id = id;
+            this.label = label;
+        }
+
+        String id() { return id; }
+        String label() { return label; }
+    }
 
     private enum BoardProfileTarget {
         R4_WIFI("r4_wifi", "R4 WiFi", List.of(
