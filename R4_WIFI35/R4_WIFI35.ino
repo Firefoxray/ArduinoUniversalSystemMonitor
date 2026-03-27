@@ -61,6 +61,9 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_PAGE_QBITTORRENT_ENABLED
+#define UASM_PAGE_QBITTORRENT_ENABLED 0
+#endif
 
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
@@ -115,7 +118,7 @@ unsigned long wifiClientConnectedAtMs = 0;
 const int SCREEN_W = 480;
 const int SCREEN_H = 320;
 const int GRAPH_POINTS = 62;
-const int TOTAL_PAGES = 7;
+const int TOTAL_PAGES = 8;
 const int CPU_THREADS = 16;
 const int PROCESS_ROWS = 6;
 const int STORAGE_LINES = 8;
@@ -137,7 +140,8 @@ const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_NETWORK_ENABLED != 0,
   UASM_PAGE_GPU_ENABLED != 0,
   UASM_PAGE_STORAGE_ENABLED != 0,
-  UASM_PAGE_USAGE_GRAPH_ENABLED != 0
+  UASM_PAGE_USAGE_GRAPH_ENABLED != 0,
+  UASM_PAGE_QBITTORRENT_ENABLED != 0
 };
 
 int currentPage = 0;
@@ -182,6 +186,13 @@ String procName[PROCESS_ROWS];
 String procCpu[PROCESS_ROWS];
 String procRam[PROCESS_ROWS];
 String storageLine[STORAGE_LINES];
+String qbtStatus = "qBittorrent unavailable";
+String qbtActiveDownloads = "--";
+String qbtDownSpeed = "--";
+String qbtUpSpeed = "--";
+String qbtTopTorrent = "--";
+String qbtProgress = "--";
+String qbtEta = "--";
 
 struct PairingStore {
   char magic[8];
@@ -700,6 +711,7 @@ void drawNetLayout()     { drawHeader("Network", 4); }
 void drawGpuLayout()     { drawHeader("GPU", 5); }
 void drawStorageLayout() { drawHeader("Extra Statistics", 6); }
 void drawGraphLayout()   { drawHeader("Usage Graph", 7); }
+void drawQbitLayout()    { drawHeader("qBittorrent", 8); }
 
 void updateHome() {
   drawLabelBar(46,  "CPU", cpuTotal, getColor(cpuTotal));
@@ -1023,6 +1035,38 @@ void updateGraph() {
   tft.print(fitText(uptimeStr, 18));
 }
 
+void updateQbit() {
+  clearArea(0, 42, SCREEN_W, 240);
+
+  tft.setTextSize(2);
+  tft.setTextColor(CYAN);
+  tft.setCursor(12, 50);
+  tft.print("Downloads");
+  tft.setTextColor(WHITE);
+  tft.setCursor(170, 50);
+  tft.print(qbtActiveDownloads);
+
+  drawInfoLine(80, "Down", fitText(qbtDownSpeed, 20), GREEN, 105);
+  drawInfoLine(106, "Up", fitText(qbtUpSpeed, 20), YELLOW, 105);
+  drawInfoLine(132, "Prog", fitText(qbtProgress, 10), ORANGE, 105);
+  drawInfoLine(158, "ETA", fitText(qbtEta, 20), MAGENTA, 105);
+
+  tft.setTextSize(2);
+  tft.setTextColor(CYAN);
+  tft.setCursor(12, 194);
+  tft.print("Current");
+
+  tft.setTextSize(1);
+  tft.setTextColor(WHITE);
+  tft.setCursor(12, 220);
+  tft.print(fitText(qbtTopTorrent, 68));
+
+  tft.setTextSize(2);
+  tft.setTextColor(ORANGE);
+  tft.setCursor(12, 286);
+  tft.print(fitText(qbtStatus, 38));
+}
+
 void drawCurrentLayout() {
   if (currentPage == 0) drawHomeLayout();
   else if (currentPage == 1) drawCpuLayout();
@@ -1030,7 +1074,8 @@ void drawCurrentLayout() {
   else if (currentPage == 3) drawNetLayout();
   else if (currentPage == 4) drawGpuLayout();
   else if (currentPage == 5) drawStorageLayout();
-  else drawGraphLayout();
+  else if (currentPage == 6) drawGraphLayout();
+  else drawQbitLayout();
 }
 
 void updateCurrentPage() {
@@ -1040,7 +1085,8 @@ void updateCurrentPage() {
   else if (currentPage == 3) updateNet();
   else if (currentPage == 4) updateGpu();
   else if (currentPage == 5) updateStorage();
-  else updateGraph();
+  else if (currentPage == 6) updateGraph();
+  else updateQbit();
 }
 
 void handleTouch() {
@@ -1072,8 +1118,32 @@ bool splitFields(String s, String out[], int expectedCount) {
   return true;
 }
 
+bool parseQbitLine(String s) {
+  if (!s.startsWith("QBT|")) {
+    return false;
+  }
+
+  String q[8];
+  if (!splitFields(s, q, 8)) {
+    return true;
+  }
+
+  qbtStatus = q[1];
+  qbtActiveDownloads = q[2];
+  qbtDownSpeed = q[3];
+  qbtUpSpeed = q[4];
+  qbtTopTorrent = q[5];
+  qbtProgress = q[6];
+  qbtEta = q[7];
+  screenDirty = true;
+  return true;
+}
+
 void parseIncomingLine(String s, const char* source) {
   if (handleControlCommand(s, source)) {
+    return;
+  }
+  if (parseQbitLine(s)) {
     return;
   }
 

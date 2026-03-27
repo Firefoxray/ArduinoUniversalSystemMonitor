@@ -4285,12 +4285,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         return profiles;
     }
 
+    private boolean pageDefaultEnabled(BoardProfileTarget board, String pageId) {
+        return !(board == BoardProfileTarget.R4_WIFI && "qbittorrent".equals(pageId));
+    }
+
     private Map<String, Map<String, Boolean>> defaultsForEveryBoard(boolean enabled) {
         Map<String, Map<String, Boolean>> result = new LinkedHashMap<>();
         for (BoardProfileTarget board : BoardProfileTarget.values()) {
             Map<String, Boolean> pages = new LinkedHashMap<>();
             for (PageDefinition page : board.pages()) {
-                pages.put(page.id(), enabled);
+                pages.put(page.id(), enabled && pageDefaultEnabled(board, page.id()));
             }
             result.put(board.id(), pages);
         }
@@ -4426,7 +4430,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 settings.activeProfile = DEFAULT_PAGE_PROFILE_NAME;
             }
             for (PageDefinition page : board.pages()) {
-                settings.pageEnabled.putIfAbsent(page.id(), true);
+                settings.pageEnabled.putIfAbsent(page.id(), pageDefaultEnabled(board, page.id()));
             }
         }
     }
@@ -4439,7 +4443,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             BoardPageSettings settings = boardPageSettings.get(board.id());
             properties.setProperty("board." + board.id() + ".active_profile", settings.activeProfile);
             for (PageDefinition page : board.pages()) {
-                properties.setProperty("board." + board.id() + ".page." + page.id(), String.valueOf(settings.pageEnabled.getOrDefault(page.id(), true)));
+                properties.setProperty("board." + board.id() + ".page." + page.id(), String.valueOf(settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id()))));
             }
         }
         properties.setProperty("ui.home_disable_warning_acknowledged", String.valueOf(homeDisableWarningAcknowledged));
@@ -4549,7 +4553,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         boardPageTogglePanel.removeAll();
         boardPageCheckboxes.clear();
         for (PageDefinition page : board.pages()) {
-            JCheckBox box = new JCheckBox(page.label(), settings.pageEnabled.getOrDefault(page.id(), true));
+            JCheckBox box = new JCheckBox(page.label(), settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id())));
             box.setFont(box.getFont().deriveFont(Font.BOLD));
             box.putClientProperty("uasmProfilePageToggle", Boolean.TRUE);
             box.addActionListener(e -> {
@@ -4620,7 +4624,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         BoardPageSettings settings = boardPageSettings.get(board.id());
         Map<String, Boolean> boardProfile = new LinkedHashMap<>();
         for (PageDefinition page : board.pages()) {
-            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), true));
+            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id())));
         }
         profile.put(board.id(), boardProfile);
         settings.activeProfile = profileName;
@@ -4650,7 +4654,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         BoardPageSettings settings = boardPageSettings.get(board.id());
         Map<String, Boolean> boardProfile = new LinkedHashMap<>();
         for (PageDefinition page : board.pages()) {
-            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), true));
+            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id())));
         }
         profile.put(board.id(), boardProfile);
         namedPageProfiles.put(profileName, profile);
@@ -4712,7 +4716,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         BoardPageSettings settings = boardPageSettings.get(board.id());
         Map<String, Boolean> boardProfile = new LinkedHashMap<>();
         for (PageDefinition page : board.pages()) {
-            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), true));
+            boardProfile.put(page.id(), settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id())));
         }
         profile.put(board.id(), boardProfile);
         settings.activeProfile = profileName;
@@ -4785,7 +4789,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         StringBuilder header = new StringBuilder("#pragma once\n\n");
         for (PageDefinition page : board.pages()) {
             String macro = "UASM_PAGE_" + page.id().toUpperCase(Locale.ROOT) + "_ENABLED";
-            boolean enabled = settings.pageEnabled.getOrDefault(page.id(), true);
+            boolean enabled = settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id()));
             header.append("#define ").append(macro).append(" ").append(enabled ? "1" : "0").append("\n");
         }
 
@@ -5054,7 +5058,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 new PageDefinition("network", "Network"),
                 new PageDefinition("gpu", "GPU"),
                 new PageDefinition("storage", "Extra Statistics"),
-                new PageDefinition("usage_graph", "Usage Graph")
+                new PageDefinition("usage_graph", "Usage Graph"),
+                new PageDefinition("qbittorrent", "qBittorrent")
         )),
         UNO_R3_28("uno_r3_28", "UNO R3 2.8", List.of(
                 new PageDefinition("home", "Home"),
@@ -5119,7 +5124,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         static BoardPageSettings defaultsFor(BoardProfileTarget board) {
             BoardPageSettings settings = new BoardPageSettings();
             for (PageDefinition page : board.pages()) {
-                settings.pageEnabled.put(page.id(), true);
+                boolean enabledByDefault = !(board == BoardProfileTarget.R4_WIFI && "qbittorrent".equals(page.id()));
+                settings.pageEnabled.put(page.id(), enabledByDefault);
             }
             return settings;
         }
