@@ -41,8 +41,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final int TRANSPORT_SWITCH_DELAY_SECONDS = 8;
     private static final String DEFAULT_WIFI_PORT = "5000";
     private static final String DEFAULT_WIFI_BOARD_NAME = "R4_WIFI35";
-    private static final String WIFI_MODE_AUTO_DISCOVERY = "Auto Discovery (UDP)";
-    private static final String WIFI_MODE_MANUAL = "Manual / Fixed IP";
+    private static final String WIFI_MODE_MANUAL = "Fixed Host/IP Only (Recommended)";
+    private static final String WIFI_MODE_AUTO_DISCOVERY = "Fixed Host/IP + UDP Discovery Fallback";
     private static final String PROGRAM_MODE_SYSTEM_MONITOR = "System Monitor";
     private static final String PROGRAM_MODE_GAMING = "Gaming Mode";
     private static final String PROGRAM_MODE_MACRO = "Macro Mode";
@@ -127,7 +127,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> r3RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
     private final JComboBox<String> megaRotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
     private final JComboBox<String> arduinoPortSelector = new JComboBox<>();
-    private final JComboBox<String> wifiConnectionModeSelector = new JComboBox<>(new String[]{WIFI_MODE_AUTO_DISCOVERY, WIFI_MODE_MANUAL});
+    private final JComboBox<String> wifiConnectionModeSelector = new JComboBox<>(new String[]{WIFI_MODE_MANUAL, WIFI_MODE_AUTO_DISCOVERY});
     private final JCheckBox wifiDiscoveryDebugToggle = new JCheckBox("Wi-Fi Discovery Debug");
     private final JCheckBox wifiDiscoveryIgnoreBoardFilterToggle = new JCheckBox("Ignore Board Filter (Wi-Fi Discovery Debug)");
     private final JComboBox<String> programModeSelector = new JComboBox<>(new String[]{
@@ -274,8 +274,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         r3RotationSelector.setToolTipText("Set the saved screen rotation for every UNO R3 flash, including the 2.8\" and 3.5\" sketches: Normal = setRotation(1), Flipped = setRotation(3).");
         megaRotationSelector.setToolTipText("Set the saved screen rotation for every Arduino Mega 3.5\" flash: Normal = setRotation(1), Flipped = setRotation(3).");
         arduinoPortSelector.setToolTipText("Sets the monitor's preferred Arduino serial port. Use AUTO to let the monitor auto-detect.");
-        wifiPortField.setToolTipText("Sets the monitor TCP port used for Wi-Fi transport and discovery fallback.");
-        wifiConnectionModeSelector.setToolTipText("Choose whether this PC discovers R4 Wi-Fi boards automatically or connects to a fixed board IP/hostname.");
+        wifiPortField.setToolTipText("Sets the monitor TCP port used for direct fixed host/IP connection and optional discovery fallback.");
+        wifiConnectionModeSelector.setToolTipText("Recommended: Fixed Host/IP Only. Optional mode: keep Fixed Host/IP first and allow UDP discovery fallback.");
         wifiDiscoveryDebugToggle.setToolTipText("Diagnostic toggle for verbose UDP auto-discovery matching logs in Python monitor output (wifi_discovery_debug).");
         wifiDiscoveryIgnoreBoardFilterToggle.setToolTipText("Diagnostic override that bypasses board-name filtering during discovery troubleshooting (wifi_discovery_ignore_board_filter).");
         remoteActionSelector.setToolTipText("Structured command actions only (safe starter set). Pick one then click Run Action.");
@@ -287,7 +287,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         remoteRepoField.setToolTipText("Project path on the target machine where install/update/flash scripts live.");
         remoteProfileSelector.setToolTipText("Saved SSH targets. Choose one to fill host/user/port/repo quickly.");
         programModeSelector.setToolTipText("Select overall program/board mode. Stored in JSON config as program_mode and passed into flash workflows.");
-        wifiHostField.setToolTipText("Use this only in Manual / Fixed IP mode. Put the Arduino board address that THIS PC should talk to, like 192.168.1.50 or a hostname. Leave it alone in Auto Discovery mode.");
+        wifiHostField.setToolTipText("Primary/recommended path: set this to the Arduino board address this PC should talk to, like 192.168.1.50 or a hostname. The monitor always tries this first when set.");
         wifiBoardNameField.setToolTipText("Easy nickname for the Arduino board, like OFFICE_PC_SCREEN or LIVING_ROOM_MONITOR. This helps Auto Discovery match the right board to the right PC when you have more than one.");
         wifiTargetHostField.setToolTipText("Optional: the IP address or network name of the PC this Arduino belongs to. Example: 192.168.1.20. Use this when each Arduino should pair with one specific computer.");
         wifiTargetHostnameField.setToolTipText("Optional: the computer name this Arduino should look for, like GAMING-PC or OFFICE-DESKTOP. This is another way to lock one Arduino to one PC.");
@@ -848,8 +848,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowFive.add(resetWifiPairingButton);
         monitorSettingsPanel.add(rowFive);
 
-        JLabel helper = new JLabel("<html><b>Easy setup:</b> choose <b>Auto Discovery</b> if this PC should automatically find its Arduino on your Wi-Fi. Choose <b>Manual / Fixed IP</b> only if you want this PC to always talk to one exact Arduino address.<br>"
-                + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC in Manual mode. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
+        JLabel helper = new JLabel("<html><b>Recommended setup:</b> set a <b>Wi-Fi Host/IP</b> and use <b>Fixed Host/IP Only</b> for the most reliable path. The monitor will connect directly over TCP without requiring discovery first.<br>"
+                + "If you need diagnostics/fallback, switch to <b>Fixed Host/IP + UDP Discovery Fallback</b>. In that mode the monitor still tries fixed host/IP first, then can fall back to UDP discovery.<br>"
+                + "<b>Wi-Fi Host/IP</b> = the Arduino's network address for this PC. <b>Board Name</b> = a simple nickname for the Arduino. <b>Target Host/IP</b> and <b>Target Hostname</b> = which PC that Arduino should belong to.<br>"
                 + "If you have one Arduino per PC, give each board its own name and flash them <b>one at a time</b> so each one keeps the correct target PC info.<br>"
                 + "<b>Program Mode</b> is a staged top-level selector (System Monitor, Gaming Mode, Macro Mode). It is saved to config now and passed into flash workflows so mode-specific sketch behavior can be expanded safely later.<br>"
                 + "<b>Macro Mode groundwork</b>: macro entries + trigger model are saved in config now (Phase 1). Use large/whole-screen-safe trigger options instead of tiny touch targets until touch calibration is reliable.<br>"
@@ -1160,8 +1161,23 @@ public class UniversalMonitorControlCenter extends JFrame {
             sock.setBroadcast(true);
             sock.setSoTimeout(1200);
             byte[] payload = magic.getBytes(StandardCharsets.UTF_8);
-            java.net.DatagramPacket packet = new java.net.DatagramPacket(payload, payload.length, java.net.InetAddress.getByName("255.255.255.255"), port);
-            sock.send(packet);
+            List<String> broadcastTargets = new ArrayList<>(detectBroadcastTargets());
+            if (!broadcastTargets.contains("255.255.255.255")) {
+                broadcastTargets.add("255.255.255.255");
+            }
+            for (String target : broadcastTargets) {
+                try {
+                    java.net.DatagramPacket packet = new java.net.DatagramPacket(
+                            payload,
+                            payload.length,
+                            java.net.InetAddress.getByName(target),
+                            port
+                    );
+                    sock.send(packet);
+                } catch (Exception ex) {
+                    results.add("Broadcast send warning (" + target + "): " + ex.getMessage());
+                }
+            }
             long deadline = System.currentTimeMillis() + 1200;
             while (System.currentTimeMillis() < deadline) {
                 byte[] buffer = new byte[512];
@@ -1201,6 +1217,30 @@ public class UniversalMonitorControlCenter extends JFrame {
             updateNetworkScanButtons();
         });
         log("[INFO] Network scan pass complete: " + String.join("; ", results));
+    }
+
+    private List<String> detectBroadcastTargets() {
+        List<String> targets = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface netIf = interfaces.nextElement();
+                if (!netIf.isUp() || netIf.isLoopback()) {
+                    continue;
+                }
+                for (java.net.InterfaceAddress addr : netIf.getInterfaceAddresses()) {
+                    InetAddress broadcast = addr.getBroadcast();
+                    if (broadcast instanceof Inet4Address) {
+                        String ip = broadcast.getHostAddress();
+                        if (ip != null && !ip.isBlank() && !targets.contains(ip)) {
+                            targets.add(ip);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return targets;
     }
 
     private void updateNetworkScanButtons() {
@@ -2199,7 +2239,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (text == null || text.isBlank()) {
                 arduinoPortSelector.setSelectedItem("AUTO");
                 wifiPortField.setText("5000");
-                wifiConnectionModeSelector.setSelectedItem(WIFI_MODE_AUTO_DISCOVERY);
+                wifiConnectionModeSelector.setSelectedItem(WIFI_MODE_MANUAL);
                 wifiDiscoveryDebugToggle.setSelected(false);
                 wifiDiscoveryIgnoreBoardFilterToggle.setSelected(false);
                 programModeSelector.setSelectedItem(PROGRAM_MODE_SYSTEM_MONITOR);
@@ -2252,7 +2292,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (verbose) {
                 log("[INFO] Loaded merged monitor connection settings (default/shared/local). Effective Wi-Fi TCP port source: "
                         + wifiResolution.source() + " (" + wifiResolution.port() + ")."
-                        + " Connection mode=" + (wifiAutoDiscovery ? "auto discovery" : "manual/fixed IP")
+                        + " Connection mode=" + (wifiAutoDiscovery ? "fixed host/IP + UDP discovery fallback" : "fixed host/IP only")
                         + ", wifi_discovery_debug=" + wifiDiscoveryDebug
                         + ", wifi_discovery_ignore_board_filter=" + wifiDiscoveryIgnoreBoardFilter
                         + ", program_mode=" + selectedProgramMode
@@ -2300,7 +2340,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         boolean wifiAutoDiscovery = WIFI_MODE_AUTO_DISCOVERY.equals(wifiConnectionModeSelector.getSelectedItem());
         String wifiHost = wifiHostField.getText() == null ? "" : wifiHostField.getText().trim();
         if (!wifiAutoDiscovery && wifiHost.isBlank()) {
-            log("[WARN] Wi-Fi host/IP is required when Manual / Fixed IP mode is selected.");
+            log("[WARN] Wi-Fi host/IP is required when Fixed Host/IP Only (Recommended) mode is selected.");
             return;
         }
         String wifiBoardName = normalizeWifiBoardName(wifiBoardNameField.getText() == null ? "" : wifiBoardNameField.getText().trim());
@@ -2324,7 +2364,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             String text = ensureWritableLocalMonitorConfig();
             String updated = upsertStringConfigValue(text, "arduino_port", arduinoPort);
             updated = upsertNumberConfigValue(updated, "wifi_port", wifiPort);
-            updated = upsertStringConfigValue(updated, "wifi_host", wifiAutoDiscovery ? "" : wifiHost);
+            updated = upsertStringConfigValue(updated, "wifi_host", wifiHost);
             updated = upsertBooleanConfigValue(updated, "wifi_auto_discovery", wifiAutoDiscovery);
             updated = upsertBooleanConfigValue(updated, "wifi_discovery_debug", wifiDiscoveryDebug);
             updated = upsertBooleanConfigValue(updated, "wifi_discovery_ignore_board_filter", wifiDiscoveryIgnoreBoardFilter);
@@ -2349,7 +2389,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", program_mode=" + programMode
                         + ", macro_trigger_model=" + macroTriggerModel
                         + ", macro_entries=" + macroEntries.size()
-                        + ", wifi_host=" + ((wifiAutoDiscovery || wifiHost.isBlank()) ? "<unset>" : wifiHost)
+                        + ", wifi_host=" + (wifiHost.isBlank() ? "<unset>" : wifiHost)
                         + ", r4_display_rotation=" + r4Rotation
                         + ", r3_display_rotation=" + r3Rotation
                         + ", mega_display_rotation=" + megaRotation
@@ -2838,13 +2878,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void updateWifiHostFieldState() {
-        boolean manualMode = WIFI_MODE_MANUAL.equals(wifiConnectionModeSelector.getSelectedItem());
-        wifiHostField.setEnabled(manualMode);
-        wifiHostField.setEditable(manualMode);
-        if (!manualMode) {
-            wifiHostField.setToolTipText("Auto Discovery is on, so this box is not needed. The PC will try to find a matching Arduino on the network by itself.");
+        boolean fixedOnlyMode = WIFI_MODE_MANUAL.equals(wifiConnectionModeSelector.getSelectedItem());
+        wifiHostField.setEnabled(true);
+        wifiHostField.setEditable(true);
+        if (fixedOnlyMode) {
+            wifiHostField.setToolTipText("Fixed Host/IP Only (Recommended) mode is on. Enter the exact Arduino address that this PC should use, like 192.168.1.50.");
         } else {
-            wifiHostField.setToolTipText("Manual / Fixed IP mode is on. Enter the exact Arduino address that this PC should use, like 192.168.1.50.");
+            wifiHostField.setToolTipText("Discovery fallback mode is on. Fixed host/IP is still attempted first when set; UDP discovery is only a fallback/debug path.");
         }
     }
 
@@ -4853,7 +4893,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             macroTriggerModelSelector.setEnabled(enabled);
             macroEntriesArea.setEnabled(enabled);
             wifiPortField.setEnabled(enabled);
-            wifiHostField.setEnabled(enabled && WIFI_MODE_MANUAL.equals(String.valueOf(wifiConnectionModeSelector.getSelectedItem())));
+            wifiHostField.setEnabled(enabled);
             wifiBoardNameField.setEnabled(enabled);
             wifiTargetHostField.setEnabled(enabled);
             wifiTargetHostnameField.setEnabled(enabled);

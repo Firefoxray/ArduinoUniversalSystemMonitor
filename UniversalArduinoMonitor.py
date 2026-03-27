@@ -22,6 +22,7 @@ import socket
 import subprocess
 import time
 import fcntl
+import ipaddress
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
@@ -112,7 +113,7 @@ def load_config() -> Dict[str, object]:
         "wifi_port": 5000,
         "prefer_usb": True,
         "wifi_retry_delay": 5,
-        "wifi_auto_discovery": True,
+        "wifi_auto_discovery": False,
         "wifi_discovery_port": 5001,
         "wifi_discovery_timeout": 1.2,
         "wifi_discovery_refresh": 30,
@@ -707,6 +708,35 @@ def parse_discovery_response(message: str, addr: Tuple[str, int]) -> Tuple[Optio
     return WifiDiscoveryRecord(host, port, name, target_host, target_hostname), None
 
 
+def discovery_broadcast_targets() -> List[str]:
+    targets: List[str] = []
+    try:
+        stats = psutil.net_if_stats()
+        addrs = psutil.net_if_addrs()
+        for iface, iface_stats in stats.items():
+            if not iface_stats.isup or iface == "lo":
+                continue
+            for addr in addrs.get(iface, []):
+                if addr.family != socket.AF_INET:
+                    continue
+                ip_value = (addr.address or "").strip()
+                mask_value = (addr.netmask or "").strip()
+                if not ip_value or not mask_value:
+                    continue
+                try:
+                    interface = ipaddress.IPv4Interface(f"{ip_value}/{mask_value}")
+                    broadcast = str(interface.network.broadcast_address)
+                    if broadcast not in targets:
+                        targets.append(broadcast)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    if "255.255.255.255" not in targets:
+        targets.append("255.255.255.255")
+    return targets
+
+
 def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[WifiDiscoveryRecord]:
     if not WIFI_ENABLED or not WIFI_AUTO_DISCOVERY:
         return None
@@ -716,10 +746,21 @@ def discover_wifi_monitor(timeout: Optional[float] = None) -> Optional[WifiDisco
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.settimeout(wait_time)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("", 0))
-        sock.sendto(WIFI_DISCOVERY_MAGIC.encode("utf-8"), ("255.255.255.255", WIFI_DISCOVERY_PORT))
+        targets = discovery_broadcast_targets()
+        payload = WIFI_DISCOVERY_MAGIC.encode("utf-8")
+        sent_targets: List[str] = []
+        for target in targets:
+            try:
+                sock.sendto(payload, (target, WIFI_DISCOVERY_PORT))
+                sent_targets.append(target)
+            except OSError as exc:
+                if WIFI_DISCOVERY_DEBUG:
+                    print(f"Wi-Fi discovery warning: failed to send UDP probe to {target}:{WIFI_DISCOVERY_PORT}: {exc}")
+        target_summary = ", ".join(sent_targets) if sent_targets else "<none>"
         print(
-            f"Wi-Fi discovery sent: UDP broadcast 255.255.255.255:{WIFI_DISCOVERY_PORT} "
+            f"Wi-Fi discovery sent: UDP broadcast target(s) {target_summary}:{WIFI_DISCOVERY_PORT} "
             f"magic='{WIFI_DISCOVERY_MAGIC}' timeout={wait_time:.2f}s"
         )
         deadline = time.time() + wait_time
@@ -773,18 +814,13 @@ def resolve_wifi_endpoint(cached_host: str, cached_port: int, last_discovery_ts:
     host = cached_host
     port = cached_port if cached_port > 0 else WIFI_PORT
     discovered: Optional[WifiDiscoveryRecord] = None
-    should_refresh = WIFI_AUTO_DISCOVERY and (
-        not host or (time.time() - last_discovery_ts) >= WIFI_DISCOVERY_REFRESH
-    )
+    should_refresh = WIFI_AUTO_DISCOVERY and (time.time() - last_discovery_ts) >= WIFI_DISCOVERY_REFRESH
     if should_refresh:
         found = discover_wifi_monitor()
         if found is not None:
             host, port = found.host, found.port
             discovered = found
             last_discovery_ts = time.time()
-    if not host:
-        host = WIFI_HOST
-        port = WIFI_PORT
     return host, port, last_discovery_ts, discovered
 
 
@@ -1710,8 +1746,12 @@ def main() -> None:
         print(f"Macro mode staging: {len(MACRO_ENTRIES)} macro entries configured; trigger model='{MACRO_TRIGGER_MODEL}'.")
     if WIFI_ENABLED:
         print(f"Wi-Fi TCP port source: {WIFI_PORT_SOURCE} -> {WIFI_PORT}")
+        if WIFI_HOST:
+            print(f"Wi-Fi target (primary): direct fixed host/IP {WIFI_HOST}:{WIFI_PORT}")
+        else:
+            print("Wi-Fi target (primary): fixed host/IP is not configured yet (wifi_host is empty).")
         if WIFI_AUTO_DISCOVERY:
-            fallback = f" (fallback {WIFI_HOST}:{WIFI_PORT})" if WIFI_HOST else ""
+            fallback = " (optional fallback/debug path)" if WIFI_HOST else " (discovery-only until wifi_host is set)"
             filters: List[str] = []
             if WIFI_DEVICE_NAME and WIFI_DEVICE_NAME != "R4_WIFI35" and not WIFI_DISCOVERY_IGNORE_BOARD_FILTER:
                 filters.append(f"board={WIFI_DEVICE_NAME}")
@@ -1720,13 +1760,13 @@ def main() -> None:
             if WIFI_TARGET_HOSTNAME:
                 filters.append(f"target_hostname={WIFI_TARGET_HOSTNAME}")
             filter_suffix = f" [{', '.join(filters)}]" if filters else ""
-            print(f"Wi-Fi target: auto-discovery on UDP {WIFI_DISCOVERY_PORT}{fallback}{filter_suffix}")
+            print(f"Wi-Fi target (secondary): UDP auto-discovery on port {WIFI_DISCOVERY_PORT}{fallback}{filter_suffix}")
             if WIFI_DISCOVERY_DEBUG:
                 print("Wi-Fi discovery debug mode enabled.")
             if WIFI_DISCOVERY_IGNORE_BOARD_FILTER:
                 print("Wi-Fi discovery diagnostic override: board-name filter is temporarily bypassed.")
         else:
-            print(f"Wi-Fi target: {WIFI_HOST}:{WIFI_PORT}")
+            print("Wi-Fi UDP auto-discovery disabled; monitor will use direct fixed host/IP only.")
     else:
         print("Wi-Fi transport disabled.")
     if DEBUG_MIRROR_ENABLED:
@@ -1778,27 +1818,47 @@ def main() -> None:
 
                 if WIFI_ENABLED and wifi_sock is None and (now - last_wifi_attempt) >= wifi_retry_delay:
                     last_wifi_attempt = now
-                    wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_record = resolve_wifi_endpoint(
-                        wifi_host_active,
-                        wifi_port_active,
-                        last_wifi_discovery,
-                    )
-                    if discovered_record is not None:
-                        wifi_name_active = discovered_record.name
                     quiet_wifi = wifi_error_suppressed and (now - last_wifi_error_log) < 30.0
-                    candidate = connect_wifi_socket(
-                        wifi_host_active,
-                        wifi_port_active,
-                        quiet=quiet_wifi,
-                        device_name=wifi_name_active,
-                    )
+                    candidate: Optional[socket.socket] = None
+                    if WIFI_HOST:
+                        if not quiet_wifi:
+                            print(f"Wi-Fi connect path: direct fixed host/IP -> {WIFI_HOST}:{WIFI_PORT}")
+                        candidate = connect_wifi_socket(
+                            WIFI_HOST,
+                            WIFI_PORT,
+                            quiet=quiet_wifi,
+                        )
+                    if candidate is None and WIFI_AUTO_DISCOVERY:
+                        if not quiet_wifi:
+                            if WIFI_HOST:
+                                print("Wi-Fi connect path: direct fixed host/IP failed, trying UDP discovery fallback.")
+                            else:
+                                print("Wi-Fi connect path: fixed host/IP not set, trying UDP discovery.")
+                        wifi_host_active, wifi_port_active, last_wifi_discovery, discovered_record = resolve_wifi_endpoint(
+                            "" if WIFI_HOST else wifi_host_active,
+                            wifi_port_active,
+                            last_wifi_discovery,
+                        )
+                        if discovered_record is not None:
+                            wifi_name_active = discovered_record.name
+                            if not quiet_wifi:
+                                print(
+                                    f"Wi-Fi connect path: discovery resolved board '{wifi_name_active}' "
+                                    f"at {wifi_host_active}:{wifi_port_active}"
+                                )
+                        candidate = connect_wifi_socket(
+                            wifi_host_active,
+                            wifi_port_active,
+                            quiet=quiet_wifi,
+                            device_name=wifi_name_active,
+                        )
                     if candidate is not None:
                         wifi_sock = candidate
                         last_wifi_success = now
                         wifi_error_suppressed = False
                         last_wifi_error_log = 0.0
                     else:
-                        if WIFI_AUTO_DISCOVERY:
+                        if WIFI_AUTO_DISCOVERY and not WIFI_HOST:
                             wifi_host_active = ""
                             wifi_port_active = WIFI_PORT
                             wifi_name_active = None
@@ -1817,7 +1877,7 @@ def main() -> None:
                     wifi_sock = send_to_wifi_device(payload, wifi_sock)
                     if wifi_sock is None:
                         last_wifi_attempt = now
-                        if WIFI_AUTO_DISCOVERY:
+                        if WIFI_AUTO_DISCOVERY and not WIFI_HOST:
                             wifi_host_active = ""
                             wifi_name_active = None
 
