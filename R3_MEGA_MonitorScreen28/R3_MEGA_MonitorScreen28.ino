@@ -47,6 +47,12 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_GRAPH_NET_DOWN_ENABLED
+#define UASM_GRAPH_NET_DOWN_ENABLED 0
+#endif
+#ifndef UASM_GRAPH_NET_UP_ENABLED
+#define UASM_GRAPH_NET_UP_ENABLED 0
+#endif
 
 MCUFRIEND_kbv tft;
 
@@ -87,6 +93,8 @@ uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
+uint8_t downHistory[GRAPH_POINTS];
+uint8_t upHistory[GRAPH_POINTS];
 
 const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_HOME_ENABLED != 0,
@@ -208,17 +216,35 @@ static void shortGPU(char* dst, size_t dstSize, const char* src) {
   }
 }
 
-static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal) {
+static uint8_t networkRateToPct(const char* speedText) {
+  if (!speedText || speedText[0] == '\0' || strcmp(speedText, "--") == 0) return 0;
+  float value = atof(speedText);
+  String lower = String(speedText);
+  lower.toLowerCase();
+  float mbps = value;
+  if (lower.indexOf("kb/s") >= 0) mbps = value / 1024.0f;
+  else if (lower.indexOf("gb/s") >= 0) mbps = value * 1024.0f;
+  int pct = (int)(mbps * 10.0f);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return (uint8_t)pct;
+}
+
+static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal, uint8_t downVal, uint8_t upVal) {
   for (uint8_t i = 0; i < GRAPH_POINTS - 1; i++) {
     cpuHistory[i] = cpuHistory[i + 1];
     ramHistory[i] = ramHistory[i + 1];
     gpuHistory[i] = gpuHistory[i + 1];
     vramHistory[i] = vramHistory[i + 1];
+    downHistory[i] = downHistory[i + 1];
+    upHistory[i] = upHistory[i + 1];
   }
   cpuHistory[GRAPH_POINTS - 1] = cpuVal;
   ramHistory[GRAPH_POINTS - 1] = ramVal;
   gpuHistory[GRAPH_POINTS - 1] = gpuVal;
   vramHistory[GRAPH_POINTS - 1] = vramVal;
+  downHistory[GRAPH_POINTS - 1] = downVal;
+  upHistory[GRAPH_POINTS - 1] = upVal;
 }
 
 static void clearArea(int x, int y, int w, int h) {
@@ -464,12 +490,24 @@ static void updateGraph() {
   drawGraphSeries(ramHistory, CYAN);
   drawGraphSeries(gpuHistory, YELLOW);
   drawGraphSeries(vramHistory, MAGENTA);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  drawGraphSeries(downHistory, ORANGE);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  drawGraphSeries(upHistory, BLUE);
+#endif
 
   tft.setTextSize(1);
   tft.setTextColor(GREEN);   tft.setCursor(12, 186);  tft.print(F("CPU "));  tft.print(cpuTotal);   tft.print('%');
   tft.setTextColor(CYAN);    tft.setCursor(84, 186);  tft.print(F("RAM "));  tft.print(ramPct);     tft.print('%');
   tft.setTextColor(YELLOW);  tft.setCursor(156, 186); tft.print(F("GPU "));  tft.print(gpuPct);     tft.print('%');
   tft.setTextColor(MAGENTA); tft.setCursor(228, 186); tft.print(F("VRM "));  tft.print(gpuMemPct);  tft.print('%');
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  tft.setTextColor(ORANGE);  tft.setCursor(12, 198);  tft.print(F("Dn "));   tft.print(downStr);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  tft.setTextColor(BLUE);    tft.setCursor(160, 198); tft.print(F("Up "));   tft.print(upStr);
+#endif
   drawKV(204, F("Host"), hostName, WHITE, 52);
   drawKV(218, F("Up"), uptimeStr, WHITE, 52);
 }
@@ -592,7 +630,7 @@ static void feedIncomingChar(char c) {
   if (c == '\n') {
     finalizeField();
     if (!lineOverflow && fieldIndex == FIELD_COUNT) {
-      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
+      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct, networkRateToPct(downStr), networkRateToPct(upStr));
       dataDirty = true;
     }
     resetLineParser();
@@ -615,7 +653,7 @@ void setup() {
   tft.setRotation(DISPLAY_ROTATION_VALUE);
   tft.fillScreen(BLACK);
 
-  for (uint8_t i = 0; i < GRAPH_POINTS; i++) cpuHistory[i] = ramHistory[i] = gpuHistory[i] = vramHistory[i] = 0;
+  for (uint8_t i = 0; i < GRAPH_POINTS; i++) cpuHistory[i] = ramHistory[i] = gpuHistory[i] = vramHistory[i] = downHistory[i] = upHistory[i] = 0;
   for (uint8_t i = 0; i < PROCESS_ROWS; i++) {
     safeCopy(procName[i], sizeof(procName[i]), "--");
     safeCopy(procCpu[i], sizeof(procCpu[i]), "--");

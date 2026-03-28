@@ -44,6 +44,12 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_GRAPH_NET_DOWN_ENABLED
+#define UASM_GRAPH_NET_DOWN_ENABLED 0
+#endif
+#ifndef UASM_GRAPH_NET_UP_ENABLED
+#define UASM_GRAPH_NET_UP_ENABLED 0
+#endif
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
@@ -84,6 +90,8 @@ uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
+uint8_t downHistory[GRAPH_POINTS];
+uint8_t upHistory[GRAPH_POINTS];
 
 const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_HOME_ENABLED != 0,
@@ -140,9 +148,11 @@ char batteryLabel[3][16];
 char batteryState[3][14];
 char qbtStatus[24] = "qBt unavailable";
 char qbtActiveDownloads[8] = "--";
+char qbtActiveSeeding[8] = "--";
 char qbtDownSpeed[14] = "--";
 char qbtUpSpeed[14] = "--";
 char qbtTopTorrent[20] = "--";
+char qbtTopState[10] = "--";
 char qbtProgress[10] = "--";
 char qbtEta[12] = "--";
 
@@ -203,17 +213,35 @@ static void shortGPU(char* dst, size_t dstSize, const char* src) {
   }
 }
 
-static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal) {
+static uint8_t networkRateToPct(const char* speedText) {
+  if (!speedText || speedText[0] == '\0' || strcmp(speedText, "--") == 0) return 0;
+  float value = atof(speedText);
+  String lower = String(speedText);
+  lower.toLowerCase();
+  float mbps = value;
+  if (lower.indexOf("kb/s") >= 0) mbps = value / 1024.0f;
+  else if (lower.indexOf("gb/s") >= 0) mbps = value * 1024.0f;
+  int pct = (int)(mbps * 10.0f);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return (uint8_t)pct;
+}
+
+static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal, uint8_t downVal, uint8_t upVal) {
   for (uint8_t i = 0; i < GRAPH_POINTS - 1; i++) {
     cpuHistory[i] = cpuHistory[i + 1];
     ramHistory[i] = ramHistory[i + 1];
     gpuHistory[i] = gpuHistory[i + 1];
     vramHistory[i] = vramHistory[i + 1];
+    downHistory[i] = downHistory[i + 1];
+    upHistory[i] = upHistory[i + 1];
   }
   cpuHistory[GRAPH_POINTS - 1] = cpuVal;
   ramHistory[GRAPH_POINTS - 1] = ramVal;
   gpuHistory[GRAPH_POINTS - 1] = gpuVal;
   vramHistory[GRAPH_POINTS - 1] = vramVal;
+  downHistory[GRAPH_POINTS - 1] = downVal;
+  upHistory[GRAPH_POINTS - 1] = upVal;
 }
 
 static void clearBody() {
@@ -432,6 +460,16 @@ static void updateGraph() {
     y1 = gy + gh - 1 - ((vramHistory[i - 1] * (gh - 2)) / 100);
     y2 = gy + gh - 1 - ((vramHistory[i] * (gh - 2)) / 100);
     tft.drawLine(x1, y1, x2, y2, MAGENTA);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+    y1 = gy + gh - 1 - ((downHistory[i - 1] * (gh - 2)) / 100);
+    y2 = gy + gh - 1 - ((downHistory[i] * (gh - 2)) / 100);
+    tft.drawLine(x1, y1, x2, y2, ORANGE);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+    y1 = gy + gh - 1 - ((upHistory[i - 1] * (gh - 2)) / 100);
+    y2 = gy + gh - 1 - ((upHistory[i] * (gh - 2)) / 100);
+    tft.drawLine(x1, y1, x2, y2, BLUE);
+#endif
   }
 
   tft.setTextSize(1);
@@ -439,15 +477,23 @@ static void updateGraph() {
   tft.setTextColor(CYAN);    tft.setCursor(84, 162);  tft.print(F("RAM ")); tft.print(ramPct); tft.print('%');
   tft.setTextColor(YELLOW);  tft.setCursor(156, 162); tft.print(F("GPU ")); tft.print(gpuPct); tft.print('%');
   tft.setTextColor(MAGENTA); tft.setCursor(228, 162); tft.print(F("VRM ")); tft.print(gpuMemPct); tft.print('%');
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  tft.setTextColor(ORANGE);  tft.setCursor(12, 184);  tft.print(F("Down ")); tft.print(downStr);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  tft.setTextColor(BLUE);    tft.setCursor(172, 184); tft.print(F("Up ")); tft.print(upStr);
+#endif
 }
 
 
 static void updateQbittorrent() {
+  char dsv[14];
+  snprintf(dsv, sizeof(dsv), "%s/%s", qbtActiveDownloads, qbtActiveSeeding);
   drawBigKV(34, F("State"), qbtStatus, CYAN);
-  drawBigKV(56, F("Act"), qbtActiveDownloads, GREEN);
+  drawBigKV(56, F("D/S"), dsv, GREEN);
   drawBigKV(78, F("Down"), qbtDownSpeed, GREEN);
   drawBigKV(100, F("Up"), qbtUpSpeed, YELLOW);
-  drawBigKV(122, F("Prog"), qbtProgress, ORANGE);
+  drawBigKV(122, F("Mode"), qbtTopState, ORANGE);
   drawBigKV(144, F("ETA"), qbtEta, MAGENTA);
   drawBigKV(166, F("Top"), qbtTopTorrent, WHITE);
   drawBigKV(188, F("Host"), hostName, WHITE);
@@ -508,11 +554,13 @@ static void resetLineParser() {
 static void applyQbtField(uint8_t idx, const char* value) {
   if (idx == 1) safeCopy(qbtStatus, sizeof(qbtStatus), value);
   else if (idx == 2) safeCopy(qbtActiveDownloads, sizeof(qbtActiveDownloads), value);
-  else if (idx == 3) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
-  else if (idx == 4) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
-  else if (idx == 5) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
-  else if (idx == 6) safeCopy(qbtProgress, sizeof(qbtProgress), value);
-  else if (idx == 7) safeCopy(qbtEta, sizeof(qbtEta), value);
+  else if (idx == 3) safeCopy(qbtActiveSeeding, sizeof(qbtActiveSeeding), value);
+  else if (idx == 4) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
+  else if (idx == 5) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
+  else if (idx == 6) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
+  else if (idx == 7) safeCopy(qbtTopState, sizeof(qbtTopState), value);
+  else if (idx == 8) safeCopy(qbtProgress, sizeof(qbtProgress), value);
+  else if (idx == 9) safeCopy(qbtEta, sizeof(qbtEta), value);
 }
 
 static void applyField(uint8_t idx, const char* value) {
@@ -602,9 +650,9 @@ static void feedIncomingChar(char c) {
   if (c == '\n') {
     finalizeField();
     if (commandLine) {
-      if (!lineOverflow && fieldIndex == 8) dataDirty = true;
+      if (!lineOverflow && fieldIndex >= 8) dataDirty = true;
     } else if (!lineOverflow && fieldIndex == FIELD_COUNT) {
-      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
+      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct, networkRateToPct(downStr), networkRateToPct(upStr));
       dataDirty = true;
     }
     resetLineParser();
@@ -638,6 +686,8 @@ void setup() {
     ramHistory[i] = 0;
     gpuHistory[i] = 0;
     vramHistory[i] = 0;
+    downHistory[i] = 0;
+    upHistory[i] = 0;
   }
   for (uint8_t i = 0; i < 3; i++) {
     safeCopy(batteryLabel[i], sizeof(batteryLabel[i]), "--");

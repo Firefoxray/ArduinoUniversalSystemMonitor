@@ -1,5 +1,11 @@
 # Changelog
 
+## v9.9 - 2026-03-28
+- Bumped the shared project version to v9.9 across VERSION, generated Arduino app headers, and docs.
+- Added configurable storage selection + disk0/disk1 mapping controls and wiring across monitor/control-center flows.
+- Added qBittorrent readability + seeding telemetry improvements and optional network down/up graph series toggles before flashing.
+
+
 ## v9.7.1 - 2026-03-27
 - Bumped the shared project version to v9.7.1 so VERSION-driven Python/Java/Arduino version displays stay aligned.
 - Changed Wi-Fi connection priority so a configured fixed `wifi_host` is attempted first over direct TCP, with UDP discovery treated as optional fallback/debug behavior.

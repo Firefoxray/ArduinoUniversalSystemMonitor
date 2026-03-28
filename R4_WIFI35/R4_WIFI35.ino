@@ -61,6 +61,12 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_GRAPH_NET_DOWN_ENABLED
+#define UASM_GRAPH_NET_DOWN_ENABLED 0
+#endif
+#ifndef UASM_GRAPH_NET_UP_ENABLED
+#define UASM_GRAPH_NET_UP_ENABLED 0
+#endif
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
@@ -132,6 +138,8 @@ int cpuHistory[GRAPH_POINTS];
 int ramHistory[GRAPH_POINTS];
 int gpuHistory[GRAPH_POINTS];
 int vramHistory[GRAPH_POINTS];
+int downHistory[GRAPH_POINTS];
+int upHistory[GRAPH_POINTS];
 
 const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_HOME_ENABLED != 0,
@@ -188,9 +196,11 @@ String procRam[PROCESS_ROWS];
 String storageLine[STORAGE_LINES];
 String qbtStatus = "qBittorrent unavailable";
 String qbtActiveDownloads = "--";
+String qbtActiveSeeding = "--";
 String qbtDownSpeed = "--";
 String qbtUpSpeed = "--";
 String qbtTopTorrent = "--";
+String qbtTopState = "--";
 String qbtProgress = "--";
 String qbtEta = "--";
 
@@ -687,7 +697,22 @@ void drawDualInfoLine(
   tft.print(rightValue);
 }
 
-void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal) {
+int networkRateToPct(String speedText) {
+  speedText.trim();
+  if (speedText.length() == 0 || speedText == "--") return 0;
+  int spaceIdx = speedText.indexOf(' ');
+  String valuePart = (spaceIdx > 0) ? speedText.substring(0, spaceIdx) : speedText;
+  float value = valuePart.toFloat();
+  String lower = speedText;
+  lower.toLowerCase();
+  float mbps = value;
+  if (lower.indexOf("kb/s") >= 0) mbps = value / 1024.0f;
+  else if (lower.indexOf("gb/s") >= 0) mbps = value * 1024.0f;
+  int pct = (int)(mbps * 10.0f);
+  return constrain(pct, 0, 100);
+}
+
+void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal, int downVal, int upVal) {
   cpuVal = constrain(cpuVal, 0, 100);
   ramVal = constrain(ramVal, 0, 100);
   gpuVal = constrain(gpuVal, 0, 100);
@@ -697,11 +722,15 @@ void pushHistory(int cpuVal, int ramVal, int gpuVal, int vramVal) {
     ramHistory[i] = ramHistory[i + 1];
     gpuHistory[i] = gpuHistory[i + 1];
     vramHistory[i] = vramHistory[i + 1];
+    downHistory[i] = downHistory[i + 1];
+    upHistory[i] = upHistory[i + 1];
   }
   cpuHistory[GRAPH_POINTS - 1] = cpuVal;
   ramHistory[GRAPH_POINTS - 1] = ramVal;
   gpuHistory[GRAPH_POINTS - 1] = gpuVal;
   vramHistory[GRAPH_POINTS - 1] = vramVal;
+  downHistory[GRAPH_POINTS - 1] = constrain(downVal, 0, 100);
+  upHistory[GRAPH_POINTS - 1] = constrain(upVal, 0, 100);
 }
 
 void drawHomeLayout()    { drawHeader("Ray Co. System Monitor", 1); }
@@ -989,6 +1018,16 @@ void updateGraph() {
     y1 = gy + gh - 1 - ((vramHistory[i - 1] * (gh - 2)) / 100);
     y2 = gy + gh - 1 - ((vramHistory[i] * (gh - 2)) / 100);
     tft.drawLine(x1, y1, x2, y2, MAGENTA);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+    y1 = gy + gh - 1 - ((downHistory[i - 1] * (gh - 2)) / 100);
+    y2 = gy + gh - 1 - ((downHistory[i] * (gh - 2)) / 100);
+    tft.drawLine(x1, y1, x2, y2, ORANGE);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+    y1 = gy + gh - 1 - ((upHistory[i - 1] * (gh - 2)) / 100);
+    y2 = gy + gh - 1 - ((upHistory[i] * (gh - 2)) / 100);
+    tft.drawLine(x1, y1, x2, y2, BLUE);
+#endif
   }
 
   clearArea(0, 198, SCREEN_W, 88);
@@ -1020,6 +1059,20 @@ void updateGraph() {
   tft.setTextColor(WHITE);
   tft.setCursor(350, 228);
   tft.print(String(gpuMemPct) + "%");
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  tft.setTextColor(ORANGE);
+  tft.setCursor(20, 252);
+  tft.print("Down ");
+  tft.setTextColor(WHITE);
+  tft.print(fitText(downStr, 12));
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  tft.setTextColor(BLUE);
+  tft.setCursor(250, 252);
+  tft.print("Up ");
+  tft.setTextColor(WHITE);
+  tft.print(fitText(upStr, 12));
+#endif
 
   tft.drawFastHLine(0, 252, SCREEN_W, GRAY);
   tft.setTextSize(1);
@@ -1045,10 +1098,16 @@ void updateQbit() {
   tft.setTextColor(WHITE);
   tft.setCursor(170, 50);
   tft.print(qbtActiveDownloads);
+  tft.setTextColor(CYAN);
+  tft.setCursor(260, 50);
+  tft.print("Seeds");
+  tft.setTextColor(WHITE);
+  tft.setCursor(350, 50);
+  tft.print(qbtActiveSeeding);
 
   drawInfoLine(80, "Down", fitText(qbtDownSpeed, 20), GREEN, 105);
   drawInfoLine(106, "Up", fitText(qbtUpSpeed, 20), YELLOW, 105);
-  drawInfoLine(132, "Prog", fitText(qbtProgress, 10), ORANGE, 105);
+  drawInfoLine(132, "State", fitText(qbtTopState, 14), ORANGE, 105);
   drawInfoLine(158, "ETA", fitText(qbtEta, 20), MAGENTA, 105);
 
   tft.setTextSize(2);
@@ -1058,8 +1117,13 @@ void updateQbit() {
 
   tft.setTextSize(1);
   tft.setTextColor(WHITE);
+  String topName = fitText(qbtTopTorrent, 64);
   tft.setCursor(12, 220);
-  tft.print(fitText(qbtTopTorrent, 68));
+  tft.print(topName.substring(0, min(32, topName.length())));
+  if (topName.length() > 32) {
+    tft.setCursor(12, 236);
+    tft.print(topName.substring(32, min(64, topName.length())));
+  }
 
   tft.setTextSize(2);
   tft.setTextColor(ORANGE);
@@ -1123,18 +1187,20 @@ bool parseQbitLine(String s) {
     return false;
   }
 
-  String q[8];
-  if (!splitFields(s, q, 8)) {
+  String q[10];
+  if (!splitFields(s, q, 10)) {
     return true;
   }
 
   qbtStatus = q[1];
   qbtActiveDownloads = q[2];
-  qbtDownSpeed = q[3];
-  qbtUpSpeed = q[4];
-  qbtTopTorrent = q[5];
-  qbtProgress = q[6];
-  qbtEta = q[7];
+  qbtActiveSeeding = q[3];
+  qbtDownSpeed = q[4];
+  qbtUpSpeed = q[5];
+  qbtTopTorrent = q[6];
+  qbtTopState = q[7];
+  qbtProgress = q[8];
+  qbtEta = q[9];
   screenDirty = true;
   return true;
 }
@@ -1185,7 +1251,7 @@ void parseIncomingLine(String s, const char* source) {
   for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) batteryDeviceLabel[i] = f[idx++];
   for (int i = 0; i < EXTRA_BATTERY_SLOTS; i++) batteryDeviceState[i] = f[idx++];
 
-  pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
+  pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct, networkRateToPct(downStr), networkRateToPct(upStr));
   screenDirty = true;
 }
 
@@ -1402,6 +1468,8 @@ void setup() {
     ramHistory[i] = 0;
     gpuHistory[i] = 0;
     vramHistory[i] = 0;
+    downHistory[i] = 0;
+    upHistory[i] = 0;
   }
   for (int i = 0; i < PROCESS_ROWS; i++) {
     procName[i] = "--";

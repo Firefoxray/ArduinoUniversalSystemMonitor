@@ -42,6 +42,12 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_GRAPH_NET_DOWN_ENABLED
+#define UASM_GRAPH_NET_DOWN_ENABLED 0
+#endif
+#ifndef UASM_GRAPH_NET_UP_ENABLED
+#define UASM_GRAPH_NET_UP_ENABLED 0
+#endif
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
@@ -79,6 +85,8 @@ uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
+uint8_t downHistory[GRAPH_POINTS];
+uint8_t upHistory[GRAPH_POINTS];
 
 const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_HOME_ENABLED != 0,
@@ -129,9 +137,11 @@ char procRam[PROCESS_ROWS][10];
 char storageLine[STORAGE_LINES][32];
 char qbtStatus[38] = "qBittorrent unavailable";
 char qbtActiveDownloads[8] = "--";
+char qbtActiveSeeding[8] = "--";
 char qbtDownSpeed[20] = "--";
 char qbtUpSpeed[20] = "--";
 char qbtTopTorrent[36] = "--";
+char qbtTopState[12] = "--";
 char qbtProgress[12] = "--";
 char qbtEta[20] = "--";
 
@@ -175,17 +185,35 @@ static uint16_t colorForPct(uint8_t pct) {
   return RED;
 }
 
-static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal) {
+static uint8_t networkRateToPct(const char* speedText) {
+  if (!speedText || speedText[0] == '\0' || strcmp(speedText, "--") == 0) return 0;
+  float value = atof(speedText);
+  String lower = String(speedText);
+  lower.toLowerCase();
+  float mbps = value;
+  if (lower.indexOf("kb/s") >= 0) mbps = value / 1024.0f;
+  else if (lower.indexOf("gb/s") >= 0) mbps = value * 1024.0f;
+  int pct = (int)(mbps * 10.0f);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return (uint8_t)pct;
+}
+
+static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal, uint8_t downVal, uint8_t upVal) {
   for (uint8_t i = 0; i < GRAPH_POINTS - 1; i++) {
     cpuHistory[i] = cpuHistory[i + 1];
     ramHistory[i] = ramHistory[i + 1];
     gpuHistory[i] = gpuHistory[i + 1];
     vramHistory[i] = vramHistory[i + 1];
+    downHistory[i] = downHistory[i + 1];
+    upHistory[i] = upHistory[i + 1];
   }
   cpuHistory[GRAPH_POINTS - 1] = cpuVal;
   ramHistory[GRAPH_POINTS - 1] = ramVal;
   gpuHistory[GRAPH_POINTS - 1] = gpuVal;
   vramHistory[GRAPH_POINTS - 1] = vramVal;
+  downHistory[GRAPH_POINTS - 1] = downVal;
+  upHistory[GRAPH_POINTS - 1] = upVal;
 }
 
 static void clearArea(int x, int y, int w, int h) {
@@ -350,40 +378,62 @@ static void updateStorage() {
 }
 
 static void drawGraphSeries(const uint8_t* values, uint16_t color) {
-  const int gx = 16, gy = 56, gw = 448, gh = 190;
+  const int gx = 18, gy = 62, gw = 358, gh = 148;
+  const int graphScaleMax = 120;
   for (uint8_t i = 1; i < GRAPH_POINTS; i++) {
     int x1 = gx + ((i - 1) * (gw - 2)) / (GRAPH_POINTS - 1);
     int x2 = gx + (i * (gw - 2)) / (GRAPH_POINTS - 1);
-    int y1 = gy + gh - 1 - ((values[i - 1] * (gh - 2)) / 100);
-    int y2 = gy + gh - 1 - ((values[i] * (gh - 2)) / 100);
+    int y1 = gy + gh - 1 - ((values[i - 1] * (gh - 2)) / graphScaleMax);
+    int y2 = gy + gh - 1 - ((values[i] * (gh - 2)) / graphScaleMax);
     tft.drawLine(x1, y1, x2, y2, color);
   }
 }
 
 static void updateGraph() {
-  const int gx = 16, gy = 56, gw = 448, gh = 190;
+  const int gx = 18, gy = 62, gw = 358, gh = 148;
   clearArea(0, 35, SCREEN_W, SCREEN_H - 35);
   tft.drawRect(gx, gy, gw, gh, WHITE);
+  tft.drawFastHLine(gx + 1, gy + (gh / 2), gw - 2, GRAY);
+  tft.drawFastHLine(gx + 1, gy + (gh * 3 / 4), gw - 2, GRAY);
   drawGraphSeries(cpuHistory, GREEN);
   drawGraphSeries(ramHistory, CYAN);
   drawGraphSeries(gpuHistory, YELLOW);
   drawGraphSeries(vramHistory, MAGENTA);
-  drawKV(258, F("CPU"), "Green", GREEN, 76);
-  drawKV(280, F("RAM"), "Cyan", CYAN, 76);
-  drawKV(258, F("GPU"), "Yellow", YELLOW, 236);
-  drawKV(280, F("VRAM"), "Magenta", MAGENTA, 236);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  drawGraphSeries(downHistory, ORANGE);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  drawGraphSeries(upHistory, BLUE);
+#endif
+  drawKV(236, F("CPU"), "Green", GREEN, 70);
+  drawKV(258, F("RAM"), "Cyan", CYAN, 70);
+  drawKV(280, F("GPU"), "Yellow", YELLOW, 70);
+  drawKV(302, F("VRAM"), "Magenta", MAGENTA, 70);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  drawKV(236, F("Down"), downStr, ORANGE, 220);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  drawKV(258, F("Up"), upStr, BLUE, 220);
+#endif
 }
 
 static void updateQbittorrent() {
+  char dsv[16];
+  snprintf(dsv, sizeof(dsv), "%s/%s", qbtActiveDownloads, qbtActiveSeeding);
+  char top1[20], top2[20];
+  safeCopy(top1, sizeof(top1), qbtTopTorrent);
+  top1[18] = '\0';
+  if (strlen(qbtTopTorrent) > 18) safeCopy(top2, sizeof(top2), qbtTopTorrent + 18);
+  else safeCopy(top2, sizeof(top2), "--");
   drawKV(48, F("State"), qbtStatus, CYAN, 90);
-  drawKV(78, F("Active"), qbtActiveDownloads, GREEN, 90);
+  drawKV(78, F("D/S"), dsv, GREEN, 90);
   drawKV(108, F("Down"), qbtDownSpeed, GREEN, 90);
   drawKV(138, F("Up"), qbtUpSpeed, YELLOW, 90);
-  drawKV(168, F("Prog"), qbtProgress, ORANGE, 90);
+  drawKV(168, F("Mode"), qbtTopState, ORANGE, 90);
   drawKV(198, F("ETA"), qbtEta, MAGENTA, 90);
-  drawKV(228, F("Top"), qbtTopTorrent, WHITE, 90);
-  drawKV(258, F("Host"), hostName, WHITE, 90);
-  drawKV(288, F("Uptm"), uptimeStr, WHITE, 90);
+  drawKV(228, F("Top1"), top1, WHITE, 90);
+  drawKV(258, F("Top2"), top2, WHITE, 90);
+  drawKV(288, F("Host"), hostName, WHITE, 90);
 }
 
 static void updateCurrentPage() {
@@ -425,11 +475,13 @@ static void resetLineParser() {
 static void applyQbtField(uint8_t idx, const char* value) {
   if (idx == 1) safeCopy(qbtStatus, sizeof(qbtStatus), value);
   else if (idx == 2) safeCopy(qbtActiveDownloads, sizeof(qbtActiveDownloads), value);
-  else if (idx == 3) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
-  else if (idx == 4) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
-  else if (idx == 5) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
-  else if (idx == 6) safeCopy(qbtProgress, sizeof(qbtProgress), value);
-  else if (idx == 7) safeCopy(qbtEta, sizeof(qbtEta), value);
+  else if (idx == 3) safeCopy(qbtActiveSeeding, sizeof(qbtActiveSeeding), value);
+  else if (idx == 4) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
+  else if (idx == 5) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
+  else if (idx == 6) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
+  else if (idx == 7) safeCopy(qbtTopState, sizeof(qbtTopState), value);
+  else if (idx == 8) safeCopy(qbtProgress, sizeof(qbtProgress), value);
+  else if (idx == 9) safeCopy(qbtEta, sizeof(qbtEta), value);
 }
 
 static void applyField(uint8_t idx, const char* value) {
@@ -491,9 +543,9 @@ static void feedIncomingChar(char c) {
   if (c == '\n') {
     finalizeField();
     if (commandLine) {
-      if (!lineOverflow && fieldIndex == 8) dataDirty = true;
+      if (!lineOverflow && fieldIndex >= 8) dataDirty = true;
     } else if (!lineOverflow && fieldIndex == FIELD_COUNT) {
-      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
+      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct, networkRateToPct(downStr), networkRateToPct(upStr));
       dataDirty = true;
     }
     resetLineParser();
@@ -514,7 +566,7 @@ void setup() {
   tft.setTouchCalibration(LEFT_X, RIGHT_X, TOP_Y, BOT_Y);
   tft.fillScreen(BLACK);
 
-  for (uint8_t i = 0; i < GRAPH_POINTS; i++) cpuHistory[i] = ramHistory[i] = gpuHistory[i] = vramHistory[i] = 0;
+  for (uint8_t i = 0; i < GRAPH_POINTS; i++) cpuHistory[i] = ramHistory[i] = gpuHistory[i] = vramHistory[i] = downHistory[i] = upHistory[i] = 0;
   for (uint8_t i = 0; i < PROCESS_ROWS; i++) {
     safeCopy(procName[i], sizeof(procName[i]), "--");
     safeCopy(procCpu[i], sizeof(procCpu[i]), "--");

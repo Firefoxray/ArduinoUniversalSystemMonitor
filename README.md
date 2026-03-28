@@ -3,7 +3,7 @@
 Displays real-time PC hardware statistics on an Arduino touchscreen using a Linux Python monitor plus Arduino firmware and a Java Control Center.
 
 **Author:** Ray Barrett
-**Version:** v9.7.1
+**Version:** v9.9
 **Last Modified:** March 27, 2026
 
 ---
@@ -18,9 +18,9 @@ This project is **built and tested on Linux** and is where active development ha
 
 ---
 
-## What v9.7.1 Includes
+## What v9.9 Includes
 
-Release **v9.7.1** keeps the v9.7 profile/board reliability work and now prioritizes fixed host/IP Wi-Fi workflows: direct TCP host/IP connection is treated as the primary path, UDP discovery is now positioned as optional fallback/debug behavior, Control Center wording/modes were updated to recommend fixed-IP first, and discovery broadcast handling was made more interface-aware for tougher Linux network paths.
+Release **v9.9** adds configurable storage target inclusion and disk0/disk1 mapping, expanded qBittorrent readability/seeding telemetry, and optional network down/up graph lines that can be toggled before flashing.
 
 ### Major highlights
 
@@ -524,6 +524,7 @@ debug_tools/FakeArduinoDisplay/README.md
 9.6.0 - Updated Control Center profile persistence/import-export, fixed board page naming/styling issues, separated UNO R3 vs Mega screen-size flashing selectors, and tightened profile-to-page application behavior.
 9.7.0 - Hardened Control Center profile reliability, board mapping accuracy, and profile persistence/import-export safeguards.
 9.7.1 - Promoted fixed host/IP Wi-Fi to the primary recommended path, made UDP discovery an optional fallback/debug flow, and improved Linux discovery broadcast targeting.
+9.9 - Added configurable storage target inclusion + disk0/disk1 mapping, qBittorrent seeding/readability improvements, and optional network down/up usage-graph lines controlled from Control Center.
 ```
 
 ---

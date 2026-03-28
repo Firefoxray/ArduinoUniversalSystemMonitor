@@ -36,6 +36,12 @@
 #ifndef UASM_PAGE_USAGE_GRAPH_ENABLED
 #define UASM_PAGE_USAGE_GRAPH_ENABLED 1
 #endif
+#ifndef UASM_GRAPH_NET_DOWN_ENABLED
+#define UASM_GRAPH_NET_DOWN_ENABLED 0
+#endif
+#ifndef UASM_GRAPH_NET_UP_ENABLED
+#define UASM_GRAPH_NET_UP_ENABLED 0
+#endif
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
@@ -73,6 +79,8 @@ uint8_t cpuHistory[GRAPH_POINTS];
 uint8_t ramHistory[GRAPH_POINTS];
 uint8_t gpuHistory[GRAPH_POINTS];
 uint8_t vramHistory[GRAPH_POINTS];
+uint8_t downHistory[GRAPH_POINTS];
+uint8_t upHistory[GRAPH_POINTS];
 
 const bool PAGE_ENABLED[TOTAL_PAGES] = {
   UASM_PAGE_HOME_ENABLED != 0,
@@ -123,9 +131,11 @@ char batteryStateStr[18] = "--";
 char batteryModeStr[12] = "--";
 char qbtStatus[30] = "qBittorrent unavailable";
 char qbtActiveDownloads[8] = "--";
+char qbtActiveSeeding[8] = "--";
 char qbtDownSpeed[16] = "--";
 char qbtUpSpeed[16] = "--";
 char qbtTopTorrent[28] = "--";
+char qbtTopState[12] = "--";
 char qbtProgress[10] = "--";
 char qbtEta[14] = "--";
 
@@ -194,17 +204,35 @@ static void shortGPU(char* dst, size_t dstSize, const char* src) {
   }
 }
 
-static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal) {
+static uint8_t networkRateToPct(const char* speedText) {
+  if (!speedText || speedText[0] == '\0' || strcmp(speedText, "--") == 0) return 0;
+  float value = atof(speedText);
+  String lower = String(speedText);
+  lower.toLowerCase();
+  float mbps = value;
+  if (lower.indexOf("kb/s") >= 0) mbps = value / 1024.0f;
+  else if (lower.indexOf("gb/s") >= 0) mbps = value * 1024.0f;
+  int pct = (int)(mbps * 10.0f);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return (uint8_t)pct;
+}
+
+static void pushHistory(uint8_t cpuVal, uint8_t ramVal, uint8_t gpuVal, uint8_t vramVal, uint8_t downVal, uint8_t upVal) {
   for (uint8_t i = 0; i < GRAPH_POINTS - 1; i++) {
     cpuHistory[i] = cpuHistory[i + 1];
     ramHistory[i] = ramHistory[i + 1];
     gpuHistory[i] = gpuHistory[i + 1];
     vramHistory[i] = vramHistory[i + 1];
+    downHistory[i] = downHistory[i + 1];
+    upHistory[i] = upHistory[i + 1];
   }
   cpuHistory[GRAPH_POINTS - 1] = cpuVal;
   ramHistory[GRAPH_POINTS - 1] = ramVal;
   gpuHistory[GRAPH_POINTS - 1] = gpuVal;
   vramHistory[GRAPH_POINTS - 1] = vramVal;
+  downHistory[GRAPH_POINTS - 1] = downVal;
+  upHistory[GRAPH_POINTS - 1] = upVal;
 }
 
 static void clearBody() {
@@ -383,6 +411,16 @@ static void updateGraph() {
     y1 = gy + gh - 1 - ((vramHistory[i - 1] * (gh - 2)) / 100);
     y2 = gy + gh - 1 - ((vramHistory[i] * (gh - 2)) / 100);
     tft.drawLine(x1, y1, x2, y2, MAGENTA);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+    y1 = gy + gh - 1 - ((downHistory[i - 1] * (gh - 2)) / 100);
+    y2 = gy + gh - 1 - ((downHistory[i] * (gh - 2)) / 100);
+    tft.drawLine(x1, y1, x2, y2, ORANGE);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+    y1 = gy + gh - 1 - ((upHistory[i - 1] * (gh - 2)) / 100);
+    y2 = gy + gh - 1 - ((upHistory[i] * (gh - 2)) / 100);
+    tft.drawLine(x1, y1, x2, y2, BLUE);
+#endif
   }
   drawKV(236, F("CPU"), "Green", GREEN, 54);
   drawKV(254, F("RAM"), "Cyan", CYAN, 54);
@@ -393,19 +431,32 @@ static void updateGraph() {
   snprintf(pctBuf, sizeof(pctBuf), "%u%%", ramPct); drawKV(278, F("RAM"), pctBuf, CYAN, 214);
   snprintf(pctBuf, sizeof(pctBuf), "%u%%", gpuPct); drawKV(296, F("GPU"), pctBuf, YELLOW, 54);
   snprintf(pctBuf, sizeof(pctBuf), "%u%%", gpuMemPct); drawKV(296, F("VRM"), pctBuf, MAGENTA, 214);
+#if UASM_GRAPH_NET_DOWN_ENABLED
+  drawKV(314, F("Down"), downStr, ORANGE, 54);
+#endif
+#if UASM_GRAPH_NET_UP_ENABLED
+  drawKV(314, F("Up"), upStr, BLUE, 214);
+#endif
 }
 
 
 static void updateQbittorrent() {
+  char dsv[16];
+  snprintf(dsv, sizeof(dsv), "%s/%s", qbtActiveDownloads, qbtActiveSeeding);
   drawBigKV(48, F("State"), qbtStatus, CYAN);
-  drawBigKV(68, F("Act"), qbtActiveDownloads, GREEN);
+  drawBigKV(68, F("D/S"), dsv, GREEN);
   drawBigKV(88, F("Down"), qbtDownSpeed, GREEN);
   drawBigKV(108, F("Up"), qbtUpSpeed, YELLOW);
-  drawBigKV(128, F("Prog"), qbtProgress, ORANGE);
+  drawBigKV(128, F("Mode"), qbtTopState, ORANGE);
   drawBigKV(148, F("ETA"), qbtEta, MAGENTA);
-  drawBigKV(168, F("Top"), qbtTopTorrent, WHITE);
-  drawBigKV(188, F("Host"), hostName, WHITE);
-  drawBigKV(208, F("Up"), uptimeStr, WHITE);
+  char top1[20], top2[20];
+  safeCopy(top1, sizeof(top1), qbtTopTorrent);
+  top1[18] = '\0';
+  if (strlen(qbtTopTorrent) > 18) safeCopy(top2, sizeof(top2), qbtTopTorrent + 18);
+  else safeCopy(top2, sizeof(top2), "--");
+  drawBigKV(168, F("Top1"), top1, WHITE);
+  drawBigKV(188, F("Top2"), top2, WHITE);
+  drawBigKV(208, F("Host"), hostName, WHITE);
 }
 
 static void updateCurrentPage() {
@@ -457,11 +508,13 @@ static void resetLineParser() {
 static void applyQbtField(uint8_t idx, const char* value) {
   if (idx == 1) safeCopy(qbtStatus, sizeof(qbtStatus), value);
   else if (idx == 2) safeCopy(qbtActiveDownloads, sizeof(qbtActiveDownloads), value);
-  else if (idx == 3) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
-  else if (idx == 4) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
-  else if (idx == 5) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
-  else if (idx == 6) safeCopy(qbtProgress, sizeof(qbtProgress), value);
-  else if (idx == 7) safeCopy(qbtEta, sizeof(qbtEta), value);
+  else if (idx == 3) safeCopy(qbtActiveSeeding, sizeof(qbtActiveSeeding), value);
+  else if (idx == 4) safeCopy(qbtDownSpeed, sizeof(qbtDownSpeed), value);
+  else if (idx == 5) safeCopy(qbtUpSpeed, sizeof(qbtUpSpeed), value);
+  else if (idx == 6) safeCopy(qbtTopTorrent, sizeof(qbtTopTorrent), value);
+  else if (idx == 7) safeCopy(qbtTopState, sizeof(qbtTopState), value);
+  else if (idx == 8) safeCopy(qbtProgress, sizeof(qbtProgress), value);
+  else if (idx == 9) safeCopy(qbtEta, sizeof(qbtEta), value);
 }
 
 static void applyField(uint8_t idx, const char* value) {
@@ -544,9 +597,9 @@ static void feedIncomingChar(char c) {
   if (c == '\n') {
     finalizeField();
     if (commandLine) {
-      if (!lineOverflow && fieldIndex == 8) dataDirty = true;
+      if (!lineOverflow && fieldIndex >= 8) dataDirty = true;
     } else if (!lineOverflow && fieldIndex == FIELD_COUNT) {
-      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct);
+      pushHistory(cpuTotal, ramPct, gpuPct, gpuMemPct, networkRateToPct(downStr), networkRateToPct(upStr));
       dataDirty = true;
     }
     resetLineParser();
@@ -572,6 +625,8 @@ void setup() {
     ramHistory[i] = 0;
     gpuHistory[i] = 0;
     vramHistory[i] = 0;
+    downHistory[i] = 0;
+    upHistory[i] = 0;
   }
 
   resetLineParser();

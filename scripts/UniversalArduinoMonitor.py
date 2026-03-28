@@ -27,7 +27,7 @@ import urllib.parse
 import urllib.request
 import http.cookiejar
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Set, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple
 
 import psutil
 import serial
@@ -110,6 +110,11 @@ def load_config() -> Dict[str, object]:
         "debug_port": "",
         "root_mount": "/",
         "secondary_mount": "/mnt/linux_storage",
+        "storage_enabled_targets": [],
+        "storage_disk0_target": "",
+        "storage_disk1_target": "",
+        "graph_net_down_enabled": False,
+        "graph_net_up_enabled": False,
         "send_interval": 1.0,
         "wifi_enabled": True,
         "wifi_host": "192.168.1.50",
@@ -260,6 +265,15 @@ SECONDARY_MOUNT_CANDIDATES = [
     "/mnt/data",
     "/home",
 ]
+
+raw_storage_enabled_targets = CONFIG.get("storage_enabled_targets")
+if isinstance(raw_storage_enabled_targets, list):
+    STORAGE_ENABLED_TARGET_IDS = [str(item).strip() for item in raw_storage_enabled_targets if str(item).strip()]
+else:
+    STORAGE_ENABLED_TARGET_IDS = []
+STORAGE_ENABLED_TARGET_SET = set(STORAGE_ENABLED_TARGET_IDS)
+STORAGE_DISK0_TARGET = str(CONFIG.get("storage_disk0_target") or "").strip()
+STORAGE_DISK1_TARGET = str(CONFIG.get("storage_disk1_target") or "").strip()
 STORAGE_LINES = 8
 PROCESS_ROWS = 6
 CPU_THREADS_TO_SEND = 16
@@ -1060,10 +1074,150 @@ def looks_generic_storage_name(value: str) -> bool:
     return any(re.fullmatch(pattern, cleaned) for pattern in generic_patterns)
 
 
-def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
+def storage_target_id(mountpoint: str, path_name: str, label: str) -> str:
+    if mountpoint:
+        return f"mnt:{mountpoint}"
+    if path_name:
+        return f"dev:{path_name}"
+    return f"label:{label.strip().lower()}"
+
+
+def collect_storage_targets() -> List[Dict[str, Any]]:
     data = load_lsblk()
-    lines: List[str] = []
     seen_keys: Set[str] = set()
+    ignored_names = {"sda1", "sda2"}
+    hidden_mounts = {"/boot", "/boot/efi", "/opt"}
+    hidden_aliases = {"boot", "bootefi", "opt", "unmnt"}
+
+    def mount_alias(mountpoint: str) -> str:
+        mountpoint = (mountpoint or "").strip()
+        if mountpoint == "/":
+            return "root"
+        if mountpoint == "/home":
+            return "home"
+        if mountpoint.startswith("/mnt/"):
+            return mountpoint[5:] or "mnt"
+        if mountpoint.startswith("/media/"):
+            return mountpoint[7:] or "media"
+        if mountpoint.startswith("/run/media/"):
+            return mountpoint[11:] or "media"
+        if mountpoint.startswith("/boot/efi"):
+            return "bootefi"
+        if mountpoint.startswith("/boot"):
+            return "boot"
+        tail = mountpoint.rstrip("/").split("/")[-1]
+        return tail or mountpoint or "unmnt"
+
+    def cleaned_name(node: dict) -> str:
+        return str(node.get("name") or node.get("kname") or "").strip()
+
+    def cleaned_path(node: dict) -> str:
+        return str(node.get("path") or "").strip()
+
+    def friendly_label(node: dict, parent_label: str = "disk") -> str:
+        mountpoint = (node.get("mountpoint") or "").strip()
+        raw_label = str(node.get("label") or "").strip()
+        if raw_label and raw_label.lower() not in {"rootfs", "none"} and not looks_generic_storage_name(raw_label):
+            return clean_field(raw_label, 14)
+
+        alias = clean_field(mount_alias(mountpoint), 14)
+        if alias != "--" and alias not in hidden_aliases and alias not in {"root", "home"}:
+            return alias
+
+        model = clean_field(node.get("model") or "", 14)
+        if model != "--" and not looks_generic_storage_name(model):
+            return model
+
+        path_name = cleaned_path(node).replace("/dev/", "").strip()
+        if path_name and path_name.lower() not in ignored_names and not looks_generic_storage_name(path_name):
+            return clean_field(path_name, 14)
+
+        parent = clean_field(parent_label, 14)
+        if parent != "--" and not looks_generic_storage_name(parent):
+            return parent
+
+        name = clean_field(cleaned_name(node) or "disk", 14)
+        return name if name != "--" else "disk"
+
+    secondary_mount = pick_secondary_mount()
+    candidates: List[Tuple[int, Dict[str, Any]]] = []
+
+    def visit(node: dict, parent_label: str = "") -> None:
+        node_name = cleaned_name(node).lower()
+        mountpoint = (node.get("mountpoint") or "").strip()
+        fstype = (node.get("fstype") or "").strip().lower()
+        node_type = (node.get("type") or "").strip()
+        size = clean_field(node.get("size") or "", 8)
+        raw_path = cleaned_path(node)
+
+        if node_name in ignored_names or mountpoint in hidden_mounts:
+            for child in node.get("children") or []:
+                visit(child, parent_label)
+            return
+
+        if mountpoint == secondary_mount and mountpoint in hidden_mounts:
+            return
+
+        label = friendly_label(node, parent_label or "disk")
+        alias = mount_alias(mountpoint) if mountpoint else ""
+
+        score = 0
+        if mountpoint:
+            score += 200
+            if mountpoint == ROOT_MOUNT:
+                score += 120
+            if mountpoint == secondary_mount:
+                score += 60
+            if mountpoint == "/home":
+                score += 45
+            if mountpoint.startswith(("/mnt/", "/media/", "/run/media/")):
+                score += 35
+        elif node_type == "disk":
+            score += 25
+
+        if str(node.get("label") or "").strip():
+            score += 55
+        if alias and alias not in hidden_aliases:
+            score += 20
+        if fstype in ("ext4", "btrfs", "xfs", "ntfs", "exfat", "vfat", "swap"):
+            score += 25
+        if node_type in ("part", "lvm", "crypt"):
+            score += 15
+        if node_type == "disk" and mountpoint:
+            score += 10
+
+        include_unmounted_disk = node_type == "disk" and not mountpoint and label.lower() not in ignored_names
+        include_node = bool(mountpoint) or include_unmounted_disk or fstype == "swap"
+        key = f"{label}|{mountpoint}|{size}|{fstype}"
+        if include_node and key not in seen_keys:
+            seen_keys.add(key)
+            percent = get_mount_percent(mountpoint) if mountpoint else None
+            target = {
+                "id": storage_target_id(mountpoint, raw_path, label),
+                "label": label,
+                "mountpoint": mountpoint,
+                "size": size,
+                "percent": percent,
+                "score": score,
+                "line": clean_field(f"{label} {percent}% {mount_alias(mountpoint)}" if percent is not None else f"{label} {size}", 30),
+            }
+            candidates.append((score, target))
+
+        for child in node.get("children") or []:
+            visit(child, label)
+
+    for disk in data.get("blockdevices", []):
+        visit(disk)
+
+    candidates.sort(key=lambda item: (-item[0], item[1]["label"], item[1]["mountpoint"], item[1]["size"]))
+    return [item[1] for item in candidates]
+
+
+def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
+    lines: List[str] = []
+    targets = collect_storage_targets()
+    if STORAGE_ENABLED_TARGET_SET:
+        targets = [target for target in targets if target["id"] in STORAGE_ENABLED_TARGET_SET]
     ignored_names = {"sda1", "sda2"}
     hidden_mounts = {"/boot", "/boot/efi", "/opt"}
     hidden_aliases = {"boot", "bootefi", "opt", "unmnt"}
@@ -1127,69 +1281,12 @@ def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
             line = f"{base} {percent}% {clean_field(target, 10)}"
         lines.append(clean_field(line, 30))
 
-    secondary_mount = pick_secondary_mount()
-    candidates: List[Tuple[int, str, str, str, Optional[int]]] = []
-
-    def visit(node: dict, parent_label: str = "") -> None:
-        node_name = cleaned_name(node).lower()
-        mountpoint = (node.get("mountpoint") or "").strip()
-        fstype = (node.get("fstype") or "").strip().lower()
-        node_type = (node.get("type") or "").strip()
-        size = clean_field(node.get("size") or "", 8)
-
-        if node_name in ignored_names or mountpoint in hidden_mounts:
-            for child in node.get("children") or []:
-                visit(child, parent_label)
-            return
-
-        if mountpoint == secondary_mount and mountpoint in hidden_mounts:
-            return
-
-        label = friendly_label(node, parent_label or "disk")
-        alias = mount_alias(mountpoint) if mountpoint else ""
-
-        score = 0
-        if mountpoint:
-            score += 200
-            if mountpoint == ROOT_MOUNT:
-                score += 120
-            if mountpoint == secondary_mount:
-                score += 60
-            if mountpoint == "/home":
-                score += 45
-            if mountpoint.startswith(("/mnt/", "/media/", "/run/media/")):
-                score += 35
-        elif node_type == "disk":
-            score += 25
-
-        if str(node.get("label") or "").strip():
-            score += 55
-        if alias and alias not in hidden_aliases:
-            score += 20
-        if fstype in ("ext4", "btrfs", "xfs", "ntfs", "exfat", "vfat", "swap"):
-            score += 25
-        if node_type in ("part", "lvm", "crypt"):
-            score += 15
-        if node_type == "disk" and mountpoint:
-            score += 10
-
-        include_unmounted_disk = node_type == "disk" and not mountpoint and label.lower() not in ignored_names
-        include_node = bool(mountpoint) or include_unmounted_disk or fstype == "swap"
-        key = f"{label}|{mountpoint}|{size}|{fstype}"
-        if include_node and key not in seen_keys:
-            seen_keys.add(key)
-            percent = get_mount_percent(mountpoint) if mountpoint else None
-            candidates.append((score, label, mountpoint, size, percent))
-
-        for child in node.get("children") or []:
-            visit(child, label)
-
-    for disk in data.get("blockdevices", []):
-        visit(disk)
-
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2], item[3]))
-    for _, label, mountpoint, size, percent in candidates[:max_lines]:
-        add_line(label, mountpoint, size, percent)
+    for target in targets[:max_lines]:
+        label = str(target.get("label") or "disk")
+        mountpoint = str(target.get("mountpoint") or "")
+        size = str(target.get("size") or "")
+        percent = target.get("percent")
+        add_line(label, mountpoint, size, percent if isinstance(percent, int) else None)
 
     while len(lines) < max_lines:
         lines.append("Storage: --")
@@ -1357,9 +1454,11 @@ def get_qbittorrent_status() -> Dict[str, str]:
     fallback = {
         "status": "qBittorrent unavailable",
         "active_downloads": "--",
+        "active_seeding": "--",
         "down_speed": "--",
         "up_speed": "--",
         "top_torrent": "--",
+        "top_state": "--",
         "progress": "--",
         "eta": "--",
     }
@@ -1393,10 +1492,17 @@ def get_qbittorrent_status() -> Dict[str, str]:
         torrents_raw = payload.get("torrents", {}) if isinstance(payload, dict) else {}
         torrents = list(torrents_raw.values()) if isinstance(torrents_raw, dict) else []
         download_states = {"downloading", "stalleddl", "metadl", "queueddl", "forceddl", "checkingdl"}
+        seeding_states = {"uploading", "stalledup", "queuedup", "forcedup"}
         active = []
+        seeding = []
         for torrent in torrents:
-            if isinstance(torrent, dict) and str(torrent.get("state", "")).lower() in download_states:
+            if not isinstance(torrent, dict):
+                continue
+            state = str(torrent.get("state", "")).lower()
+            if state in download_states:
                 active.append(torrent)
+            if state in seeding_states:
+                seeding.append(torrent)
 
         dl_speed = float(server_state.get("dl_info_speed", 0.0) or 0.0)
         up_speed = float(server_state.get("up_info_speed", 0.0) or 0.0)
@@ -1408,19 +1514,37 @@ def get_qbittorrent_status() -> Dict[str, str]:
             return {
                 "status": "Active downloads",
                 "active_downloads": str(len(active)),
+                "active_seeding": str(len(seeding)),
                 "down_speed": format_speed(dl_speed),
                 "up_speed": format_speed(up_speed),
                 "top_torrent": clean_field(top.get("name", "--"), 60),
+                "top_state": "Downloading",
                 "progress": f"{progress_value:.1f}%",
                 "eta": eta_value,
+            }
+
+        if seeding:
+            top_seed = max(seeding, key=lambda t: float(t.get("upspeed", 0.0) or 0.0))
+            return {
+                "status": "Active seeding",
+                "active_downloads": "0",
+                "active_seeding": str(len(seeding)),
+                "down_speed": format_speed(dl_speed),
+                "up_speed": format_speed(up_speed),
+                "top_torrent": clean_field(top_seed.get("name", "--"), 60),
+                "top_state": "Seeding",
+                "progress": "100.0%",
+                "eta": "--",
             }
 
         return {
             "status": "No active torrents",
             "active_downloads": "0",
+            "active_seeding": "0",
             "down_speed": format_speed(dl_speed),
             "up_speed": format_speed(up_speed),
             "top_torrent": "--",
+            "top_state": "--",
             "progress": "--",
             "eta": "--",
         }
@@ -1726,6 +1850,23 @@ def get_cached_static() -> Dict[str, str]:
     return _static_cache["data"]
 
 
+def resolve_storage_percent(targets: List[Dict[str, Any]], configured_target_id: str, fallback_mount: str) -> int:
+    if configured_target_id:
+        for target in targets:
+            if target.get("id") == configured_target_id:
+                mountpoint = str(target.get("mountpoint") or "")
+                if mountpoint:
+                    return get_mount_percent(mountpoint)
+                percent = target.get("percent")
+                return int(percent) if isinstance(percent, int) else 0
+    for target in targets:
+        if str(target.get("mountpoint") or "") == fallback_mount:
+            return get_mount_percent(fallback_mount)
+    if fallback_mount:
+        return get_mount_percent(fallback_mount)
+    return 0
+
+
 def build_snapshot(last_net, last_time):
     cpu_total_val = psutil.cpu_percent(interval=CPU_SAMPLE_INTERVAL)
     per_core = psutil.cpu_percent(interval=None, percpu=True)
@@ -1734,6 +1875,8 @@ def build_snapshot(last_net, last_time):
     per_core = per_core[:CPU_THREADS_TO_SEND]
 
     static = get_cached_static()
+    storage_targets = collect_storage_targets()
+    enabled_storage_targets = [target for target in storage_targets if not STORAGE_ENABLED_TARGET_SET or target["id"] in STORAGE_ENABLED_TARGET_SET]
     iface = static["iface"]
     now_time = time.time()
     elapsed = max(now_time - last_time, 0.001)
@@ -1753,8 +1896,8 @@ def build_snapshot(last_net, last_time):
         "cpu_total": int(round(cpu_total_val)),
         "per_core": [int(round(x)) for x in per_core],
         "ram_pct": int(round(psutil.virtual_memory().percent)),
-        "disk0_pct": get_mount_percent(ROOT_MOUNT),
-        "disk1_pct": get_mount_percent(static["secondary_mount"]),
+        "disk0_pct": resolve_storage_percent(enabled_storage_targets, STORAGE_DISK0_TARGET, ROOT_MOUNT),
+        "disk1_pct": resolve_storage_percent(enabled_storage_targets, STORAGE_DISK1_TARGET, static["secondary_mount"]),
         "cpu_temp": clean_field(get_cached_temp(), 12),
         "os_name": clean_field(static["os_name"], 24),
         "host_name": clean_field(static["host_name"], 24),
@@ -1849,9 +1992,11 @@ def build_qbittorrent_payload(snapshot) -> str:
         "QBT",
         clean_field(qbt.get("status", "qBittorrent unavailable"), 36),
         clean_field(qbt.get("active_downloads", "--"), 6),
+        clean_field(qbt.get("active_seeding", "--"), 6),
         clean_field(qbt.get("down_speed", "--"), 18),
         clean_field(qbt.get("up_speed", "--"), 18),
         clean_field(qbt.get("top_torrent", "--"), 60),
+        clean_field(qbt.get("top_state", "--"), 12),
         clean_field(qbt.get("progress", "--"), 10),
         clean_field(qbt.get("eta", "--"), 18),
     ]
@@ -1919,6 +2064,8 @@ def main() -> None:
         return
 
     static = get_cached_static()
+    storage_targets = collect_storage_targets()
+    enabled_storage_targets = [target for target in storage_targets if not STORAGE_ENABLED_TARGET_SET or target["id"] in STORAGE_ENABLED_TARGET_SET]
     print(f"Running Universal Arduino Monitor {APP_VERSION} for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
     print(f"Active network interface: {static['iface']}")

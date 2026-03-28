@@ -139,6 +139,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> wifiConnectionModeSelector = new JComboBox<>(new String[]{WIFI_MODE_MANUAL, WIFI_MODE_AUTO_DISCOVERY});
     private final JCheckBox wifiDiscoveryDebugToggle = new JCheckBox("Wi-Fi Discovery Debug");
     private final JCheckBox wifiDiscoveryIgnoreBoardFilterToggle = new JCheckBox("Ignore Board Filter (Wi-Fi Discovery Debug)");
+    private final JCheckBox graphNetDownToggle = new JCheckBox("Graph: Net Down");
+    private final JCheckBox graphNetUpToggle = new JCheckBox("Graph: Net Up");
     private final JComboBox<String> programModeSelector = new JComboBox<>(new String[]{
             PROGRAM_MODE_SYSTEM_MONITOR,
             PROGRAM_MODE_GAMING,
@@ -158,9 +160,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton loadMonitorSettingsButton = new JButton("Load Monitor Settings");
     private final JButton saveMonitorSettingsButton = new JButton("Save Monitor Settings and Flash WiFi R4");
     private final JButton saveAndRestartMonitorButton = new JButton("Save & Restart Python Monitor");
+    private final JButton refreshStorageTargetsButton = new JButton("Refresh Storage Targets");
+    private final JButton saveStorageSettingsButton = new JButton("Save Storage Settings");
     private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
     private final JTextArea macroEntriesArea = new JTextArea(6, 52);
+    private final JPanel storageTargetsPanel = new JPanel();
+    private final JComboBox<String> disk0Selector = new JComboBox<>();
+    private final JComboBox<String> disk1Selector = new JComboBox<>();
     private final JComboBox<String> macroTriggerModelSelector = new JComboBox<>(new String[]{
             "Whole-screen tap cycles entries",
             "Large left/right screen halves",
@@ -203,6 +210,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Map<String, Set<String>> profileEnabledModules = new LinkedHashMap<>();
     private final Map<String, JCheckBox> boardPageCheckboxes = new LinkedHashMap<>();
     private final Map<String, RemoteTargetProfile> remoteTargetProfiles = new LinkedHashMap<>();
+    private final Map<String, JCheckBox> storageTargetCheckboxes = new LinkedHashMap<>();
+    private final Map<String, StorageTarget> storageTargetsById = new LinkedHashMap<>();
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
 
@@ -426,6 +435,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         tabs.addTab("Flash", buildFlashTab());
         tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
         tabs.addTab("Monitor", buildMonitorModulesTab());
+        tabs.addTab("Storage", buildStorageTab());
         outputPanelTab = buildOutputPanel();
         tabs.addTab("Logs", outputPanelTab);
         return tabs;
@@ -565,6 +575,42 @@ public class UniversalMonitorControlCenter extends JFrame {
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildStorageTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        controls.setBorder(BorderFactory.createTitledBorder("Storage Selection"));
+        controls.add(refreshStorageTargetsButton);
+        controls.add(saveStorageSettingsButton);
+        controls.add(new JLabel("Home disk0:"));
+        disk0Selector.setPreferredSize(new Dimension(280, disk0Selector.getPreferredSize().height));
+        controls.add(disk0Selector);
+        controls.add(new JLabel("Home disk1:"));
+        disk1Selector.setPreferredSize(new Dimension(280, disk1Selector.getPreferredSize().height));
+        controls.add(disk1Selector);
+        controls.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(controls);
+
+        storageTargetsPanel.setLayout(new BoxLayout(storageTargetsPanel, BoxLayout.Y_AXIS));
+        storageTargetsPanel.setBorder(new EmptyBorder(6, 6, 6, 6));
+        JScrollPane targetsScroll = new JScrollPane(storageTargetsPanel);
+        targetsScroll.setBorder(BorderFactory.createTitledBorder("Detected Drives / Storage Targets (checked = shown on Arduino storage pages)"));
+        targetsScroll.setPreferredSize(new Dimension(1160, 480));
+        content.add(targetsScroll);
+
+        JLabel helper = new JLabel("<html>Select which detected storage targets are included on Arduino storage pages.<br>"
+                + "Disk0 and Disk1 control the two home-screen disk percentages and are saved to local monitor config.</html>");
+        helper.setBorder(new EmptyBorder(6, 6, 6, 6));
+        helper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(helper);
+
+        panel.add(content, BorderLayout.CENTER);
         return panel;
     }
 
@@ -884,6 +930,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         rowThree.add(Box.createHorizontalStrut(8));
         rowThree.add(wifiDiscoveryDebugToggle);
         rowThree.add(wifiDiscoveryIgnoreBoardFilterToggle);
+        rowThree.add(Box.createHorizontalStrut(8));
+        rowThree.add(graphNetDownToggle);
+        rowThree.add(graphNetUpToggle);
         monitorSettingsPanel.add(rowThree);
 
         JPanel rowQbit = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
@@ -1063,6 +1112,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
         saveAndRestartMonitorButton.addActionListener(e -> saveMonitorConnectionSettings(false));
+        refreshStorageTargetsButton.addActionListener(e -> refreshStorageTargetsFromSystem(true));
+        saveStorageSettingsButton.addActionListener(e -> saveStorageSelectionsOnly());
         testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
         resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
@@ -2200,11 +2251,141 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "r3_display_rotation",
                 "mega_display_rotation",
                 "uno_r3_screen_size",
-                "mega_screen_size"
+                "mega_screen_size",
+                "storage_enabled_targets",
+                "storage_disk0_target",
+                "storage_disk1_target",
+                "graph_net_down_enabled",
+                "graph_net_up_enabled"
         )) {
             merged = copyConfigEntryIfPresent(merged, overrideText, key);
         }
         return merged;
+    }
+
+    private void refreshStorageTargetsFromSystem(boolean verbose) {
+        List<StorageTarget> detected = detectStorageTargets();
+        storageTargetsById.clear();
+        storageTargetCheckboxes.clear();
+        storageTargetsPanel.removeAll();
+        for (StorageTarget target : detected) {
+            storageTargetsById.put(target.id(), target);
+            JCheckBox checkbox = new JCheckBox(target.displayLabel());
+            checkbox.setSelected(true);
+            checkbox.setToolTipText(target.id());
+            storageTargetCheckboxes.put(target.id(), checkbox);
+            storageTargetsPanel.add(checkbox);
+            storageTargetsPanel.add(Box.createVerticalStrut(4));
+        }
+        rebuildStorageTargetSelectors();
+        storageTargetsPanel.revalidate();
+        storageTargetsPanel.repaint();
+        if (verbose) {
+            log("[INFO] Refreshed storage target list (" + detected.size() + " targets).");
+        }
+    }
+
+    private List<StorageTarget> detectStorageTargets() {
+        List<StorageTarget> targets = new ArrayList<>();
+        ProcessBuilder builder = new ProcessBuilder("lsblk", "-nrP", "-o", "NAME,TYPE,SIZE,FSTYPE,MOUNTPOINT,LABEL,MODEL");
+        builder.directory(repoPath().toFile());
+        try {
+            Process process = builder.start();
+            List<String> lines = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)).lines().toList();
+            process.waitFor();
+            for (String line : lines) {
+                Map<String, String> row = parseLsblkPairs(line);
+                String type = row.getOrDefault("TYPE", "").trim();
+                String mount = row.getOrDefault("MOUNTPOINT", "").trim();
+                if (!(type.equals("disk") || type.equals("part") || type.equals("lvm") || type.equals("crypt") || type.equals("raid0") || type.equals("raid1"))) {
+                    continue;
+                }
+                if (mount.startsWith("/boot")) {
+                    continue;
+                }
+                String name = row.getOrDefault("NAME", "").trim();
+                String label = row.getOrDefault("LABEL", "").trim();
+                String model = row.getOrDefault("MODEL", "").trim();
+                String fstype = row.getOrDefault("FSTYPE", "").trim();
+                String size = row.getOrDefault("SIZE", "").trim();
+                String id = !mount.isBlank() ? "mnt:" + mount : "dev:/dev/" + name;
+                String display = (label.isBlank() ? (model.isBlank() ? name : model) : label)
+                        + " • " + (mount.isBlank() ? "/dev/" + name : mount)
+                        + (size.isBlank() ? "" : " • " + size)
+                        + (fstype.isBlank() ? "" : " • " + fstype);
+                targets.add(new StorageTarget(id, display, mount));
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed to detect storage targets with lsblk: " + ex.getMessage());
+        }
+        return targets;
+    }
+
+    private Map<String, String> parseLsblkPairs(String line) {
+        Map<String, String> map = new LinkedHashMap<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\w+)=\"([^\"]*)\"").matcher(line == null ? "" : line);
+        while (matcher.find()) {
+            map.put(matcher.group(1), matcher.group(2));
+        }
+        return map;
+    }
+
+    private void rebuildStorageTargetSelectors() {
+        String currentDisk0 = extractStorageTargetId(disk0Selector.getSelectedItem());
+        String currentDisk1 = extractStorageTargetId(disk1Selector.getSelectedItem());
+        disk0Selector.removeAllItems();
+        disk1Selector.removeAllItems();
+        disk0Selector.addItem("Auto (" + ROOT_MOUNT_FALLBACK_LABEL() + ")");
+        disk1Selector.addItem("Auto (secondary)");
+        for (StorageTarget target : storageTargetsById.values()) {
+            String label = target.displayLabel() + " [" + target.id() + "]";
+            disk0Selector.addItem(label);
+            disk1Selector.addItem(label);
+        }
+        selectStorageTargetInCombo(disk0Selector, currentDisk0);
+        selectStorageTargetInCombo(disk1Selector, currentDisk1);
+    }
+
+    private String ROOT_MOUNT_FALLBACK_LABEL() {
+        return "/";
+    }
+
+    private void selectStorageTargetInCombo(JComboBox<String> selector, String id) {
+        if (id == null || id.isBlank()) {
+            selector.setSelectedIndex(0);
+            return;
+        }
+        for (int i = 0; i < selector.getItemCount(); i++) {
+            String item = selector.getItemAt(i);
+            if (item != null && item.endsWith("[" + id + "]")) {
+                selector.setSelectedIndex(i);
+                return;
+            }
+        }
+        selector.setSelectedIndex(0);
+    }
+
+    private String extractStorageTargetId(Object selectedItem) {
+        if (selectedItem == null) {
+            return "";
+        }
+        String text = selectedItem.toString();
+        int start = text.lastIndexOf('[');
+        int end = text.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            return text.substring(start + 1, end).trim();
+        }
+        return "";
+    }
+
+    private List<String> selectedEnabledStorageTargetIds() {
+        List<String> ids = new ArrayList<>();
+        for (Map.Entry<String, JCheckBox> entry : storageTargetCheckboxes.entrySet()) {
+            if (entry.getValue().isSelected()) {
+                ids.add(entry.getKey());
+            }
+        }
+        return ids;
     }
 
     private String copyConfigEntryIfPresent(String targetText, String sourceText, String key) {
@@ -2357,6 +2538,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 wifiConnectionModeSelector.setSelectedItem(WIFI_MODE_MANUAL);
                 wifiDiscoveryDebugToggle.setSelected(false);
                 wifiDiscoveryIgnoreBoardFilterToggle.setSelected(false);
+                graphNetDownToggle.setSelected(false);
+                graphNetUpToggle.setSelected(false);
                 programModeSelector.setSelectedItem(PROGRAM_MODE_SYSTEM_MONITOR);
                 macroTriggerModelSelector.setSelectedItem("Whole-screen tap cycles entries");
                 macroEntriesArea.setText("");
@@ -2373,6 +2556,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
                 setScreenSizeSelectorValue(unoR3ScreenSizeSelector, "35");
                 setScreenSizeSelectorValue(megaScreenSizeSelector, "35");
+                refreshStorageTargetsFromSystem(false);
                 wifiPortSourceLabel.setText("Effective source: default fallback (5000)");
                 updateWifiHostFieldState();
                 if (verbose) {
@@ -2385,6 +2569,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             boolean wifiAutoDiscovery = readBooleanConfigValue(text, "wifi_auto_discovery", true);
             boolean wifiDiscoveryDebug = readBooleanConfigValue(text, "wifi_discovery_debug", false);
             boolean wifiDiscoveryIgnoreBoardFilter = readBooleanConfigValue(text, "wifi_discovery_ignore_board_filter", false);
+            boolean graphNetDownEnabled = readBooleanConfigValue(text, "graph_net_down_enabled", false);
+            boolean graphNetUpEnabled = readBooleanConfigValue(text, "graph_net_up_enabled", false);
             String wifiHost = readStringConfigValue(text, "wifi_host", "");
             String selectedProgramMode = normalizeProgramMode(readStringConfigValue(text, "program_mode", PROGRAM_MODE_SYSTEM_MONITOR));
             String macroTriggerModel = normalizeMacroTriggerModel(readStringConfigValue(text, "macro_trigger_model", "Whole-screen tap cycles entries"));
@@ -2399,6 +2585,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiConnectionModeSelector.setSelectedItem(wifiAutoDiscovery ? WIFI_MODE_AUTO_DISCOVERY : WIFI_MODE_MANUAL);
             wifiDiscoveryDebugToggle.setSelected(wifiDiscoveryDebug);
             wifiDiscoveryIgnoreBoardFilterToggle.setSelected(wifiDiscoveryIgnoreBoardFilter);
+            graphNetDownToggle.setSelected(graphNetDownEnabled);
+            graphNetUpToggle.setSelected(graphNetUpEnabled);
             programModeSelector.setSelectedItem(selectedProgramMode);
             macroTriggerModelSelector.setSelectedItem(macroTriggerModel);
             macroEntriesArea.setText(String.join("\n", macroEntries));
@@ -2415,6 +2603,15 @@ public class UniversalMonitorControlCenter extends JFrame {
             setRotationSelectorValue(megaRotationSelector, resolveDisplayRotation(text, "mega_display_rotation"));
             setScreenSizeSelectorValue(unoR3ScreenSizeSelector, resolveScreenSizeConfig(text, "uno_r3_screen_size", "35"));
             setScreenSizeSelectorValue(megaScreenSizeSelector, resolveScreenSizeConfig(text, "mega_screen_size", "35"));
+            refreshStorageTargetsFromSystem(false);
+            List<String> enabledStorageTargets = readStringArrayConfigValue(text, "storage_enabled_targets");
+            String disk0Target = readStringConfigValue(text, "storage_disk0_target", "");
+            String disk1Target = readStringConfigValue(text, "storage_disk1_target", "");
+            for (Map.Entry<String, JCheckBox> entry : storageTargetCheckboxes.entrySet()) {
+                entry.getValue().setSelected(enabledStorageTargets.isEmpty() || enabledStorageTargets.contains(entry.getKey()));
+            }
+            selectStorageTargetInCombo(disk0Selector, disk0Target);
+            selectStorageTargetInCombo(disk1Selector, disk1Target);
             wifiPortSourceLabel.setText("Effective source: " + wifiResolution.source());
             updateWifiHostFieldState();
             if (verbose) {
@@ -2500,9 +2697,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         String wifiTargetHostname = wifiTargetHostnameField.getText() == null ? "" : wifiTargetHostnameField.getText().trim();
         boolean wifiDiscoveryDebug = wifiDiscoveryDebugToggle.isSelected();
         boolean wifiDiscoveryIgnoreBoardFilter = wifiDiscoveryIgnoreBoardFilterToggle.isSelected();
+        boolean graphNetDownEnabled = graphNetDownToggle.isSelected();
+        boolean graphNetUpEnabled = graphNetUpToggle.isSelected();
         String programMode = normalizeProgramMode(String.valueOf(programModeSelector.getSelectedItem()));
         String macroTriggerModel = normalizeMacroTriggerModel(String.valueOf(macroTriggerModelSelector.getSelectedItem()));
         List<String> macroEntries = normalizeMacroEntries(macroEntriesArea.getText());
+        List<String> enabledStorageTargets = selectedEnabledStorageTargetIds();
+        String disk0Target = extractStorageTargetId(disk0Selector.getSelectedItem());
+        String disk1Target = extractStorageTargetId(disk1Selector.getSelectedItem());
 
         applyAutoModuleDependenciesForAllBoards(true);
         applyMonitorModuleStateFromProfiles(true);
@@ -2522,6 +2724,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertBooleanConfigValue(updated, "wifi_auto_discovery", wifiAutoDiscovery);
             updated = upsertBooleanConfigValue(updated, "wifi_discovery_debug", wifiDiscoveryDebug);
             updated = upsertBooleanConfigValue(updated, "wifi_discovery_ignore_board_filter", wifiDiscoveryIgnoreBoardFilter);
+            updated = upsertBooleanConfigValue(updated, "graph_net_down_enabled", graphNetDownEnabled);
+            updated = upsertBooleanConfigValue(updated, "graph_net_up_enabled", graphNetUpEnabled);
             updated = upsertBooleanConfigValue(updated, "wifi_enabled", true);
             updated = upsertBooleanConfigValue(updated, "prefer_usb", false);
             updated = upsertStringConfigValue(updated, "program_mode", programMode);
@@ -2544,6 +2748,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             updated = upsertNumberConfigValue(updated, "mega_display_rotation", megaRotation);
             updated = upsertStringConfigValue(updated, "uno_r3_screen_size", unoScreenSize);
             updated = upsertStringConfigValue(updated, "mega_screen_size", megaScreenSize);
+            updated = upsertStringArrayConfigValue(updated, "storage_enabled_targets", enabledStorageTargets);
+            updated = upsertStringConfigValue(updated, "storage_disk0_target", disk0Target);
+            updated = upsertStringConfigValue(updated, "storage_disk1_target", disk1Target);
             if (!updated.equals(text)) {
                 Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                 log("[INFO] Saved machine-local monitor settings to " + configPath
@@ -2566,7 +2773,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                         + ", r3_display_rotation=" + r3Rotation
                         + ", mega_display_rotation=" + megaRotation
                         + ", uno_r3_screen_size=" + unoScreenSize
-                        + ", mega_screen_size=" + megaScreenSize + ").");
+                        + ", mega_screen_size=" + megaScreenSize
+                        + ", storage_enabled_targets=" + enabledStorageTargets.size()
+                        + ", storage_disk0_target=" + (disk0Target.isBlank() ? "<auto>" : disk0Target)
+                        + ", storage_disk1_target=" + (disk1Target.isBlank() ? "<auto>" : disk1Target) + ").");
             } else {
                 log("[INFO] Machine-local monitor settings already matched in " + configPath + " (Wi-Fi remains preferred over USB).");
             }
@@ -2634,6 +2844,29 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         }
         return candidate.isBlank() ? DEFAULT_QBITTORRENT_HOST : candidate;
+    }
+
+    private void saveStorageSelectionsOnly() {
+        Path configPath = monitorLocalConfigPath();
+        try {
+            String text = ensureWritableLocalMonitorConfig();
+            List<String> enabledStorageTargets = selectedEnabledStorageTargetIds();
+            String disk0Target = extractStorageTargetId(disk0Selector.getSelectedItem());
+            String disk1Target = extractStorageTargetId(disk1Selector.getSelectedItem());
+            String updated = upsertStringArrayConfigValue(text, "storage_enabled_targets", enabledStorageTargets);
+            updated = upsertStringConfigValue(updated, "storage_disk0_target", disk0Target);
+            updated = upsertStringConfigValue(updated, "storage_disk1_target", disk1Target);
+            if (!updated.equals(text)) {
+                Files.writeString(configPath, updated, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                log("[INFO] Saved storage settings to " + configPath + " (enabled=" + enabledStorageTargets.size()
+                        + ", disk0=" + (disk0Target.isBlank() ? "<auto>" : disk0Target)
+                        + ", disk1=" + (disk1Target.isBlank() ? "<auto>" : disk1Target) + ").");
+            } else {
+                log("[INFO] Storage settings already matched in " + configPath + ".");
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed to save storage settings: " + ex.getMessage());
+        }
     }
 
     private int resolveQbittorrentPort(String rawPort, String fallbackUrl) {
@@ -3528,6 +3761,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private record WifiPortResolution(int port, String source) {
+    }
+
+    private record StorageTarget(String id, String displayLabel, String mountpoint) {
     }
 
     private void cycleServiceForTransportChange() {
@@ -5272,6 +5508,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             boolean enabled = settings.pageEnabled.getOrDefault(page.id(), pageDefaultEnabled(board, page.id()));
             header.append("#define ").append(macro).append(" ").append(enabled ? "1" : "0").append("\n");
         }
+        header.append("#define UASM_GRAPH_NET_DOWN_ENABLED ").append(graphNetDownToggle.isSelected() ? "1" : "0").append("\n");
+        header.append("#define UASM_GRAPH_NET_UP_ENABLED ").append(graphNetUpToggle.isSelected() ? "1" : "0").append("\n");
 
         try {
             if (target.getParent() != null) Files.createDirectories(target.getParent());
@@ -5373,6 +5611,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiConnectionModeSelector.setEnabled(enabled);
             wifiDiscoveryDebugToggle.setEnabled(enabled);
             wifiDiscoveryIgnoreBoardFilterToggle.setEnabled(enabled);
+            graphNetDownToggle.setEnabled(enabled);
+            graphNetUpToggle.setEnabled(enabled);
             programModeSelector.setEnabled(enabled);
             macroTriggerModelSelector.setEnabled(enabled);
             macroEntriesArea.setEnabled(enabled);
