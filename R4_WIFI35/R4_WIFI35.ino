@@ -70,6 +70,9 @@
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
+#ifndef UASM_STORAGE_DEBUG
+#define UASM_STORAGE_DEBUG 0
+#endif
 
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
@@ -1098,12 +1101,6 @@ void updateQbit() {
   tft.setTextColor(WHITE);
   tft.setCursor(170, 50);
   tft.print(qbtActiveDownloads);
-  tft.setTextColor(CYAN);
-  tft.setCursor(260, 50);
-  tft.print("Seeds");
-  tft.setTextColor(WHITE);
-  tft.setCursor(350, 50);
-  tft.print(qbtActiveSeeding);
 
   drawInfoLine(80, "Down", fitText(qbtDownSpeed, 20), GREEN, 105);
   drawInfoLine(106, "Up", fitText(qbtUpSpeed, 20), YELLOW, 105);
@@ -1113,17 +1110,13 @@ void updateQbit() {
   tft.setTextSize(2);
   tft.setTextColor(CYAN);
   tft.setCursor(12, 194);
-  tft.print("Current");
+  tft.print("Top Torrent");
 
   tft.setTextSize(1);
   tft.setTextColor(WHITE);
   String topName = fitText(qbtTopTorrent, 64);
   tft.setCursor(12, 220);
-  tft.print(topName.substring(0, min(32, topName.length())));
-  if (topName.length() > 32) {
-    tft.setCursor(12, 236);
-    tft.print(topName.substring(32, min(64, topName.length())));
-  }
+  tft.print(topName);
 
   tft.setTextSize(2);
   tft.setTextColor(ORANGE);
@@ -1245,6 +1238,17 @@ void parseIncomingLine(String s, const char* source) {
   for (int i = 0; i < PROCESS_ROWS; i++) procCpu[i] = f[idx++];
   for (int i = 0; i < PROCESS_ROWS; i++) procRam[i] = f[idx++];
   for (int i = 0; i < STORAGE_LINES; i++) storageLine[i] = f[idx++];
+#if UASM_STORAGE_DEBUG
+  Serial.print("STORAGE PARSED: ");
+  for (int i = 0; i < STORAGE_LINES; i++) {
+    Serial.print('[');
+    Serial.print(i);
+    Serial.print("]=");
+    Serial.print(storageLine[i]);
+    if (i < STORAGE_LINES - 1) Serial.print(" | ");
+  }
+  Serial.println();
+#endif
   batteryPctStr = f[idx++];
   batteryStateStr = f[idx++];
   batteryModeStr = f[idx++];

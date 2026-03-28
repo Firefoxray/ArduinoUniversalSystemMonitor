@@ -51,6 +51,9 @@
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
+#ifndef UASM_STORAGE_DEBUG
+#define UASM_STORAGE_DEBUG 0
+#endif
 
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
@@ -140,7 +143,7 @@ char qbtActiveDownloads[8] = "--";
 char qbtActiveSeeding[8] = "--";
 char qbtDownSpeed[20] = "--";
 char qbtUpSpeed[20] = "--";
-char qbtTopTorrent[36] = "--";
+char qbtTopTorrent[62] = "--";
 char qbtTopState[12] = "--";
 char qbtProgress[12] = "--";
 char qbtEta[20] = "--";
@@ -418,21 +421,14 @@ static void updateGraph() {
 }
 
 static void updateQbittorrent() {
-  char dsv[16];
-  snprintf(dsv, sizeof(dsv), "%s/%s", qbtActiveDownloads, qbtActiveSeeding);
-  char top1[20], top2[20];
-  safeCopy(top1, sizeof(top1), qbtTopTorrent);
-  top1[18] = '\0';
-  if (strlen(qbtTopTorrent) > 18) safeCopy(top2, sizeof(top2), qbtTopTorrent + 18);
-  else safeCopy(top2, sizeof(top2), "--");
   drawKV(48, F("State"), qbtStatus, CYAN, 90);
-  drawKV(78, F("D/S"), dsv, GREEN, 90);
+  drawKV(78, F("Downl"), qbtActiveDownloads, GREEN, 90);
   drawKV(108, F("Down"), qbtDownSpeed, GREEN, 90);
   drawKV(138, F("Up"), qbtUpSpeed, YELLOW, 90);
   drawKV(168, F("Mode"), qbtTopState, ORANGE, 90);
   drawKV(198, F("ETA"), qbtEta, MAGENTA, 90);
-  drawKV(228, F("Top1"), top1, WHITE, 90);
-  drawKV(258, F("Top2"), top2, WHITE, 90);
+  drawKV(228, F("Top Torrent"), qbtTopTorrent, WHITE, 90);
+  drawKV(258, F("Progress"), qbtProgress, WHITE, 90);
   drawKV(288, F("Host"), hostName, WHITE, 90);
 }
 
@@ -517,6 +513,14 @@ static void applyField(uint8_t idx, const char* value) {
   else if (idx == 65) safeCopy(batteryStateStr, sizeof(batteryStateStr), value);
   else if (idx == 66) safeCopy(batteryModeStr, sizeof(batteryModeStr), value);
   else if (idx >= 67 && idx <= 72) { /* extra battery slots not rendered on Mega layout */ }
+#if UASM_STORAGE_DEBUG
+  if (idx >= 56 && idx <= 62) {
+    Serial.print("STORAGE FIELD ");
+    Serial.print(idx);
+    Serial.print(": ");
+    Serial.println(value);
+  }
+#endif
 }
 
 static void finalizeField() {

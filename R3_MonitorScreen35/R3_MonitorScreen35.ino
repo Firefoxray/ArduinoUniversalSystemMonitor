@@ -45,6 +45,9 @@
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
+#ifndef UASM_STORAGE_DEBUG
+#define UASM_STORAGE_DEBUG 0
+#endif
 
 #define BLACK   DIYables_TFT::colorRGB(0, 0, 0)
 #define WHITE   DIYables_TFT::colorRGB(255, 255, 255)
@@ -134,7 +137,7 @@ char qbtActiveDownloads[8] = "--";
 char qbtActiveSeeding[8] = "--";
 char qbtDownSpeed[16] = "--";
 char qbtUpSpeed[16] = "--";
-char qbtTopTorrent[28] = "--";
+char qbtTopTorrent[62] = "--";
 char qbtTopState[12] = "--";
 char qbtProgress[10] = "--";
 char qbtEta[14] = "--";
@@ -441,21 +444,14 @@ static void updateGraph() {
 
 
 static void updateQbittorrent() {
-  char dsv[16];
-  snprintf(dsv, sizeof(dsv), "%s/%s", qbtActiveDownloads, qbtActiveSeeding);
   drawBigKV(48, F("State"), qbtStatus, CYAN);
-  drawBigKV(68, F("D/S"), dsv, GREEN);
+  drawBigKV(68, F("Downl"), qbtActiveDownloads, GREEN);
   drawBigKV(88, F("Down"), qbtDownSpeed, GREEN);
   drawBigKV(108, F("Up"), qbtUpSpeed, YELLOW);
   drawBigKV(128, F("Mode"), qbtTopState, ORANGE);
   drawBigKV(148, F("ETA"), qbtEta, MAGENTA);
-  char top1[20], top2[20];
-  safeCopy(top1, sizeof(top1), qbtTopTorrent);
-  top1[18] = '\0';
-  if (strlen(qbtTopTorrent) > 18) safeCopy(top2, sizeof(top2), qbtTopTorrent + 18);
-  else safeCopy(top2, sizeof(top2), "--");
-  drawBigKV(168, F("Top1"), top1, WHITE);
-  drawBigKV(188, F("Top2"), top2, WHITE);
+  drawBigKV(168, F("Top Torrent"), qbtTopTorrent, WHITE);
+  drawBigKV(188, F("Progress"), qbtProgress, WHITE);
   drawBigKV(208, F("Host"), hostName, WHITE);
 }
 
@@ -571,6 +567,14 @@ static void applyField(uint8_t idx, const char* value) {
     case 72: break; // extra battery state 2 ignored on compact layout
     default: break;
   }
+#if UASM_STORAGE_DEBUG
+  if (idx >= 56 && idx <= 58) {
+    Serial.print("STORAGE FIELD ");
+    Serial.print(idx);
+    Serial.print(": ");
+    Serial.println(value);
+  }
+#endif
 }
 
 static void finalizeField() {

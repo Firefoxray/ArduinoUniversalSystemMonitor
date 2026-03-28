@@ -53,6 +53,9 @@
 #ifndef UASM_PAGE_QBITTORRENT_ENABLED
 #define UASM_PAGE_QBITTORRENT_ENABLED 0
 #endif
+#ifndef UASM_STORAGE_DEBUG
+#define UASM_STORAGE_DEBUG 0
+#endif
 
 MCUFRIEND_kbv tft;
 
@@ -151,7 +154,7 @@ char qbtActiveDownloads[8] = "--";
 char qbtActiveSeeding[8] = "--";
 char qbtDownSpeed[14] = "--";
 char qbtUpSpeed[14] = "--";
-char qbtTopTorrent[20] = "--";
+char qbtTopTorrent[62] = "--";
 char qbtTopState[10] = "--";
 char qbtProgress[10] = "--";
 char qbtEta[12] = "--";
@@ -487,15 +490,13 @@ static void updateGraph() {
 
 
 static void updateQbittorrent() {
-  char dsv[14];
-  snprintf(dsv, sizeof(dsv), "%s/%s", qbtActiveDownloads, qbtActiveSeeding);
   drawBigKV(34, F("State"), qbtStatus, CYAN);
-  drawBigKV(56, F("D/S"), dsv, GREEN);
+  drawBigKV(56, F("Downl"), qbtActiveDownloads, GREEN);
   drawBigKV(78, F("Down"), qbtDownSpeed, GREEN);
   drawBigKV(100, F("Up"), qbtUpSpeed, YELLOW);
   drawBigKV(122, F("Mode"), qbtTopState, ORANGE);
   drawBigKV(144, F("ETA"), qbtEta, MAGENTA);
-  drawBigKV(166, F("Top"), qbtTopTorrent, WHITE);
+  drawBigKV(166, F("Top Torrent"), qbtTopTorrent, WHITE);
   drawBigKV(188, F("Host"), hostName, WHITE);
 }
 
@@ -623,6 +624,14 @@ static void applyField(uint8_t idx, const char* value) {
     case 72: safeCopy(batteryState[2], sizeof(batteryState[2]), value); break;
     default: break;
   }
+#if UASM_STORAGE_DEBUG
+  if (idx >= 56 && idx <= 58) {
+    Serial.print("STORAGE FIELD ");
+    Serial.print(idx);
+    Serial.print(": ");
+    Serial.println(value);
+  }
+#endif
 }
 
 static void finalizeField() {
