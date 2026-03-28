@@ -274,6 +274,7 @@ else:
 STORAGE_ENABLED_TARGET_SET = set(STORAGE_ENABLED_TARGET_IDS)
 STORAGE_DISK0_TARGET = str(CONFIG.get("storage_disk0_target") or "").strip()
 STORAGE_DISK1_TARGET = str(CONFIG.get("storage_disk1_target") or "").strip()
+STORAGE_DEBUG = to_bool(os.environ.get("ARDUINO_MONITOR_STORAGE_DEBUG", CONFIG.get("storage_debug")), False)
 STORAGE_LINES = 8
 PROCESS_ROWS = 6
 CPU_THREADS_TO_SEND = 16
@@ -326,6 +327,18 @@ QBITTORRENT_ENABLED = to_bool(os.environ.get("ARDUINO_MONITOR_QBITTORRENT_ENABLE
 PAGE_PROCESSES_ENABLED = to_bool(CONFIG.get("page_processes_enabled"), True)
 PAGE_GPU_ENABLED = to_bool(CONFIG.get("page_gpu_enabled"), True)
 PAGE_STORAGE_ENABLED = to_bool(CONFIG.get("page_storage_enabled"), True)
+
+
+def storage_debug_log(message: str) -> None:
+    if STORAGE_DEBUG:
+        print(f"[STORAGE] {message}")
+
+
+storage_debug_log(
+    "configured targets: enabled="
+    + (",".join(STORAGE_ENABLED_TARGET_IDS) if STORAGE_ENABLED_TARGET_IDS else "<all>")
+    + f", disk0={STORAGE_DISK0_TARGET or '<auto>'}, disk1={STORAGE_DISK1_TARGET or '<auto>'}"
+)
 
 
 def resolve_qbittorrent_url(config: Dict[str, object]) -> str:
@@ -1124,7 +1137,7 @@ def collect_storage_targets() -> List[Dict[str, Any]]:
             return clean_field(raw_label, 14)
 
         alias = clean_field(mount_alias(mountpoint), 14)
-        if alias != "--" and alias not in hidden_aliases and alias not in {"root", "home"}:
+        if alias != "--" and alias not in hidden_aliases:
             return alias
 
         model = clean_field(node.get("model") or "", 14)
@@ -1221,78 +1234,21 @@ def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
     targets = collect_storage_targets()
     if STORAGE_ENABLED_TARGET_SET:
         targets = [target for target in targets if target["id"] in STORAGE_ENABLED_TARGET_SET]
-    ignored_names = {"sda1", "sda2"}
-    hidden_mounts = {"/boot", "/boot/efi", "/opt"}
-    hidden_aliases = {"boot", "bootefi", "opt", "unmnt"}
-
-    def mount_alias(mountpoint: str) -> str:
-        mountpoint = (mountpoint or "").strip()
-        if mountpoint == "/":
-            return "root"
-        if mountpoint == "/home":
-            return "home"
-        if mountpoint.startswith("/mnt/"):
-            return mountpoint[5:] or "mnt"
-        if mountpoint.startswith("/media/"):
-            return mountpoint[7:] or "media"
-        if mountpoint.startswith("/run/media/"):
-            return mountpoint[11:] or "media"
-        if mountpoint.startswith("/boot/efi"):
-            return "bootefi"
-        if mountpoint.startswith("/boot"):
-            return "boot"
-        tail = mountpoint.rstrip("/").split("/")[-1]
-        return tail or mountpoint or "unmnt"
-
-    def cleaned_name(node: dict) -> str:
-        return str(node.get("name") or node.get("kname") or "").strip()
-
-    def cleaned_path(node: dict) -> str:
-        return str(node.get("path") or "").strip()
-
-    def friendly_label(node: dict, parent_label: str = "disk") -> str:
-        mountpoint = (node.get("mountpoint") or "").strip()
-        raw_label = str(node.get("label") or "").strip()
-        if raw_label and raw_label.lower() not in {"rootfs", "none"} and not looks_generic_storage_name(raw_label):
-            return clean_field(raw_label, 14)
-
-        alias = clean_field(mount_alias(mountpoint), 14)
-        if alias != "--" and alias not in hidden_aliases and alias not in {"root", "home"}:
-            return alias
-
-        model = clean_field(node.get("model") or "", 14)
-        if model != "--" and not looks_generic_storage_name(model):
-            return model
-
-        path_name = cleaned_path(node).replace("/dev/", "").strip()
-        if path_name and path_name.lower() not in ignored_names and not looks_generic_storage_name(path_name):
-            return clean_field(path_name, 14)
-
-        parent = clean_field(parent_label, 14)
-        if parent != "--" and not looks_generic_storage_name(parent):
-            return parent
-
-        name = clean_field(cleaned_name(node) or "disk", 14)
-        return name if name != "--" else "disk"
-
-    def add_line(label: str, mountpoint: str, size: str, percent: Optional[int]) -> None:
-        base = clean_field(label, 14)
-        target = mount_alias(mountpoint) if mountpoint else size
-        if percent is None:
-            line = f"{base} {clean_field(target, 12)}"
-        else:
-            line = f"{base} {percent}% {clean_field(target, 10)}"
-        lines.append(clean_field(line, 30))
-
     for target in targets[:max_lines]:
-        label = str(target.get("label") or "disk")
-        mountpoint = str(target.get("mountpoint") or "")
-        size = str(target.get("size") or "")
-        percent = target.get("percent")
-        add_line(label, mountpoint, size, percent if isinstance(percent, int) else None)
+        lines.append(clean_field(target.get("line") or target.get("label") or "disk", 30))
 
     while len(lines) < max_lines:
-        lines.append("Storage: --")
+        lines.append("--")
+    if STORAGE_DEBUG:
+        summary = [
+            f'{target.get("id")}=>{target.get("line")}'
+            for target in targets
+        ]
+        storage_debug_log(
+            "resolved targets: "
+            + (", ".join(summary) if summary else "<none>")
+            + f" | outgoing lines: {' || '.join(lines[:max_lines])}"
+        )
     return lines[:max_lines]
 
 

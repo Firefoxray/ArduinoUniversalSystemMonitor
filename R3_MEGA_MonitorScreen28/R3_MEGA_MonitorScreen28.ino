@@ -53,6 +53,9 @@
 #ifndef UASM_GRAPH_NET_UP_ENABLED
 #define UASM_GRAPH_NET_UP_ENABLED 0
 #endif
+#ifndef UASM_STORAGE_DEBUG
+#define UASM_STORAGE_DEBUG 0
+#endif
 
 MCUFRIEND_kbv tft;
 
@@ -611,6 +614,14 @@ static void applyField(uint8_t idx, const char* value) {
   else if (idx == 66) safeCopy(batteryModeStr, sizeof(batteryModeStr), value);
   else if (idx >= 67 && idx <= 69) safeCopy(batteryLabel[idx - 67], sizeof(batteryLabel[0]), value);
   else if (idx >= 70 && idx <= 72) safeCopy(batteryState[idx - 70], sizeof(batteryState[0]), value);
+#if UASM_STORAGE_DEBUG
+  if (idx >= 56 && idx <= 59) {
+    Serial.print("STORAGE FIELD ");
+    Serial.print(idx);
+    Serial.print(": ");
+    Serial.println(value);
+  }
+#endif
 }
 
 static void finalizeField() {
