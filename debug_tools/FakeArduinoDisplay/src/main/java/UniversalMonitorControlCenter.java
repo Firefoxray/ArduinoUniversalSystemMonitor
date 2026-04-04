@@ -34,6 +34,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.Properties;
+import java.util.regex.Pattern;
 
 public class UniversalMonitorControlCenter extends JFrame {
 
@@ -68,6 +69,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             new ArduinoLibraryRequirement("Adafruit GFX Library", "Adafruit GFX Library", "Adafruit_GFX.h"),
             new ArduinoLibraryRequirement("Adafruit TouchScreen", "TouchScreen", "TouchScreen.h"),
             new ArduinoLibraryRequirement("DIYables TFT Touch Shield", "DIYables TFT Touch Shield", "DIYables_TFT_Touch_Shield.h")
+    );
+    private static final List<Pattern> CODEX_BRANCH_PATTERNS = List.of(
+            Pattern.compile("^codex/.*"),
+            Pattern.compile("^codex-.*")
     );
 
     private final JTextField repoField = new JTextField(40);
@@ -118,6 +123,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton debugOnButton = new JButton("Enable Debug Mode");
     private final JButton debugOffButton = new JButton("Disable Debug Mode");
     private final JButton debugRefreshButton = new JButton("Refresh Debug Status");
+    private final JButton debugCodexUpdateButton = new JButton("Update from Latest Codex Branch (Debug)");
     private final JButton wifiModeOnButton = new JButton("Enable Wi-Fi Mode");
     private final JButton wifiModeOffButton = new JButton("Use USB Only");
     private final JButton wifiModeRefreshButton = new JButton("Refresh Transport");
@@ -295,6 +301,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         killRunningTaskButton.setToolTipText("Force-stops the currently running flash/task command if it gets stuck, then refreshes the UI.");
         killRunningTaskButton.setEnabled(false);
         debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
+        debugCodexUpdateButton.setToolTipText("Advanced Debug action: safely fetches, selects the latest local codex/* or codex-* branch, and confirms before checkout/pull.");
         wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
         serviceStartupEnableButton.setToolTipText("Runs systemctl enable and start for the Arduino monitor service so it starts at boot and now.");
         serviceStartupDisableButton.setToolTipText("Runs systemctl disable and stop for the Arduino monitor service so it does not start at boot.");
@@ -681,6 +688,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugPanel.add(debugOnButton);
         debugPanel.add(debugOffButton);
         debugPanel.add(debugRefreshButton);
+        debugCodexUpdateButton.setVisible(false);
+        debugCodexUpdateButton.setEnabled(false);
+        debugPanel.add(debugCodexUpdateButton);
         debugPanel.add(new JLabel("Indicator:"));
         debugPanel.add(debugIndicator);
         debugPanel.add(Box.createHorizontalGlue());
@@ -1118,6 +1128,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugOnButton.addActionListener(e -> setDebugMode(true));
         debugOffButton.addActionListener(e -> setDebugMode(false));
         debugRefreshButton.addActionListener(e -> refreshDebugStatus(true));
+        debugCodexUpdateButton.addActionListener(e -> runCodexDebugUpdateWorkflow());
         wifiModeOnButton.addActionListener(e -> setTransportMode(true));
         wifiModeOffButton.addActionListener(e -> setTransportMode(false));
         wifiModeRefreshButton.addActionListener(e -> refreshTransportModeStatus(true));
@@ -1526,6 +1537,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private record UpdateCheckResult(boolean canProceed, boolean updateAvailable, String message) {}
+    private record CodexBranchCandidate(String branch, String hash, String date) {}
+    private record CodexBranchSelection(
+            boolean canProceed,
+            String message,
+            String currentBranch,
+            String currentHash,
+            String targetBranch,
+            String targetHash,
+            String targetDate
+    ) {}
 
     private void runInstallAndDesktopWorkflow() {
         Path repo = repoPath();
@@ -2056,6 +2077,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
+        lastDebugEnabledState = enabled;
+        updateDebugAdvancedButtonState(enabled);
         runServiceCommand("restart");
     }
 
@@ -2065,6 +2088,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (text == null || text.isBlank()) {
                 setDebugIndicator("UNKNOWN", Color.GRAY);
                 lastDebugEnabledState = null;
+                updateDebugAdvancedButtonState(false);
                 if (verbose || !debugStatusMissingLogged) {
                     log("[WARN] Cannot refresh debug status: no monitor config file was found.");
                     debugStatusMissingLogged = true;
@@ -2074,6 +2098,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             debugStatusMissingLogged = false;
             boolean enabled = text.matches("(?s).*\"debug_enabled\"\\s*:\\s*true.*");
             setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
+            updateDebugAdvancedButtonState(enabled);
 
             if (verbose || lastDebugEnabledState == null || lastDebugEnabledState != enabled) {
                 log("[INFO] Debug mode is " + (enabled ? "enabled" : "disabled") + " in the merged monitor config.");
@@ -2082,8 +2107,180 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (Exception ex) {
             setDebugIndicator("UNKNOWN", Color.GRAY);
             lastDebugEnabledState = null;
+            updateDebugAdvancedButtonState(false);
             log("[WARN] Failed to refresh debug status: " + ex.getMessage());
         }
+    }
+
+    private void updateDebugAdvancedButtonState(boolean debugEnabled) {
+        SwingUtilities.invokeLater(() -> {
+            debugCodexUpdateButton.setVisible(debugEnabled);
+            boolean actionsEnabled = activeCommandProcess == null || !activeCommandProcess.isAlive();
+            debugCodexUpdateButton.setEnabled(debugEnabled && actionsEnabled);
+        });
+    }
+
+    private void runCodexDebugUpdateWorkflow() {
+        if (!Boolean.TRUE.equals(lastDebugEnabledState)) {
+            String message = "Blocked: this action only runs when Debug Mode is ON.";
+            log("[WARN] " + message);
+            JOptionPane.showMessageDialog(this, message, "Debug-only action blocked", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        Path repo = repoPath();
+        CodexBranchSelection selection = evaluateLatestCodexBranchSelection(repo);
+        if (!selection.canProceed()) {
+            log("[WARN] " + selection.message());
+            JOptionPane.showMessageDialog(this, selection.message(), "Codex branch update blocked", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String commandSequence = buildCodexUpdateCommandSequence(repo, selection.targetBranch());
+        int confirmed = JOptionPane.showConfirmDialog(
+                this,
+                "<html><b>Debug Advanced Action</b><br>"
+                        + "Current: <code>" + escapeHtml(selection.currentBranch()) + "</code> @ <code>" + escapeHtml(selection.currentHash()) + "</code><br>"
+                        + "Target: <code>" + escapeHtml(selection.targetBranch()) + "</code> @ <code>" + escapeHtml(selection.targetHash()) + "</code> ("
+                        + escapeHtml(selection.targetDate()) + ")<br><br>"
+                        + "Command sequence:<br><pre>" + escapeHtml(commandSequence) + "</pre>"
+                        + "Proceed with checkout/update?</html>",
+                "Confirm Codex Debug Update",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (confirmed != JOptionPane.YES_OPTION) {
+            log("[INFO] Codex branch debug update canceled by user.");
+            return;
+        }
+
+        log("[INFO] Debug advanced action confirmed. Selected latest Codex branch '" + selection.targetBranch()
+                + "' by local committer date (" + selection.targetDate() + ").");
+        runCommand(
+                commandSequence,
+                repo.toFile(),
+                "Debug: update from latest Codex branch",
+                false,
+                true,
+                () -> logCodexUpdateSummary(selection.currentBranch(), selection.currentHash())
+        );
+    }
+
+    private CodexBranchSelection evaluateLatestCodexBranchSelection(Path repo) {
+        String insideWorkTree = runGitQuery(repo, "git rev-parse --is-inside-work-tree");
+        if (insideWorkTree == null || !"true".equalsIgnoreCase(insideWorkTree.trim())) {
+            return new CodexBranchSelection(false, "Blocked: selected path is not a valid git repository.", "", "", "", "", "");
+        }
+
+        String currentBranch = runGitQuery(repo, "git rev-parse --abbrev-ref HEAD");
+        if (currentBranch == null || currentBranch.isBlank() || "HEAD".equals(currentBranch.trim())) {
+            return new CodexBranchSelection(false, "Blocked: detached HEAD state detected. Checkout a normal branch first.", "", "", "", "", "");
+        }
+        currentBranch = currentBranch.trim();
+
+        String gitState = runGitQuery(repo, "if [ -f .git/MERGE_HEAD ] || [ -f .git/CHERRY_PICK_HEAD ] || [ -f .git/REVERT_HEAD ] "
+                + "|| [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then echo BUSY; else echo CLEAN; fi");
+        if (gitState == null || !"CLEAN".equals(gitState.trim())) {
+            return new CodexBranchSelection(false, "Blocked: merge/rebase/cherry-pick is in progress. Resolve git state first.", "", "", "", "", "");
+        }
+
+        String dirty = runGitQuery(repo, "git status --porcelain");
+        if (dirty != null && !dirty.isBlank()) {
+            return new CodexBranchSelection(false, "Blocked: working tree is dirty. Commit/stash/reset before switching branches.", "", "", "", "", "");
+        }
+
+        String localBranchRows = runGitQuery(repo, "git for-each-ref --sort=-committerdate "
+                + "--format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)' refs/heads");
+        if (localBranchRows == null || localBranchRows.isBlank()) {
+            return new CodexBranchSelection(false, "Blocked: could not enumerate local branches.", "", "", "", "", "");
+        }
+
+        CodexBranchCandidate latest = null;
+        for (String rawLine : localBranchRows.split("\\R")) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] parts = line.split("\\|", 3);
+            if (parts.length < 3) {
+                continue;
+            }
+            String branch = parts[0].trim();
+            if (!isAllowedCodexBranchName(branch)) {
+                continue;
+            }
+            latest = new CodexBranchCandidate(branch, parts[1].trim(), parts[2].trim());
+            break;
+        }
+
+        if (latest == null) {
+            return new CodexBranchSelection(false,
+                    "Blocked: no local branches matched Codex rules (^codex/.* or ^codex-.*).",
+                    "", "", "", "", "");
+        }
+
+        String currentHash = runGitQuery(repo, "git rev-parse --short HEAD");
+        if (currentHash == null || currentHash.isBlank()) {
+            return new CodexBranchSelection(false, "Blocked: could not read current commit hash.", "", "", "", "", "");
+        }
+
+        String remoteHead = runGitQuery(repo, "git ls-remote --heads origin " + escape(latest.branch()));
+        if (remoteHead == null || remoteHead.isBlank()) {
+            log("[INFO] No matching origin/" + latest.branch() + " branch was found. Checkout will still proceed using local branch state.");
+        } else {
+            log("[INFO] Verified remote branch origin/" + latest.branch() + " is available.");
+        }
+
+        return new CodexBranchSelection(
+                true,
+                "Ready",
+                currentBranch,
+                currentHash.trim(),
+                latest.branch(),
+                latest.hash(),
+                latest.date()
+        );
+    }
+
+    private boolean isAllowedCodexBranchName(String branch) {
+        if (branch == null || branch.isBlank()) {
+            return false;
+        }
+        for (Pattern pattern : CODEX_BRANCH_PATTERNS) {
+            if (pattern.matcher(branch).matches()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String buildCodexUpdateCommandSequence(Path repo, String targetBranch) {
+        String safeBranchForEcho = targetBranch == null ? "" : targetBranch.replace("\"", "\\\"");
+        return "cd " + escape(repo.toString())
+                + " && git fetch --all --prune"
+                + " && git checkout " + escape(targetBranch)
+                + " && (git ls-remote --exit-code --heads origin " + escape(targetBranch)
+                + " >/dev/null 2>&1 && git pull --ff-only origin " + escape(targetBranch)
+                + " || echo \"[INFO] origin/" + safeBranchForEcho + " not found; skipped pull\")";
+    }
+
+    private void logCodexUpdateSummary(String previousBranch, String previousHash) {
+        Path repo = repoPath();
+        String newBranch = runGitQuery(repo, "git rev-parse --abbrev-ref HEAD");
+        String newHash = runGitQuery(repo, "git rev-parse --short HEAD");
+        if (newBranch == null || newBranch.isBlank()) {
+            newBranch = "<unknown>";
+        } else {
+            newBranch = newBranch.trim();
+        }
+        if (newHash == null || newHash.isBlank()) {
+            newHash = "<unknown>";
+        } else {
+            newHash = newHash.trim();
+        }
+        log("[INFO] Codex debug update summary: previous branch=" + previousBranch + " (" + previousHash
+                + "), new branch=" + newBranch + " (" + newHash + "), status=success.");
+        log("[INFO] If this branch changed GUI code, restart/relaunch the Control Center to ensure new behavior is loaded.");
     }
 
     private void setTransportMode(boolean wifiEnabled) {
@@ -5696,6 +5893,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             debugOnButton.setEnabled(enabled);
             debugOffButton.setEnabled(enabled);
             debugRefreshButton.setEnabled(enabled);
+            debugCodexUpdateButton.setEnabled(enabled && Boolean.TRUE.equals(lastDebugEnabledState));
             wifiModeOnButton.setEnabled(enabled);
             wifiModeOffButton.setEnabled(enabled);
             wifiModeRefreshButton.setEnabled(enabled);
@@ -5822,6 +6020,14 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private String escape(String text) {
         return "'" + text.replace("'", "'\\''") + "'";
+    }
+
+    private String escapeHtml(String value) {
+        String text = value == null ? "" : value;
+        return text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     private String escapeJson(String text) {
