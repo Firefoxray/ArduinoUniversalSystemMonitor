@@ -222,6 +222,7 @@ chmod +x install.sh scripts/install.sh 2>/dev/null || true
 chmod +x update.sh scripts/update.sh 2>/dev/null || true
 chmod +x uninstall_monitor.sh scripts/uninstall_monitor.sh 2>/dev/null || true
 chmod +x install_arduinos.sh scripts/install_arduinos.sh 2>/dev/null || true
+chmod +x scripts/arduino/install_arduinos.sh scripts/arduino/sync_version.py scripts/sync_version.py 2>/dev/null || true
 chmod +x arduino_install.sh scripts/arduino_install.sh 2>/dev/null || true
 chmod +x UniversalMonitorControlCenter.sh scripts/UniversalMonitorControlCenter.sh 2>/dev/null || true
 chmod +x install_control_center_desktop.sh scripts/install_control_center_desktop.sh 2>/dev/null || true

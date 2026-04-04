@@ -1065,12 +1065,27 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder(title));
         area.setEditable(false);
         area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
+        area.setLineWrap(false);
+        area.setWrapStyleWord(false);
+        installCopyPopup(area);
         JScrollPane scrollPane = new JScrollPane(area);
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
+    }
+
+    private void installCopyPopup(JTextArea area) {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem copyItem = new JMenuItem("Copy");
+        copyItem.addActionListener(e -> area.copy());
+        JMenuItem selectAllItem = new JMenuItem("Select All");
+        selectAllItem.addActionListener(e -> area.selectAll());
+        JMenuItem clearSelectionItem = new JMenuItem("Clear Selection");
+        clearSelectionItem.addActionListener(e -> area.select(area.getCaretPosition(), area.getCaretPosition()));
+        menu.add(copyItem);
+        menu.add(selectAllItem);
+        menu.add(clearSelectionItem);
+        area.setComponentPopupMenu(menu);
     }
 
     private void wireActions() {
@@ -2325,7 +2340,58 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (Exception ex) {
             log("[WARN] Failed to detect storage targets with lsblk: " + ex.getMessage());
         }
+        if (targets.isEmpty()) {
+            targets.addAll(detectStorageTargetsFromDf());
+            if (!targets.isEmpty()) {
+                log("[INFO] lsblk returned no storage targets; used mounted filesystem fallback (df).");
+            }
+        }
         return targets;
+    }
+
+    private List<StorageTarget> detectStorageTargetsFromDf() {
+        List<StorageTarget> targets = new ArrayList<>();
+        ProcessBuilder builder = new ProcessBuilder("df", "-P", "-T");
+        builder.directory(repoPath().toFile());
+        try {
+            Process process = builder.start();
+            List<String> lines = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)).lines().toList();
+            process.waitFor();
+            for (int i = 1; i < lines.size(); i++) {
+                String line = lines.get(i).trim();
+                if (line.isBlank()) {
+                    continue;
+                }
+                String[] parts = line.split("\\s+");
+                if (parts.length < 7) {
+                    continue;
+                }
+                String filesystem = parts[0];
+                String fsType = parts[1];
+                String mount = parts[6];
+                if (!isRealStorageFs(fsType) || mount.startsWith("/boot")) {
+                    continue;
+                }
+                String id = "mnt:" + mount;
+                String display = filesystem + " • " + mount + " • " + fsType;
+                targets.add(new StorageTarget(id, display, mount));
+            }
+        } catch (Exception ex) {
+            log("[WARN] Failed fallback storage detection with df: " + ex.getMessage());
+        }
+        return targets;
+    }
+
+    private boolean isRealStorageFs(String fsType) {
+        if (fsType == null || fsType.isBlank()) {
+            return false;
+        }
+        String normalized = fsType.trim().toLowerCase(Locale.ROOT);
+        return !Set.of(
+                "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs", "cgroup", "cgroup2",
+                "pstore", "debugfs", "tracefs", "mqueue", "ramfs", "nsfs", "autofs", "fusectl",
+                "securityfs", "configfs", "selinuxfs", "bpf"
+        ).contains(normalized);
     }
 
     private Map<String, String> parseLsblkPairs(String line) {
@@ -4320,7 +4386,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private String buildCustomUploadCommand(String arduinoCli, DetectedBoard target, Path sketchPath) {
-        String syncScript = repoPath().resolve("scripts/sync_version.py").toString();
+        String syncScript = repoPath().resolve("scripts/arduino/sync_version.py").toString();
         return "python3 " + escape(syncScript) + " --sync"
                 + " && " + escape(arduinoCli) + " compile --fqbn "
                 + escape(target.fqbn) + " " + escape(sketchPath.toString())
@@ -5865,7 +5931,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 new PageDefinition("processes", "Processes"),
                 new PageDefinition("network", "Network"),
                 new PageDefinition("gpu", "GPU"),
-                new PageDefinition("storage", "Storage"),
+                new PageDefinition("storage", "Storage + Battery Stats"),
                 new PageDefinition("usage_graph", "Usage Graph"),
                 new PageDefinition("qbittorrent", "qBittorrent")
         ));

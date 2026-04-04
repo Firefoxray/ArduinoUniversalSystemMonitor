@@ -14,7 +14,7 @@ echo "== Fedora Easy Setup (Arduino Universal System Monitor) =="
 echo "[1/3] Installing Fedora dependencies..."
 sudo dnf install -y \
     git python3 python3-pip \
-    java-21-openjdk java-25-openjdk \
+    java-21-openjdk \
     arduino-cli socat
 
 echo "[2/3] Running project installer..."
