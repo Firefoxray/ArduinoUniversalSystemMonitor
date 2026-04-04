@@ -437,6 +437,9 @@ def cmd_exists(name: str) -> bool:
 
 
 def get_ip() -> str:
+    preferred_ip = get_preferred_host_ipv4()
+    if preferred_ip:
+        return preferred_ip
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -569,16 +572,57 @@ def get_network_iface() -> str:
     stats = psutil.net_if_stats()
     addrs = psutil.net_if_addrs()
     preferred = None
+    fallback = None
     for name, meta in stats.items():
         if not meta.isup or name == "lo":
             continue
         iface_addrs = addrs.get(name, [])
-        if any(a.family == socket.AF_INET for a in iface_addrs):
-            if name.startswith(("en", "eth", "wlan", "wl")):
-                return name
-            if preferred is None:
-                preferred = name
-    return preferred or "lo"
+        if not any(a.family == socket.AF_INET for a in iface_addrs):
+            continue
+        if is_virtual_tunnel_iface(name):
+            if fallback is None:
+                fallback = name
+            continue
+        if name.startswith(("en", "eth", "wlan", "wl")):
+            return name
+        if preferred is None:
+            preferred = name
+    return preferred or fallback or "lo"
+
+
+def is_virtual_tunnel_iface(name: str) -> bool:
+    lowered = (name or "").strip().lower()
+    return lowered.startswith(("wg", "tun", "tap", "ppp", "tailscale", "zt", "docker", "veth", "virbr", "br-"))
+
+
+def get_preferred_host_ipv4() -> str:
+    stats = psutil.net_if_stats()
+    addrs = psutil.net_if_addrs()
+    preferred_fallback = ""
+    tunnel_fallback = ""
+    for name, meta in stats.items():
+        if not meta.isup or name == "lo":
+            continue
+        ipv4 = ""
+        for addr in addrs.get(name, []):
+            if addr.family != socket.AF_INET:
+                continue
+            candidate = (addr.address or "").strip()
+            if not candidate or candidate.startswith("127."):
+                continue
+            ipv4 = candidate
+            break
+        if not ipv4:
+            continue
+        if is_virtual_tunnel_iface(name):
+            if not tunnel_fallback:
+                tunnel_fallback = ipv4
+            continue
+        if name.startswith(("en", "eth", "wlan", "wl")):
+            return ipv4
+        if not preferred_fallback:
+            preferred_fallback = ipv4
+    return preferred_fallback or tunnel_fallback
 
 
 def get_temp() -> str:
@@ -831,6 +875,8 @@ def discovery_broadcast_targets() -> List[str]:
         addrs = psutil.net_if_addrs()
         for iface, iface_stats in stats.items():
             if not iface_stats.isup or iface == "lo":
+                continue
+            if is_virtual_tunnel_iface(iface):
                 continue
             for addr in addrs.get(iface, []):
                 if addr.family != socket.AF_INET:
