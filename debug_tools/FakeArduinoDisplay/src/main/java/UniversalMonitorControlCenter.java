@@ -301,7 +301,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         killRunningTaskButton.setToolTipText("Force-stops the currently running flash/task command if it gets stuck, then refreshes the UI.");
         killRunningTaskButton.setEnabled(false);
         debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
-        debugCodexUpdateButton.setToolTipText("Advanced Debug action: safely fetches, selects the latest local codex/* or codex-* branch, and confirms before checkout/pull.");
+        debugCodexUpdateButton.setToolTipText("Advanced Debug action: fetches/prunes, selects the latest local codex/* or codex-* branch, and confirms before checkout/pull.");
         wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
         serviceStartupEnableButton.setToolTipText("Runs systemctl enable and start for the Arduino monitor service so it starts at boot and now.");
         serviceStartupDisableButton.setToolTipText("Runs systemctl disable and stop for the Arduino monitor service so it does not start at boot.");
@@ -1538,6 +1538,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private record UpdateCheckResult(boolean canProceed, boolean updateAvailable, String message) {}
     private record CodexBranchCandidate(String branch, String hash, String date) {}
+    private record BranchEvaluation(String branch, boolean matches, String reason) {}
     private record CodexBranchSelection(
             boolean canProceed,
             String message,
@@ -2167,6 +2168,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private CodexBranchSelection evaluateLatestCodexBranchSelection(Path repo) {
+        log("[INFO] Codex branch selection: repo path=" + repo.toAbsolutePath().normalize());
+        log("[INFO] Codex branch selection rules: local-first using patterns " + codexPatternSummary()
+                + ", sorted by committer date (latest first).");
+
         String insideWorkTree = runGitQuery(repo, "git rev-parse --is-inside-work-tree");
         if (insideWorkTree == null || !"true".equalsIgnoreCase(insideWorkTree.trim())) {
             return new CodexBranchSelection(false, "Blocked: selected path is not a valid git repository.", "", "", "", "", "");
@@ -2189,12 +2194,20 @@ public class UniversalMonitorControlCenter extends JFrame {
             return new CodexBranchSelection(false, "Blocked: working tree is dirty. Commit/stash/reset before switching branches.", "", "", "", "", "");
         }
 
+        String fetchOutput = runGitQuery(repo, "git fetch --all --prune --quiet && echo FETCH_OK");
+        if (fetchOutput == null) {
+            log("[WARN] Codex branch selection: fetch/prune failed; continuing with current refs.");
+        } else {
+            log("[INFO] Codex branch selection: fetch/prune completed before evaluation.");
+        }
+
         String localBranchRows = runGitQuery(repo, "git for-each-ref --sort=-committerdate "
                 + "--format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)' refs/heads");
         if (localBranchRows == null || localBranchRows.isBlank()) {
             return new CodexBranchSelection(false, "Blocked: could not enumerate local branches.", "", "", "", "", "");
         }
 
+        List<BranchEvaluation> localEvaluations = new ArrayList<>();
         CodexBranchCandidate latest = null;
         for (String rawLine : localBranchRows.split("\\R")) {
             String line = rawLine == null ? "" : rawLine.trim();
@@ -2206,16 +2219,56 @@ public class UniversalMonitorControlCenter extends JFrame {
                 continue;
             }
             String branch = parts[0].trim();
-            if (!isAllowedCodexBranchName(branch)) {
+            BranchEvaluation evaluation = evaluateCodexBranchName(branch);
+            localEvaluations.add(evaluation);
+            if (!evaluation.matches()) {
                 continue;
             }
             latest = new CodexBranchCandidate(branch, parts[1].trim(), parts[2].trim());
             break;
         }
+        logBranchEvaluations("local", localEvaluations);
 
         if (latest == null) {
+            String remoteBranchRows = runGitQuery(repo, "git for-each-ref --sort=-committerdate "
+                    + "--format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)' refs/remotes/origin");
+            CodexBranchCandidate latestRemote = null;
+            List<BranchEvaluation> remoteEvaluations = new ArrayList<>();
+            if (remoteBranchRows != null && !remoteBranchRows.isBlank()) {
+                for (String rawLine : remoteBranchRows.split("\\R")) {
+                    String line = rawLine == null ? "" : rawLine.trim();
+                    if (line.isBlank()) {
+                        continue;
+                    }
+                    String[] parts = line.split("\\|", 3);
+                    if (parts.length < 3) {
+                        continue;
+                    }
+                    String remoteRef = parts[0].trim();
+                    String branch = remoteRef.startsWith("origin/") ? remoteRef.substring("origin/".length()) : remoteRef;
+                    if ("HEAD".equals(branch) || branch.startsWith("HEAD ->")) {
+                        continue;
+                    }
+                    BranchEvaluation evaluation = evaluateCodexBranchName(branch);
+                    remoteEvaluations.add(evaluation);
+                    if (!evaluation.matches()) {
+                        continue;
+                    }
+                    latestRemote = new CodexBranchCandidate(branch, parts[1].trim(), parts[2].trim());
+                    break;
+                }
+            }
+            logBranchEvaluations("remote(origin)", remoteEvaluations);
+            if (latestRemote != null) {
+                return new CodexBranchSelection(false,
+                        "Blocked: no local Codex branches matched " + codexPatternSummary()
+                                + ". Matching remote branch found: origin/" + latestRemote.branch()
+                                + " (" + latestRemote.hash() + ", " + latestRemote.date()
+                                + "). Create/check out a local tracking branch first.",
+                        "", "", "", "", "");
+            }
             return new CodexBranchSelection(false,
-                    "Blocked: no local branches matched Codex rules (^codex/.* or ^codex-.*).",
+                    "Blocked: no local branches matched Codex rules " + codexPatternSummary() + ".",
                     "", "", "", "", "");
         }
 
@@ -2243,15 +2296,35 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private boolean isAllowedCodexBranchName(String branch) {
+        return evaluateCodexBranchName(branch).matches();
+    }
+
+    private BranchEvaluation evaluateCodexBranchName(String branch) {
         if (branch == null || branch.isBlank()) {
-            return false;
+            return new BranchEvaluation(branch == null ? "" : branch, false, "blank branch name");
         }
         for (Pattern pattern : CODEX_BRANCH_PATTERNS) {
             if (pattern.matcher(branch).matches()) {
-                return true;
+                return new BranchEvaluation(branch, true, "matched " + pattern.pattern());
             }
         }
-        return false;
+        return new BranchEvaluation(branch, false, "did not match any pattern in " + codexPatternSummary());
+    }
+
+    private String codexPatternSummary() {
+        return CODEX_BRANCH_PATTERNS.stream().map(Pattern::pattern).toList().toString();
+    }
+
+    private void logBranchEvaluations(String scopeLabel, List<BranchEvaluation> evaluations) {
+        if (evaluations == null || evaluations.isEmpty()) {
+            log("[INFO] Codex branch selection " + scopeLabel + " candidates: <none>");
+            return;
+        }
+        log("[INFO] Codex branch selection " + scopeLabel + " candidates (" + evaluations.size() + "):");
+        for (BranchEvaluation evaluation : evaluations) {
+            String status = evaluation.matches() ? "MATCH" : "SKIP";
+            log("[INFO]   [" + status + "] " + evaluation.branch() + " -> " + evaluation.reason());
+        }
     }
 
     private String buildCodexUpdateCommandSequence(Path repo, String targetBranch) {
@@ -4421,14 +4494,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         } else if (component instanceof AbstractButton button) {
             boolean isCriticalFlashButton = button == flashButton || button == saveMonitorSettingsButton || button == flashFromProfilesButton;
             boolean isRestartButton = button == saveAndRestartMonitorButton;
+            boolean isPositiveUpdateButton = button == updateButton || button == debugCodexUpdateButton;
             Color resolvedButtonBackground = isCriticalFlashButton
                     ? criticalButtonBackground
-                    : (isRestartButton ? restartButtonBackground : (button == updateButton ? positiveButtonBackground : buttonBackground));
+                    : (isRestartButton ? restartButtonBackground : (isPositiveUpdateButton ? positiveButtonBackground : buttonBackground));
             button.setBackground(resolvedButtonBackground);
             button.setForeground(textColor);
             button.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(
-                            (isCriticalFlashButton || isRestartButton || button == updateButton)
+                            (isCriticalFlashButton || isRestartButton || isPositiveUpdateButton)
                                     ? resolvedButtonBackground.darker() : accent
                     ),
                     BorderFactory.createEmptyBorder(6, 10, 6, 10)
