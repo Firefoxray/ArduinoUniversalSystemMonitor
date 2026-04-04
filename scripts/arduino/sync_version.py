@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 VERSION_FILE = REPO_ROOT / 'VERSION'
 ARDUINO_HEADERS = [
     REPO_ROOT / 'R4_WIFI35' / 'app_version.generated.h',
