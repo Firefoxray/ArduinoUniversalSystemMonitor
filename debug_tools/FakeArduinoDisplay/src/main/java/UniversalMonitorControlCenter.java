@@ -1546,7 +1546,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             String currentHash,
             String targetBranch,
             String targetHash,
-            String targetDate
+            String targetDate,
+            boolean createTrackingBranch
     ) {}
 
     private void runInstallAndDesktopWorkflow() {
@@ -2137,13 +2138,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        String commandSequence = buildCodexUpdateCommandSequence(repo, selection.targetBranch());
+        String commandSequence = buildCodexUpdateCommandSequence(repo, selection);
         int confirmed = JOptionPane.showConfirmDialog(
                 this,
                 "<html><b>Debug Advanced Action</b><br>"
                         + "Current: <code>" + escapeHtml(selection.currentBranch()) + "</code> @ <code>" + escapeHtml(selection.currentHash()) + "</code><br>"
                         + "Target: <code>" + escapeHtml(selection.targetBranch()) + "</code> @ <code>" + escapeHtml(selection.targetHash()) + "</code> ("
-                        + escapeHtml(selection.targetDate()) + ")<br><br>"
+                        + escapeHtml(selection.targetDate()) + ")<br>"
+                        + "Checkout mode: <code>" + (selection.createTrackingBranch() ? "create local tracking branch from origin" : "checkout existing local branch") + "</code><br><br>"
                         + "Command sequence:<br><pre>" + escapeHtml(commandSequence) + "</pre>"
                         + "Proceed with checkout/update?</html>",
                 "Confirm Codex Debug Update",
@@ -2174,24 +2176,24 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         String insideWorkTree = runGitQuery(repo, "git rev-parse --is-inside-work-tree");
         if (insideWorkTree == null || !"true".equalsIgnoreCase(insideWorkTree.trim())) {
-            return new CodexBranchSelection(false, "Blocked: selected path is not a valid git repository.", "", "", "", "", "");
+            return new CodexBranchSelection(false, "Blocked: selected path is not a valid git repository.", "", "", "", "", "", false);
         }
 
         String currentBranch = runGitQuery(repo, "git rev-parse --abbrev-ref HEAD");
         if (currentBranch == null || currentBranch.isBlank() || "HEAD".equals(currentBranch.trim())) {
-            return new CodexBranchSelection(false, "Blocked: detached HEAD state detected. Checkout a normal branch first.", "", "", "", "", "");
+            return new CodexBranchSelection(false, "Blocked: detached HEAD state detected. Checkout a normal branch first.", "", "", "", "", "", false);
         }
         currentBranch = currentBranch.trim();
 
         String gitState = runGitQuery(repo, "if [ -f .git/MERGE_HEAD ] || [ -f .git/CHERRY_PICK_HEAD ] || [ -f .git/REVERT_HEAD ] "
                 + "|| [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then echo BUSY; else echo CLEAN; fi");
         if (gitState == null || !"CLEAN".equals(gitState.trim())) {
-            return new CodexBranchSelection(false, "Blocked: merge/rebase/cherry-pick is in progress. Resolve git state first.", "", "", "", "", "");
+            return new CodexBranchSelection(false, "Blocked: merge/rebase/cherry-pick is in progress. Resolve git state first.", "", "", "", "", "", false);
         }
 
         String dirty = runGitQuery(repo, "git status --porcelain");
         if (dirty != null && !dirty.isBlank()) {
-            return new CodexBranchSelection(false, "Blocked: working tree is dirty. Commit/stash/reset before switching branches.", "", "", "", "", "");
+            return new CodexBranchSelection(false, "Blocked: working tree is dirty. Commit/stash/reset before switching branches.", "", "", "", "", "", false);
         }
 
         String fetchOutput = runGitQuery(repo, "git fetch --all --prune --quiet && echo FETCH_OK");
@@ -2204,7 +2206,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         String localBranchRows = runGitQuery(repo, "git for-each-ref --sort=-committerdate "
                 + "--format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)' refs/heads");
         if (localBranchRows == null || localBranchRows.isBlank()) {
-            return new CodexBranchSelection(false, "Blocked: could not enumerate local branches.", "", "", "", "", "");
+            return new CodexBranchSelection(false, "Blocked: could not enumerate local branches.", "", "", "", "", "", false);
         }
 
         List<BranchEvaluation> localEvaluations = new ArrayList<>();
@@ -2229,6 +2231,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         logBranchEvaluations("local", localEvaluations);
 
+        boolean createTrackingBranch = false;
         if (latest == null) {
             String remoteBranchRows = runGitQuery(repo, "git for-each-ref --sort=-committerdate "
                     + "--format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)' refs/remotes/origin");
@@ -2260,21 +2263,20 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             logBranchEvaluations("remote(origin)", remoteEvaluations);
             if (latestRemote != null) {
+                log("[INFO] No local matching Codex branch found; remote origin/" + latestRemote.branch()
+                        + " will be used to create a local tracking branch.");
+                latest = latestRemote;
+                createTrackingBranch = true;
+            } else {
                 return new CodexBranchSelection(false,
-                        "Blocked: no local Codex branches matched " + codexPatternSummary()
-                                + ". Matching remote branch found: origin/" + latestRemote.branch()
-                                + " (" + latestRemote.hash() + ", " + latestRemote.date()
-                                + "). Create/check out a local tracking branch first.",
-                        "", "", "", "", "");
+                        "Blocked: no local branches matched Codex rules " + codexPatternSummary() + ".",
+                        "", "", "", "", "", false);
             }
-            return new CodexBranchSelection(false,
-                    "Blocked: no local branches matched Codex rules " + codexPatternSummary() + ".",
-                    "", "", "", "", "");
         }
 
         String currentHash = runGitQuery(repo, "git rev-parse --short HEAD");
         if (currentHash == null || currentHash.isBlank()) {
-            return new CodexBranchSelection(false, "Blocked: could not read current commit hash.", "", "", "", "", "");
+            return new CodexBranchSelection(false, "Blocked: could not read current commit hash.", "", "", "", "", "", false);
         }
 
         String remoteHead = runGitQuery(repo, "git ls-remote --heads origin " + escape(latest.branch()));
@@ -2291,7 +2293,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 currentHash.trim(),
                 latest.branch(),
                 latest.hash(),
-                latest.date()
+                latest.date(),
+                createTrackingBranch
         );
     }
 
@@ -2327,11 +2330,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private String buildCodexUpdateCommandSequence(Path repo, String targetBranch) {
+    private String buildCodexUpdateCommandSequence(Path repo, CodexBranchSelection selection) {
+        String targetBranch = selection.targetBranch();
         String safeBranchForEcho = targetBranch == null ? "" : targetBranch.replace("\"", "\\\"");
+        String checkoutCommand = selection.createTrackingBranch()
+                ? "(git show-ref --verify --quiet refs/heads/" + escape(targetBranch)
+                + " && git checkout " + escape(targetBranch)
+                + " || git checkout --track -b " + escape(targetBranch) + " origin/" + escape(targetBranch) + ")"
+                : "git checkout " + escape(targetBranch);
         return "cd " + escape(repo.toString())
                 + " && git fetch --all --prune"
-                + " && git checkout " + escape(targetBranch)
+                + " && " + checkoutCommand
                 + " && (git ls-remote --exit-code --heads origin " + escape(targetBranch)
                 + " >/dev/null 2>&1 && git pull --ff-only origin " + escape(targetBranch)
                 + " || echo \"[INFO] origin/" + safeBranchForEcho + " not found; skipped pull\")";
