@@ -172,9 +172,9 @@ install_missing_prereqs
 
 if [[ ! -d "$PROJECT_DIR/.git" ]]; then
     echo "Warning: $PROJECT_DIR is not a git repository."
-    if [[ -d "$SCRIPT_DIR/.git" ]]; then
-        echo "Using script location repo instead: $SCRIPT_DIR"
-        PROJECT_DIR="$SCRIPT_DIR"
+    if [[ -d "$SCRIPT_DIR/../.git" ]]; then
+        echo "Using script location repo instead: $SCRIPT_DIR/.."
+        PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
         refresh_python_paths
     else
         echo "Cloning fresh repository into $PROJECT_DIR ..."
