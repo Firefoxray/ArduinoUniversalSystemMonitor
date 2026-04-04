@@ -133,6 +133,8 @@ char gpuName[34] = "--";
 char batteryPctStr[8] = "--";
 char batteryStateStr[20] = "--";
 char batteryModeStr[12] = "--";
+char batteryLabel[3][16];
+char batteryState[3][18];
 
 char procName[PROCESS_ROWS][20];
 char procCpu[PROCESS_ROWS][8];
@@ -377,7 +379,10 @@ static void updateStorage() {
   for (uint8_t i = 0; i < STORAGE_LINES; i++) {
     drawStorageRow(48 + (i * 30), i, storageLine[i], (i % 2 == 0) ? CYAN : YELLOW);
   }
-  drawKV(268, F("Batt"), batteryStateStr, ORANGE, 76);
+  drawKV(262, F("Mode"), batteryModeStr, CYAN, 78);
+  drawKV(284, F("Sys"), batteryStateStr, ORANGE, 78);
+  drawKV(306, F("Bat1"), batteryState[0], GREEN, 78);
+  drawKV(306, F("Bat2"), batteryState[1], YELLOW, 246);
 }
 
 static void drawGraphSeries(const uint8_t* values, uint16_t color) {
@@ -512,7 +517,8 @@ static void applyField(uint8_t idx, const char* value) {
   else if (idx == 64) safeCopy(batteryPctStr, sizeof(batteryPctStr), value);
   else if (idx == 65) safeCopy(batteryStateStr, sizeof(batteryStateStr), value);
   else if (idx == 66) safeCopy(batteryModeStr, sizeof(batteryModeStr), value);
-  else if (idx >= 67 && idx <= 72) { /* extra battery slots not rendered on Mega layout */ }
+  else if (idx >= 67 && idx <= 69) safeCopy(batteryLabel[idx - 67], sizeof(batteryLabel[0]), value);
+  else if (idx >= 70 && idx <= 72) safeCopy(batteryState[idx - 70], sizeof(batteryState[0]), value);
 #if UASM_STORAGE_DEBUG
   if (idx >= 56 && idx <= 62) {
     Serial.print("STORAGE FIELD ");
@@ -577,6 +583,10 @@ void setup() {
     safeCopy(procRam[i], sizeof(procRam[i]), "--");
   }
   for (uint8_t i = 0; i < STORAGE_LINES; i++) safeCopy(storageLine[i], sizeof(storageLine[i]), "Disk: --");
+  for (uint8_t i = 0; i < 3; i++) {
+    safeCopy(batteryLabel[i], sizeof(batteryLabel[i]), "--");
+    safeCopy(batteryState[i], sizeof(batteryState[i]), "--");
+  }
 
   currentPage = firstEnabledPage();
   drawCurrentLayout();

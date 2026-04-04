@@ -53,7 +53,7 @@ Preview screenshots are available in `screenshots/`.
 ### 1) Install base packages
 
 ```bash
-sudo dnf install -y git python3 python3-pip java-21-openjdk java-25-openjdk arduino-cli socat
+sudo dnf install -y git python3 python3-pip java-21-openjdk arduino-cli socat
 ```
 
 ### 2) Clone the repo
@@ -121,3 +121,13 @@ python3 UniversalArduinoMonitor.py
 - Reduce remaining manual setup friction in installer + Control Center.
 - Improve first-run diagnostics/help messaging.
 - **Windows compatibility planned for a future release**.
+
+## Remote actions (advanced / optional in V10)
+
+The Control Center includes a **Remote / CLI actions panel** with a conservative "predefined actions only" model:
+- update project
+- flash Arduinos
+- monitor service restart/status
+- Wi-Fi discovery debug log action
+
+Actions can run locally or over SSH (saved target profiles supported). This is intended as an advanced helper path, not a required setup path for V10.
