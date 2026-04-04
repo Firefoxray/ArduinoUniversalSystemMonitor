@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/project_paths.sh"
+source "$SCRIPT_DIR/../../lib/project_paths.sh"
 PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$SCRIPT_DIR/..}" "${BASH_SOURCE[0]}")"
 MONITOR_LOCAL_CONFIG_PATH="$(monitor_local_config_path "$PROJECT_DIR")"
 

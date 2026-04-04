@@ -13,7 +13,7 @@ if [ -z "$INSTALL_HOME" ]; then
 fi
 
 DEFAULT_PROJECT_DIR="$(resolve_project_dir "$SCRIPT_DIR/.." "${BASH_SOURCE[0]}")"
-if [ "$DEFAULT_PROJECT_DIR" = "$SCRIPT_DIR" ] && [ ! -d "$SCRIPT_DIR/.git" ]; then
+if [ "$DEFAULT_PROJECT_DIR" = "$SCRIPT_DIR" ] && [ ! -d "$SCRIPT_DIR/../.git" ]; then
     DEFAULT_PROJECT_DIR="$INSTALL_HOME/ArduinoUniversalSystemMonitor"
 fi
 PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$DEFAULT_PROJECT_DIR}" "${BASH_SOURCE[0]}")"
