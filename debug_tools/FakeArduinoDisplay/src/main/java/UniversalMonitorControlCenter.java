@@ -162,6 +162,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton saveAndRestartMonitorButton = new JButton("Save & Restart Python Monitor");
     private final JButton refreshStorageTargetsButton = new JButton("Refresh Storage Targets");
     private final JButton saveStorageSettingsButton = new JButton("Save Storage Settings");
+    private final JLabel storageSelectionSummaryLabel = new JLabel("Disk0: Auto (/), Disk1: Auto (secondary)");
     private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
     private final JTextArea macroEntriesArea = new JTextArea(6, 52);
@@ -585,13 +586,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         content.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
-        controls.setBorder(BorderFactory.createTitledBorder("Storage Selection"));
+        controls.setBorder(BorderFactory.createTitledBorder("Storage Display Setup"));
         controls.add(refreshStorageTargetsButton);
         controls.add(saveStorageSettingsButton);
-        controls.add(new JLabel("Home disk0:"));
+        controls.add(new JLabel("Home Disk0:"));
         disk0Selector.setPreferredSize(new Dimension(280, disk0Selector.getPreferredSize().height));
         controls.add(disk0Selector);
-        controls.add(new JLabel("Home disk1:"));
+        controls.add(new JLabel("Home Disk1:"));
         disk1Selector.setPreferredSize(new Dimension(280, disk1Selector.getPreferredSize().height));
         controls.add(disk1Selector);
         controls.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -600,12 +601,16 @@ public class UniversalMonitorControlCenter extends JFrame {
         storageTargetsPanel.setLayout(new BoxLayout(storageTargetsPanel, BoxLayout.Y_AXIS));
         storageTargetsPanel.setBorder(new EmptyBorder(6, 6, 6, 6));
         JScrollPane targetsScroll = new JScrollPane(storageTargetsPanel);
-        targetsScroll.setBorder(BorderFactory.createTitledBorder("Detected Drives / Storage Targets (checked = shown on Arduino storage pages)"));
+        targetsScroll.setBorder(BorderFactory.createTitledBorder("Detected Storage Targets (checked = visible on Storage page)"));
         targetsScroll.setPreferredSize(new Dimension(1160, 480));
         content.add(targetsScroll);
 
-        JLabel helper = new JLabel("<html>Select which detected storage targets are included on Arduino storage pages.<br>"
-                + "Disk0 and Disk1 control the two home-screen disk percentages and are saved to local monitor config.</html>");
+        storageSelectionSummaryLabel.setBorder(new EmptyBorder(4, 6, 2, 6));
+        storageSelectionSummaryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(storageSelectionSummaryLabel);
+
+        JLabel helper = new JLabel("<html>Pick which drives are shown on the Storage page.<br>"
+                + "Disk0 and Disk1 choose the two home-screen disk meters and save to your local config.</html>");
         helper.setBorder(new EmptyBorder(6, 6, 6, 6));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(helper);
@@ -1114,6 +1119,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveAndRestartMonitorButton.addActionListener(e -> saveMonitorConnectionSettings(false));
         refreshStorageTargetsButton.addActionListener(e -> refreshStorageTargetsFromSystem(true));
         saveStorageSettingsButton.addActionListener(e -> saveStorageSelectionsOnly());
+        disk0Selector.addActionListener(e -> updateStorageSelectionSummaryLabel());
+        disk1Selector.addActionListener(e -> updateStorageSelectionSummaryLabel());
         testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
         resetWifiPairingButton.addActionListener(e -> resetWifiPairing());
         wifiConnectionModeSelector.addActionListener(e -> updateWifiHostFieldState());
@@ -2335,8 +2342,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         String currentDisk1 = extractStorageTargetId(disk1Selector.getSelectedItem());
         disk0Selector.removeAllItems();
         disk1Selector.removeAllItems();
-        disk0Selector.addItem("Auto (" + ROOT_MOUNT_FALLBACK_LABEL() + ")");
-        disk1Selector.addItem("Auto (secondary)");
+        disk0Selector.addItem("Auto (use /)");
+        disk1Selector.addItem("Auto (best secondary target)");
         for (StorageTarget target : storageTargetsById.values()) {
             String label = target.displayLabel() + " [" + target.id() + "]";
             disk0Selector.addItem(label);
@@ -2344,6 +2351,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         selectStorageTargetInCombo(disk0Selector, currentDisk0);
         selectStorageTargetInCombo(disk1Selector, currentDisk1);
+        updateStorageSelectionSummaryLabel();
     }
 
     private String ROOT_MOUNT_FALLBACK_LABEL() {
@@ -2386,6 +2394,25 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         }
         return ids;
+    }
+
+    private List<String> ensureSelectedDiskTargetsIncluded(List<String> enabledStorageTargets, String disk0Target, String disk1Target) {
+        List<String> adjusted = new ArrayList<>(enabledStorageTargets);
+        if (!disk0Target.isBlank() && !adjusted.contains(disk0Target)) {
+            adjusted.add(disk0Target);
+        }
+        if (!disk1Target.isBlank() && !adjusted.contains(disk1Target)) {
+            adjusted.add(disk1Target);
+        }
+        return adjusted;
+    }
+
+    private void updateStorageSelectionSummaryLabel() {
+        String disk0 = extractStorageTargetId(disk0Selector.getSelectedItem());
+        String disk1 = extractStorageTargetId(disk1Selector.getSelectedItem());
+        String disk0Text = disk0.isBlank() ? "Auto (/)" : disk0;
+        String disk1Text = disk1.isBlank() ? "Auto (secondary)" : disk1;
+        storageSelectionSummaryLabel.setText("Disk0: " + disk0Text + "   |   Disk1: " + disk1Text);
     }
 
     private String copyConfigEntryIfPresent(String targetText, String sourceText, String key) {
@@ -2612,6 +2639,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             selectStorageTargetInCombo(disk0Selector, disk0Target);
             selectStorageTargetInCombo(disk1Selector, disk1Target);
+            updateStorageSelectionSummaryLabel();
             wifiPortSourceLabel.setText("Effective source: " + wifiResolution.source());
             updateWifiHostFieldState();
             if (verbose) {
@@ -2705,6 +2733,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         List<String> enabledStorageTargets = selectedEnabledStorageTargetIds();
         String disk0Target = extractStorageTargetId(disk0Selector.getSelectedItem());
         String disk1Target = extractStorageTargetId(disk1Selector.getSelectedItem());
+        enabledStorageTargets = ensureSelectedDiskTargetsIncluded(enabledStorageTargets, disk0Target, disk1Target);
 
         applyAutoModuleDependenciesForAllBoards(true);
         applyMonitorModuleStateFromProfiles(true);
@@ -2853,6 +2882,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             List<String> enabledStorageTargets = selectedEnabledStorageTargetIds();
             String disk0Target = extractStorageTargetId(disk0Selector.getSelectedItem());
             String disk1Target = extractStorageTargetId(disk1Selector.getSelectedItem());
+            enabledStorageTargets = ensureSelectedDiskTargetsIncluded(enabledStorageTargets, disk0Target, disk1Target);
             String updated = upsertStringArrayConfigValue(text, "storage_enabled_targets", enabledStorageTargets);
             updated = upsertStringConfigValue(updated, "storage_disk0_target", disk0Target);
             updated = upsertStringConfigValue(updated, "storage_disk1_target", disk1Target);
@@ -2864,6 +2894,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             } else {
                 log("[INFO] Storage settings already matched in " + configPath + ".");
             }
+            updateStorageSelectionSummaryLabel();
         } catch (Exception ex) {
             log("[WARN] Failed to save storage settings: " + ex.getMessage());
         }
