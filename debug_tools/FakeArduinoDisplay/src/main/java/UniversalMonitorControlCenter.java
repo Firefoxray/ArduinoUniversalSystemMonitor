@@ -2158,15 +2158,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         String commandSequence = buildCodexUpdateCommandSequence(repo, selection);
+        String confirmationText = "<html><div style='width:420px'>"
+                + "<b>Update from latest Codex/debug branch?</b><br>"
+                + "Current: <code>" + escapeHtml(selection.currentBranch()) + "</code> @ <code>" + escapeHtml(selection.currentHash()) + "</code><br>"
+                + "Target: <code>" + escapeHtml(selection.targetBranch()) + "</code> @ <code>" + escapeHtml(selection.targetHash()) + "</code><br>"
+                + "This will update code, restart the monitor service, and relaunch the Control Center."
+                + "</div></html>";
         int confirmed = JOptionPane.showConfirmDialog(
                 this,
-                "<html><b>Debug Advanced Action</b><br>"
-                        + "Current: <code>" + escapeHtml(selection.currentBranch()) + "</code> @ <code>" + escapeHtml(selection.currentHash()) + "</code><br>"
-                        + "Target: <code>" + escapeHtml(selection.targetBranch()) + "</code> @ <code>" + escapeHtml(selection.targetHash()) + "</code> ("
-                        + escapeHtml(selection.targetDate()) + ")<br>"
-                        + "Checkout mode: <code>" + (selection.createTrackingBranch() ? "create local tracking branch from origin" : "checkout existing local branch") + "</code><br><br>"
-                        + "Command sequence:<br><pre>" + escapeHtml(commandSequence) + "</pre>"
-                        + "Proceed with checkout/update?</html>",
+                confirmationText,
                 "Confirm Codex Debug Update",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
@@ -2184,7 +2184,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "Debug: update from latest Codex branch",
                 false,
                 true,
-                () -> logCodexUpdateSummary(selection.currentBranch(), selection.currentHash())
+                () -> handleCodexUpdateSuccess(selection.currentBranch(), selection.currentHash())
         );
     }
 
@@ -2381,7 +2381,24 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         log("[INFO] Codex debug update summary: previous branch=" + previousBranch + " (" + previousHash
                 + "), new branch=" + newBranch + " (" + newHash + "), status=success.");
-        log("[INFO] If this branch changed GUI code, restart/relaunch the Control Center to ensure new behavior is loaded.");
+    }
+
+    private void handleCodexUpdateSuccess(String previousBranch, String previousHash) {
+        logCodexUpdateSummary(previousBranch, previousHash);
+        boolean restarted = runShellCommandSync(
+                "systemctl restart " + SERVICE_NAME,
+                "Restart monitor service after Codex debug update",
+                true,
+                true
+        );
+        if (!restarted) {
+            log("[WARN] Codex update succeeded, but monitor service restart failed. Control Center will stay open.");
+            SwingUtilities.invokeLater(() -> setActionButtons(true));
+            return;
+        }
+
+        Path launcher = repoPath().resolve("UniversalMonitorControlCenter.sh");
+        relaunchApplication(launcher);
     }
 
     private void setTransportMode(boolean wifiEnabled) {

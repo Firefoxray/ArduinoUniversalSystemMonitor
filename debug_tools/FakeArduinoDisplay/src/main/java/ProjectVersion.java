@@ -4,8 +4,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 final class ProjectVersion {
+    private static final Pattern[] CODEX_BRANCH_PATTERNS = new Pattern[]{
+            Pattern.compile("^codex/.*"),
+            Pattern.compile("^codex-.*")
+    };
+
     private ProjectVersion() {
     }
 
@@ -17,6 +24,9 @@ final class ProjectVersion {
         try {
             String version = Files.readString(versionFile, StandardCharsets.UTF_8).trim();
             if (!version.isEmpty()) {
+                if (isCodexBranchBuild(versionFile.getParent()) && !version.toUpperCase(Locale.ROOT).contains("(CODEX-BRANCH)")) {
+                    return version + " (CODEX-BRANCH)";
+                }
                 return version;
             }
         } catch (IOException ignored) {
@@ -61,5 +71,34 @@ final class ProjectVersion {
             cursor = cursor.getParent();
         }
         return null;
+    }
+
+    private static boolean isCodexBranchBuild(Path repoRoot) {
+        Path headPath = repoRoot.resolve(".git").resolve("HEAD");
+        if (!Files.isRegularFile(headPath)) {
+            return false;
+        }
+        try {
+            String head = Files.readString(headPath, StandardCharsets.UTF_8).trim();
+            String branch = extractBranchName(head);
+            if (branch == null || branch.isBlank()) {
+                return false;
+            }
+            for (Pattern pattern : CODEX_BRANCH_PATTERNS) {
+                if (pattern.matcher(branch).matches()) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return false;
+    }
+
+    private static String extractBranchName(String head) {
+        String prefix = "ref: refs/heads/";
+        if (head == null || !head.startsWith(prefix)) {
+            return null;
+        }
+        return head.substring(prefix.length()).trim();
     }
 }
