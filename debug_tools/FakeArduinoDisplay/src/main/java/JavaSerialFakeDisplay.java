@@ -596,10 +596,10 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("Up: " + packet.get("UPTIME", packet.get("UP", "--")), innerX + colW * 2, innerY + 24);
 
             g2.setColor(previewWifiEnabled ? LIME : ORANGE);
-            g2.drawString(previewWifiEnabled ? "Wi-Fi Connected" : "Wi-Fi Disabled", innerX, innerY + 46);
+            g2.drawString(previewWifiEnabled ? "Wi-Fi Connected" : "Wi-Fi Disabled", innerX, innerY + 40);
             g2.setColor(WHITE);
-            g2.drawString("IP: " + truncate(resolvePreviewIpDisplay(), 24), innerX + colW, innerY + 46);
-            g2.drawString("Version: " + APP_VERSION, innerX + colW * 2, innerY + 46);
+            g2.drawString("IP: " + truncate(resolvePreviewIpDisplay(), 24), innerX + colW, innerY + 40);
+            g2.drawString("Version: " + APP_VERSION, innerX + colW * 2, innerY + 40);
         }
 
         private void drawCpuThreadsDesktop(Graphics2D g2, int x, int y, int w, int h) {
@@ -688,19 +688,36 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopField(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "--")), x + 10, rowY, CYAN);
             rowY += 18;
             drawDesktopField(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "--")), x + 10, rowY, WHITE);
-            rowY += 20;
-            drawDesktopField(g2, "root", packet.get("DISK0", packet.get("D0", "--")) + "%", x + 10, rowY, CYAN);
-            rowY += 18;
-            drawDesktopField(g2, "srv", packet.get("DISK1", packet.get("D1", "--")) + "%", x + 10, rowY, YELLOW);
+            rowY += 22;
 
-            List<String> mounts = collectStorageMounts();
-            int extraY = rowY + 18;
-            int maxRows = Math.max(0, (y + h - 14 - extraY) / 16);
+            int rootPct = packet.getInt("DISK0", packet.getInt("D0", 0));
+            int srvPct = packet.getInt("DISK1", packet.getInt("D1", 0));
+            drawStorageUsageRow(g2, "root", rootPct, "system", x + 10, rowY, w - 20, CYAN);
+            rowY += 20;
+            drawStorageUsageRow(g2, "srv", srvPct, "secondary", x + 10, rowY, w - 20, YELLOW);
+
+            List<StorageMountEntry> mounts = collectStorageMounts();
+            int extraY = rowY + 22;
+            int maxRows = Math.max(0, (y + h - 18 - extraY) / 19);
             int shown = 0;
-            for (String mount : mounts) {
-                if (shown >= maxRows) break;
-                drawDesktopField(g2, shown == 0 ? "other" : ("other" + shown), mount, x + 10, extraY, ORANGE);
-                extraY += 16;
+            for (StorageMountEntry mount : mounts) {
+                if (shown >= maxRows) {
+                    break;
+                }
+                if (mount.percent >= 0 && (mount.percent == rootPct || mount.percent == srvPct)) {
+                    continue;
+                }
+                drawStorageUsageRow(
+                        g2,
+                        shown == 0 ? "other" : ("other" + shown),
+                        mount.percent,
+                        mount.displayText,
+                        x + 10,
+                        extraY,
+                        w - 20,
+                        ORANGE
+                );
+                extraY += 19;
                 shown++;
             }
         }
@@ -730,9 +747,6 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopHistoryLine(g2, ramHistory, gx, gy, gw, gh, CYAN);
             drawDesktopHistoryLine(g2, gpuHistory, gx, gy, gw, gh, ORANGE);
             drawDesktopHistoryLine(g2, vramHistory, gx, gy, gw, gh, MAGENTA);
-            int networkScaleKbps = Math.max(1, Math.max(maxValue(netDownHistory), maxValue(netUpHistory)));
-            drawDesktopHistoryLineScaled(g2, netDownHistory, gx, gy, gw, gh, networkScaleKbps, new Color(124, 255, 169));
-            drawDesktopHistoryLineScaled(g2, netUpHistory, gx, gy, gw, gh, networkScaleKbps, new Color(255, 194, 104));
             g2.setStroke(oldStroke);
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             int legendY = y + h - 16;
@@ -744,12 +758,6 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("GPU", x + 102, legendY);
             g2.setColor(MAGENTA);
             g2.drawString("VRAM", x + 146, legendY);
-            g2.setColor(new Color(124, 255, 169));
-            g2.drawString("Down", x + 202, legendY);
-            g2.setColor(new Color(255, 194, 104));
-            g2.drawString("Up", x + 252, legendY);
-            g2.setColor(WHITE);
-            g2.drawString("Net scale " + formatKbps(networkScaleKbps), x + w - 166, legendY);
         }
 
         private void drawDesktopMiniBar(Graphics2D g2, String label, int value, int x, int y, int w, Color color) {
@@ -795,20 +803,42 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(truncate(value, 22), x + 66, y);
         }
 
+        private void drawStorageUsageRow(Graphics2D g2, String label, int percent, String detail, int x, int y, int width, Color color) {
+            int clamped = Math.max(0, Math.min(100, percent));
+            g2.setFont(new Font(MONO, Font.BOLD, 11));
+            g2.setColor(WHITE);
+            g2.drawString(label + ":", x, y);
+            int barX = x + 58;
+            int barW = Math.max(56, width - 126);
+            drawBar(g2, barX, y - 9, barW, 8, clamped, color);
+            g2.setColor(color);
+            g2.drawString(clamped + "%", x + width - 52, y);
+            g2.setFont(new Font(MONO, Font.PLAIN, 10));
+            g2.setColor(new Color(205, 220, 240));
+            g2.drawString(truncate(detail, 16), barX, y + 10);
+        }
+
         private int parseTemperaturePct(String text) {
             if (text == null) {
                 return 0;
             }
-            String digits = text.replaceAll("[^0-9]", "");
-            if (digits.isEmpty()) {
+            String normalized = text.trim();
+            java.util.regex.Matcher valueMatcher = java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?)").matcher(normalized);
+            if (!valueMatcher.find()) {
                 return 0;
             }
+            double value;
             try {
-                int temp = Integer.parseInt(digits);
-                return Math.max(0, Math.min(100, temp));
+                value = Double.parseDouble(valueMatcher.group(1));
             } catch (NumberFormatException ignored) {
                 return 0;
             }
+            String upper = normalized.toUpperCase();
+            double celsius = upper.contains("F") && !upper.contains("C")
+                    ? ((value - 32.0) * 5.0 / 9.0)
+                    : value;
+            int pct = (int) Math.round(((celsius - 20.0) / 80.0) * 100.0);
+            return Math.max(0, Math.min(100, pct));
         }
 
         private String normalizeTemperatureText(String text) {
@@ -859,18 +889,8 @@ public class JavaSerialFakeDisplay extends JFrame {
             return max;
         }
 
-        private String formatKbps(int kbps) {
-            if (kbps >= 1024 * 1024) {
-                return String.format("%.1f GB/s", kbps / (1024.0 * 1024.0));
-            }
-            if (kbps >= 1024) {
-                return String.format("%.1f MB/s", kbps / 1024.0);
-            }
-            return kbps + " KB/s";
-        }
-
-        private List<String> collectStorageMounts() {
-            List<String> mounts = new ArrayList<>();
+        private List<StorageMountEntry> collectStorageMounts() {
+            List<StorageMountEntry> mounts = new ArrayList<>();
             Map<String, String> values = packet.snapshotValues();
             List<String> dedup = new ArrayList<>();
             for (int i = 1; i <= 8; i++) {
@@ -878,10 +898,11 @@ public class JavaSerialFakeDisplay extends JFrame {
                 if (entry == null || entry.isBlank() || "--".equals(entry.trim())) {
                     continue;
                 }
-                String text = truncate(entry.trim(), 26);
-                if (!dedup.contains(text)) {
-                    dedup.add(text);
-                    mounts.add(text);
+                StorageMountEntry parsed = parseStorageMountEntry(entry);
+                String dedupKey = parsed.label.toLowerCase() + "|" + parsed.percent + "|" + parsed.displayText.toLowerCase();
+                if (!dedup.contains(dedupKey)) {
+                    dedup.add(dedupKey);
+                    mounts.add(parsed);
                 }
             }
             for (Map.Entry<String, String> entry : values.entrySet()) {
@@ -893,13 +914,71 @@ public class JavaSerialFakeDisplay extends JFrame {
                 if (value == null || value.isBlank() || "--".equals(value.trim())) {
                     continue;
                 }
-                String text = truncate(key + " " + value + "%", 26);
-                if (!dedup.contains(text)) {
-                    dedup.add(text);
-                    mounts.add(text);
+                int pct = parsePercentValue(value);
+                String label = key.equals("DISK0") ? "root" : (key.equals("DISK1") ? "srv" : key.toLowerCase());
+                StorageMountEntry parsed = new StorageMountEntry(label, pct, key.toLowerCase());
+                String dedupKey = parsed.label.toLowerCase() + "|" + parsed.percent + "|" + parsed.displayText.toLowerCase();
+                if (!dedup.contains(dedupKey)) {
+                    dedup.add(dedupKey);
+                    mounts.add(parsed);
                 }
             }
             return mounts;
+        }
+
+        private StorageMountEntry parseStorageMountEntry(String rawValue) {
+            String cleaned = rawValue == null ? "" : rawValue.trim();
+            if (cleaned.isBlank()) {
+                return new StorageMountEntry("disk", 0, "--");
+            }
+            int pct = parsePercentValue(cleaned);
+            String compact = cleaned.replaceAll("\\s+", " ").trim();
+            String[] parts = compact.split(" ");
+            String label = parts.length > 0 ? parts[0] : "disk";
+            String detail = compact;
+            if (parts.length > 1) {
+                String lastToken = parts[parts.length - 1].toLowerCase();
+                if (!lastToken.endsWith("%")) {
+                    detail = lastToken;
+                }
+            }
+            return new StorageMountEntry(truncate(label, 10), pct, truncate(detail, 16));
+        }
+
+        private int parsePercentValue(String valueText) {
+            if (valueText == null || valueText.isBlank()) {
+                return 0;
+            }
+            String matcherSource = valueText.trim();
+            java.util.regex.Matcher percentMatcher = java.util.regex.Pattern.compile("(\\d{1,3})\\s*%").matcher(matcherSource);
+            if (percentMatcher.find()) {
+                try {
+                    return Math.max(0, Math.min(100, Integer.parseInt(percentMatcher.group(1))));
+                } catch (NumberFormatException ignored) {
+                    return 0;
+                }
+            }
+            String digits = matcherSource.replaceAll("[^0-9]", "");
+            if (digits.isBlank()) {
+                return 0;
+            }
+            try {
+                return Math.max(0, Math.min(100, Integer.parseInt(digits)));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+
+        private static class StorageMountEntry {
+            final String label;
+            final int percent;
+            final String displayText;
+
+            StorageMountEntry(String label, int percent, String displayText) {
+                this.label = label;
+                this.percent = percent;
+                this.displayText = displayText;
+            }
         }
 
         private void drawDesktopCard(Graphics2D g2, String title, int x, int y, int w, int h) {
