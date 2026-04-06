@@ -4,16 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Locale;
-import java.util.regex.Pattern;
 
 final class ProjectVersion {
-    private static final String UPDATE_SOURCE_FILE = ".last_update_source";
-    private static final Pattern[] CODEX_BRANCH_PATTERNS = new Pattern[]{
-            Pattern.compile("^codex/.*"),
-            Pattern.compile("^codex-.*")
-    };
-
     private ProjectVersion() {
     }
 
@@ -25,10 +17,6 @@ final class ProjectVersion {
         try {
             String version = normalizeVersion(Files.readString(versionFile, StandardCharsets.UTF_8).trim());
             if (!version.isEmpty()) {
-                UpdateSource updateSource = detectUpdateSource(versionFile.getParent());
-                if (updateSource == UpdateSource.CODEX && !version.toUpperCase(Locale.ROOT).contains("(CODEX-BRANCH)")) {
-                    return version + " (CODEX-BRANCH)";
-                }
                 return version;
             }
         } catch (IOException ignored) {
@@ -75,53 +63,6 @@ final class ProjectVersion {
         return null;
     }
 
-    private static boolean isCodexBranchBuild(Path repoRoot) {
-        Path headPath = repoRoot.resolve(".git").resolve("HEAD");
-        if (!Files.isRegularFile(headPath)) {
-            return false;
-        }
-        try {
-            String head = Files.readString(headPath, StandardCharsets.UTF_8).trim();
-            String branch = extractBranchName(head);
-            if (branch == null || branch.isBlank()) {
-                return false;
-            }
-            for (Pattern pattern : CODEX_BRANCH_PATTERNS) {
-                if (pattern.matcher(branch).matches()) {
-                    return true;
-                }
-            }
-        } catch (IOException ignored) {
-        }
-        return false;
-    }
-
-    private static UpdateSource detectUpdateSource(Path repoRoot) {
-        UpdateSource fromMarker = readUpdateSourceMarker(repoRoot);
-        if (fromMarker != UpdateSource.UNKNOWN) {
-            return fromMarker;
-        }
-        return isCodexBranchBuild(repoRoot) ? UpdateSource.CODEX : UpdateSource.UNKNOWN;
-    }
-
-    private static UpdateSource readUpdateSourceMarker(Path repoRoot) {
-        Path markerPath = repoRoot.resolve(UPDATE_SOURCE_FILE);
-        if (!Files.isRegularFile(markerPath)) {
-            return UpdateSource.UNKNOWN;
-        }
-        try {
-            String marker = Files.readString(markerPath, StandardCharsets.UTF_8).trim().toLowerCase(Locale.ROOT);
-            if ("main".equals(marker)) {
-                return UpdateSource.MAIN;
-            }
-            if ("codex".equals(marker)) {
-                return UpdateSource.CODEX;
-            }
-        } catch (IOException ignored) {
-        }
-        return UpdateSource.UNKNOWN;
-    }
-
     private static String normalizeVersion(String version) {
         String text = version == null ? "" : version.trim();
         if (text.isEmpty()) {
@@ -133,17 +74,4 @@ final class ProjectVersion {
         return text;
     }
 
-    private static String extractBranchName(String head) {
-        String prefix = "ref: refs/heads/";
-        if (head == null || !head.startsWith(prefix)) {
-            return null;
-        }
-        return head.substring(prefix.length()).trim();
-    }
-
-    private enum UpdateSource {
-        MAIN,
-        CODEX,
-        UNKNOWN
-    }
 }

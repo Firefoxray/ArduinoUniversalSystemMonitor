@@ -521,7 +521,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawDesktopOverview(Graphics2D g2, int w, int h) {
-            GradientPaint background = new GradientPaint(0, 0, new Color(10, 16, 30), 0, h, new Color(6, 10, 18));
+            GradientPaint background = new GradientPaint(0, 0, new Color(11, 19, 36), 0, h, new Color(6, 10, 20));
             g2.setPaint(background);
             g2.fillRect(0, 0, w, h);
 
@@ -530,7 +530,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int left = outerPad;
             int contentW = Math.max(320, w - outerPad * 2);
             int contentH = Math.max(280, h - outerPad * 2 - 12);
-            int rightColumnW = Math.max(250, contentW / 3);
+            int rightColumnW = Math.max(280, (int) (contentW * 0.37));
             int leftColumnW = contentW - rightColumnW - 12;
             int rowGap = 10;
 
@@ -547,9 +547,9 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             y += summaryH + rowGap;
             int remainingH = contentH - (y - top);
-            int leftTopH = Math.max(82, (int) (remainingH * 0.36));
+            int leftTopH = Math.max(64, (int) (remainingH * 0.22));
             int leftBottomH = Math.max(120, remainingH - leftTopH - rowGap);
-            int rightTopH = Math.max(170, (int) (remainingH * 0.44));
+            int rightTopH = Math.max(170, (int) (remainingH * 0.50));
             int rightBottomH = Math.max(120, remainingH - rightTopH - rowGap);
 
             drawCpuThreadsDesktop(g2, left, y, leftColumnW, leftTopH);
@@ -585,12 +585,12 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawCpuThreadsDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "CPU Threads (Compact)", x, y, w, h);
+            drawDesktopCard(g2, "CPU Threads (Mini)", x, y, w, h);
             int cols = 8;
             int rows = 2;
             int cellW = Math.max(52, (w - 24) / cols);
-            int cellH = Math.max(20, (h - 38) / rows);
-            g2.setFont(new Font(MONO, Font.BOLD, 10));
+            int cellH = Math.max(16, (h - 36) / rows);
+            g2.setFont(new Font(MONO, Font.BOLD, 9));
             for (int i = 0; i < 16; i++) {
                 int col = i % cols;
                 int row = i / cols;
@@ -600,13 +600,13 @@ public class JavaSerialFakeDisplay extends JFrame {
                 g2.setColor(WHITE);
                 g2.drawString("C" + i, cellX, cellY);
                 g2.setColor(getHeatColor(val));
-                g2.drawString(val + "%", cellX + 20, cellY + 10);
+                g2.drawString(val + "%", cellX + 18, cellY + 8);
             }
             int total = packet.getInt("CPU", 0);
-            int barY = y + h - 16;
+            int barY = y + h - 12;
             g2.setColor(WHITE);
             g2.drawString("Total", x + 10, barY);
-            drawBar(g2, x + 48, barY - 9, Math.max(80, w - 128), 8, total, getHeatColor(total));
+            drawBar(g2, x + 46, barY - 8, Math.max(80, w - 122), 7, total, getHeatColor(total));
             g2.setColor(getHeatColor(total));
             g2.drawString(total + "%", x + w - 52, barY);
         }
@@ -616,25 +616,28 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setFont(new Font(MONO, Font.BOLD, 12));
             g2.setColor(WHITE);
             g2.drawString("Name", x + 12, y + 30);
-            g2.drawString("CPU", x + w - 120, y + 30);
-            g2.drawString("RAM", x + w - 62, y + 30);
+            g2.drawString("CPU", x + w - 128, y + 30);
+            g2.drawString("RAM", x + w - 66, y + 30);
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             int rowY = y + 48;
-            for (int i = 1; i <= 6; i++) {
-                String name = truncate(packet.get("P" + i, "--"), 34);
+            for (int i = 1; i <= 5; i++) {
+                String name = truncate(packet.get("P" + i, "--"), 30);
                 String cpu = packet.get("P" + i + "CPU", "--");
                 String ram = packet.get("P" + i + "RAM", "--");
+                int rowTop = rowY - 12;
+                g2.setColor(new Color(15, 24, 42, 180));
+                g2.fillRoundRect(x + 10, rowTop, w - 20, 16, 8, 8);
                 g2.setColor(WHITE);
                 g2.drawString(i + ". " + name, x + 12, rowY);
                 g2.setColor(YELLOW);
-                g2.drawString(cpu, x + w - 120, rowY);
+                g2.drawString(cpu, x + w - 128, rowY);
                 g2.setColor(CYAN);
-                g2.drawString(ram, x + w - 62, rowY);
-                rowY += 18;
-                if (rowY > y + h - 62) break;
+                g2.drawString(ram, x + w - 66, rowY);
+                rowY += 19;
+                if (rowY > y + h - 86) break;
             }
 
-            int statsTop = y + h - 54;
+            int statsTop = y + h - 60;
             drawDesktopMiniBar(g2, "CPU", packet.getInt("CPU", 0), x + 12, statsTop, w - 24, LIME);
             drawDesktopMiniBar(g2, "RAM", packet.getInt("RAM", 0), x + 12, statsTop + 16, w - 24, CYAN);
             int netBlend = Math.min(100, Math.max(packet.getInt("CPU", 0), packet.getInt("RAM", 0)));
@@ -726,7 +729,8 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawDesktopCard(Graphics2D g2, String title, int x, int y, int w, int h) {
-            g2.setColor(new Color(20, 30, 53));
+            GradientPaint cardPaint = new GradientPaint(x, y, new Color(24, 38, 66), x, y + h, new Color(15, 24, 43));
+            g2.setPaint(cardPaint);
             g2.fillRoundRect(x, y, w, h, 12, 12);
             g2.setColor(PANEL_LINE);
             g2.drawRoundRect(x, y, w, h, 12, 12);
