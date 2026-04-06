@@ -198,8 +198,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton popOutPreviewButton = new JButton("Open Pop Out Desktop Dashboard");
     private final JButton closePopOutPreviewButton = new JButton("Close Pop-Out");
     private final JButton fullscreenPopOutPreviewButton = new JButton("Fullscreen");
-    private final JButton desktopWindowFullscreenButton = new JButton("Enter Fullscreen");
-    private final JButton desktopWindowCloseButton = new JButton("Close Pop-Out");
+    private final JButton desktopWindowFullscreenButton = new JButton("Fullscreen");
     private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
     private final JCheckBox dashboardRememberPasswordToggle = new JCheckBox("Remember");
     private final JButton scanNetworkButton = new JButton("Start Arduino Scan");
@@ -418,7 +417,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
         desktopWindowFullscreenButton.setToolTipText("Toggle fullscreen for this pop-out window. Press Esc to exit fullscreen.");
-        desktopWindowCloseButton.setToolTipText("Close the desktop dashboard pop-out window.");
+        desktopWindowFullscreenButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        desktopWindowFullscreenButton.setPreferredSize(new Dimension(140, desktopWindowFullscreenButton.getPreferredSize().height));
         sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
@@ -1252,7 +1252,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         closePopOutPreviewButton.addActionListener(e -> closeDesktopDashboardWindow());
         fullscreenPopOutPreviewButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
         desktopWindowFullscreenButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
-        desktopWindowCloseButton.addActionListener(e -> closeDesktopDashboardWindow());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
@@ -1618,6 +1617,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         Path repo = repoPath();
         Path launcher = repo.resolve("UniversalMonitorControlCenter.sh");
         UpdateCheckResult checkResult = checkForRemoteUpdate(repo);
+        if (checkResult.blocked()) {
+            log("[WARN] " + checkResult.message());
+            JOptionPane.showMessageDialog(this, checkResult.message(), "Update blocked", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         if (!checkResult.canProceed()) {
             log("[WARN] " + checkResult.message());
             JOptionPane.showMessageDialog(this, checkResult.message(), "Update check failed", JOptionPane.WARNING_MESSAGE);
@@ -1625,7 +1629,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         if (!checkResult.updateAvailable()) {
             log("[INFO] " + checkResult.message());
-            JOptionPane.showMessageDialog(this, checkResult.message(), "Already up to date", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, checkResult.message(), "Update status", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         String command = "cd " + escape(repo.toString()) + " && chmod +x update.sh UniversalMonitorControlCenter.sh && ./update.sh";
@@ -1635,28 +1639,28 @@ public class UniversalMonitorControlCenter extends JFrame {
     private UpdateCheckResult checkForRemoteUpdate(Path repo) {
         String branch = runGitQuery(repo, "git rev-parse --abbrev-ref HEAD");
         if (branch == null || branch.isBlank() || "HEAD".equals(branch)) {
-            return new UpdateCheckResult(false, false, "Could not determine the current git branch for the selected repo.");
+            return new UpdateCheckResult(false, false, false, "Could not determine the current git branch for the selected repo.");
         }
         branch = branch.trim();
 
         String fetchStatus = runGitQuery(repo, "git fetch --prune origin " + escape(branch) + " && echo FETCH_OK");
         if (fetchStatus == null) {
-            return new UpdateCheckResult(false, false, "Could not fetch origin/" + branch + " to check for updates.");
+            return new UpdateCheckResult(false, false, false, "Could not fetch origin/" + branch + " to check for updates.");
         }
 
         String remoteRef = "origin/" + branch;
         String remoteHead = runGitQuery(repo, "git rev-parse --verify " + escape(remoteRef));
         if (remoteHead == null || remoteHead.isBlank()) {
-            return new UpdateCheckResult(false, false, "Could not resolve origin/" + branch + " after fetch.");
+            return new UpdateCheckResult(false, false, false, "Could not resolve origin/" + branch + " after fetch.");
         }
 
         String divergence = runGitQuery(repo, "git rev-list --left-right --count HEAD..." + escape(remoteRef));
         if (divergence == null || divergence.isBlank()) {
-            return new UpdateCheckResult(false, false, "Could not compare local and remote history for branch '" + branch + "'.");
+            return new UpdateCheckResult(false, false, false, "Could not compare local and remote history for branch '" + branch + "'.");
         }
         String[] counts = divergence.trim().split("\\s+");
         if (counts.length < 2) {
-            return new UpdateCheckResult(false, false, "Git returned an invalid branch comparison result: '" + divergence.trim() + "'.");
+            return new UpdateCheckResult(false, false, false, "Git returned an invalid branch comparison result: '" + divergence.trim() + "'.");
         }
         int localAhead;
         int localBehind;
@@ -1664,19 +1668,40 @@ public class UniversalMonitorControlCenter extends JFrame {
             localAhead = Integer.parseInt(counts[0]);
             localBehind = Integer.parseInt(counts[1]);
         } catch (NumberFormatException ex) {
-            return new UpdateCheckResult(false, false, "Could not parse branch comparison counts: '" + divergence.trim() + "'.");
+            return new UpdateCheckResult(false, false, false, "Could not parse branch comparison counts: '" + divergence.trim() + "'.");
         }
 
-        if (localBehind <= 0) {
-            if (localAhead > 0) {
-                return new UpdateCheckResult(true, false,
-                        "This project is up to date with origin/" + branch + " (local branch is ahead by " + localAhead + " commit(s)).");
+        String workingTreeState = runGitQuery(repo, "git status --porcelain");
+        if (workingTreeState == null) {
+            return new UpdateCheckResult(false, false, false, "Could not inspect working tree state for branch '" + branch + "'.");
+        }
+        boolean dirtyWorkingTree = !workingTreeState.isBlank();
+
+        if (localBehind > 0) {
+            if (dirtyWorkingTree) {
+                return new UpdateCheckResult(true, false, true,
+                        "Updates are available from origin/" + branch + " (behind by " + localBehind + ", ahead by " + localAhead + "), but uncommitted changes are blocking update/branch-switch actions. Commit, stash, or reset changes first.");
             }
-            return new UpdateCheckResult(true, false, "This project is already up to date on branch '" + branch + "'.");
+            return new UpdateCheckResult(true, true, false,
+                    "Updates are available from origin/" + branch + " (behind by " + localBehind + ", ahead by " + localAhead + ").");
         }
 
-        return new UpdateCheckResult(true, true,
-                "Updates found on origin/" + branch + " (behind by " + localBehind + ", ahead by " + localAhead + "). Running the update now.");
+        if (localAhead > 0) {
+            if (dirtyWorkingTree) {
+                return new UpdateCheckResult(true, false, true,
+                        "No remote updates available. Local branch is ahead by " + localAhead + " commit(s), and uncommitted changes are blocking update/branch-switch actions. Commit, stash, or reset changes first.");
+            }
+            return new UpdateCheckResult(true, false, false,
+                    "No remote updates needed. Local branch is ahead by " + localAhead + " commit(s), so local-only commits exist.");
+        }
+
+        if (dirtyWorkingTree) {
+            return new UpdateCheckResult(true, false, true,
+                    "No remote updates available, but uncommitted changes are blocking update/branch-switch actions. Commit, stash, or reset changes first.");
+        }
+
+        return new UpdateCheckResult(true, false, false,
+                "Project is up to date with origin/" + branch + ". No update needed.");
     }
 
     private String runGitQuery(Path repo, String commandText) {
@@ -1708,7 +1733,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private record UpdateCheckResult(boolean canProceed, boolean updateAvailable, String message) {}
+    private record UpdateCheckResult(boolean canProceed, boolean updateAvailable, boolean blocked, String message) {}
     private record CodexBranchCandidate(String branch, String hash, String date) {}
     private record BranchEvaluation(String branch, boolean matches, String reason) {}
     private record CodexBranchSelection(
@@ -4695,7 +4720,6 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindowControlsPanel.removeAll();
                 desktopDashboardWindowControlsPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
                 desktopDashboardWindowControlsPanel.add(desktopWindowFullscreenButton);
-                desktopDashboardWindowControlsPanel.add(desktopWindowCloseButton);
                 desktopDashboardTabs.removeAll();
                 desktopDashboardTabs.addTab("Main Desktop Monitor", buildDesktopMonitorMainTab());
                 desktopDashboardTabs.addTab("SSH Stats", buildDesktopSshStatsTab());
@@ -7071,10 +7095,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             boolean popoutOpen = desktopDashboardWindow != null && desktopDashboardWindow.isDisplayable();
             popOutPreviewButton.setEnabled(!popoutOpen);
             closePopOutPreviewButton.setEnabled(popoutOpen);
-            fullscreenPopOutPreviewButton.setEnabled(popoutOpen);
-            desktopWindowFullscreenButton.setEnabled(popoutOpen);
-            desktopWindowCloseButton.setEnabled(popoutOpen);
-            desktopWindowFullscreenButton.setText(desktopDashboardFullscreen ? "Exit Fullscreen (Esc)" : "Enter Fullscreen");
+            fullscreenPopOutPreviewButton.setEnabled(true);
+            desktopWindowFullscreenButton.setEnabled(true);
+            desktopWindowFullscreenButton.setText(desktopDashboardFullscreen ? "Exit Fullscreen" : "Fullscreen");
         });
     }
 
