@@ -1429,7 +1429,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             if (!previewWifiEnabled) {
                 return "USB only";
             }
-            return previewWifiIp + ":" + previewWifiPort;
+            return previewWifiIp + " (TCP " + previewWifiPort + ")";
         }
     }
 }

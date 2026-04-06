@@ -4,6 +4,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -197,6 +198,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton popOutPreviewButton = new JButton("Open Pop Out Desktop Dashboard");
     private final JButton closePopOutPreviewButton = new JButton("Close Pop-Out");
     private final JButton fullscreenPopOutPreviewButton = new JButton("Fullscreen");
+    private final JButton desktopWindowFullscreenButton = new JButton("Enter Fullscreen");
+    private final JButton desktopWindowCloseButton = new JButton("Close Pop-Out");
     private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
     private final JCheckBox dashboardRememberPasswordToggle = new JCheckBox("Remember");
     private final JButton scanNetworkButton = new JButton("Start Arduino Scan");
@@ -246,6 +249,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel desktopDashboardNetworkSummaryLabel = new JLabel("Network: Down -- | Up --");
     private final JLabel desktopDashboardStorageSummaryLabel = new JLabel("Storage: Disk0 -- | Disk1 --");
     private final JPanel desktopDashboardSidePanel = new JPanel(new BorderLayout(8, 8));
+    private final JPanel desktopDashboardWindowControlsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
     private final JScrollPane desktopDashboardLogScroller = new JScrollPane(desktopDashboardLogArea);
     private final JTabbedPane desktopDashboardTabs = new JTabbedPane();
     private final JTextField sshStatsHostField = new JTextField(14);
@@ -413,6 +417,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         popOutPreviewButton.setToolTipText("Open the existing monitor preview in a separate resizable desktop window.");
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
+        desktopWindowFullscreenButton.setToolTipText("Toggle fullscreen for this pop-out window. Press Esc to exit fullscreen.");
+        desktopWindowCloseButton.setToolTipText("Close the desktop dashboard pop-out window.");
         sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
@@ -1114,7 +1120,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
         JPanel popOutActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         popOutActions.add(popOutPreviewButton);
-        popOutActions.add(fullscreenPopOutPreviewButton);
         popOutActions.add(closePopOutPreviewButton);
         popOutActions.setAlignmentX(Component.LEFT_ALIGNMENT);
         header.add(popOutActions);
@@ -1129,12 +1134,21 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildPreviewWifiPanel() {
-        JPanel panel = new JPanel(new GridLayout(0, 4, 8, 8));
+        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
         panel.setBorder(new EmptyBorder(8, 8, 4, 8));
-        panel.add(buildInfoValuePanel("Preview Wi-Fi", previewWifiStateLabel));
-        panel.add(buildInfoValuePanel("PC Hostname", previewWifiHostnameLabel));
-        panel.add(buildInfoValuePanel("LAN / Primary IP", previewPrimaryIpLabel));
-        panel.add(buildInfoValuePanel("VPN / Secondary IP", previewSecondaryIpLabel));
+        panel.add(buildPreviewInfoValuePanel("Preview Wi-Fi", previewWifiStateLabel));
+        panel.add(buildPreviewInfoValuePanel("PC Hostname", previewWifiHostnameLabel));
+        panel.add(buildPreviewInfoValuePanel("LAN / Primary IP", previewPrimaryIpLabel));
+        panel.add(buildPreviewInfoValuePanel("VPN / Secondary IP", previewSecondaryIpLabel));
+        return panel;
+    }
+
+    private JPanel buildPreviewInfoValuePanel(String title, JLabel valueLabel) {
+        JPanel panel = buildInfoValuePanel(title, valueLabel);
+        valueLabel.setFont(valueLabel.getFont().deriveFont(Font.PLAIN, Math.max(11f, valueLabel.getFont().getSize2D() - 1f)));
+        valueLabel.setVerticalAlignment(SwingConstants.TOP);
+        valueLabel.setBorder(new EmptyBorder(2, 0, 4, 0));
+        panel.setMinimumSize(new Dimension(160, 56));
         return panel;
     }
 
@@ -1237,6 +1251,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         popOutPreviewButton.addActionListener(e -> showDesktopDashboardWindow());
         closePopOutPreviewButton.addActionListener(e -> closeDesktopDashboardWindow());
         fullscreenPopOutPreviewButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
+        desktopWindowFullscreenButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
+        desktopWindowCloseButton.addActionListener(e -> closeDesktopDashboardWindow());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
@@ -2600,8 +2616,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         previewWifiStateLabel.setText(wifiEnabled ? "Enabled" : "Disabled");
         previewWifiStateLabel.setForeground(wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24));
         previewWifiHostnameLabel.setText(hostname);
-        previewPrimaryIpLabel.setText(primaryIp);
-        previewSecondaryIpLabel.setText(secondaryIp);
+        previewPrimaryIpLabel.setText(formatPreviewIpLabel(primaryIp));
+        previewSecondaryIpLabel.setText(formatPreviewIpLabel(secondaryIp));
+        previewPrimaryIpLabel.setToolTipText(primaryIp);
+        previewSecondaryIpLabel.setToolTipText(secondaryIp);
         int port = parseWifiPort(wifiPortField.getText(), Integer.parseInt(DEFAULT_WIFI_PORT));
         String compactIpDisplay = ipAddresses.isEmpty()
                 ? "No IPv4 address"
@@ -2678,7 +2696,33 @@ public class UniversalMonitorControlCenter extends JFrame {
             return "--";
         }
         String label = info.vpn() ? "VPN" : "LAN";
-        return label + " (" + info.interfaceName() + "): " + info.ipAddress();
+        String interfaceLabel = abbreviateInterfaceLabel(info.interfaceName(), 14);
+        return label + " " + interfaceLabel + " · " + info.ipAddress();
+    }
+
+    private String formatPreviewIpLabel(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return "--";
+        }
+        String escaped = rawText
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace(" · ", " <br/>");
+        return "<html>" + escaped + "</html>";
+    }
+
+    private String abbreviateInterfaceLabel(String interfaceName, int maxLength) {
+        if (interfaceName == null || interfaceName.isBlank()) {
+            return "(unknown)";
+        }
+        String cleaned = interfaceName.trim();
+        if (cleaned.length() <= maxLength) {
+            return cleaned;
+        }
+        int head = Math.max(3, (maxLength - 1) / 2);
+        int tail = Math.max(2, maxLength - head - 1);
+        return cleaned.substring(0, head) + "…" + cleaned.substring(cleaned.length() - tail);
     }
 
     private record InterfaceIpv4Info(String interfaceName, String ipAddress, boolean vpn) {}
@@ -4648,12 +4692,26 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
                 desktopDashboardWindow.setSize(1600, 960);
+                desktopDashboardWindowControlsPanel.removeAll();
+                desktopDashboardWindowControlsPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
+                desktopDashboardWindowControlsPanel.add(desktopWindowFullscreenButton);
+                desktopDashboardWindowControlsPanel.add(desktopWindowCloseButton);
                 desktopDashboardTabs.removeAll();
                 desktopDashboardTabs.addTab("Main Desktop Monitor", buildDesktopMonitorMainTab());
                 desktopDashboardTabs.addTab("SSH Stats", buildDesktopSshStatsTab());
                 desktopDashboardTabs.addTab("Gaming Mode", buildDesktopGamingModeTab());
                 desktopDashboardTabs.addTab("Desktop Monitor Settings", buildDesktopMonitorSettingsTab());
+                desktopDashboardWindow.add(desktopDashboardWindowControlsPanel, BorderLayout.NORTH);
                 desktopDashboardWindow.add(desktopDashboardTabs, BorderLayout.CENTER);
+                desktopDashboardWindow.getRootPane().registerKeyboardAction(
+                        e -> {
+                            if (desktopDashboardFullscreen) {
+                                toggleDesktopDashboardFullscreen();
+                            }
+                        },
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+                        JComponent.WHEN_IN_FOCUSED_WINDOW
+                );
                 desktopDashboardWindow.addComponentListener(new java.awt.event.ComponentAdapter() {
                     @Override
                     public void componentResized(java.awt.event.ComponentEvent e) {
@@ -7014,6 +7072,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             popOutPreviewButton.setEnabled(!popoutOpen);
             closePopOutPreviewButton.setEnabled(popoutOpen);
             fullscreenPopOutPreviewButton.setEnabled(popoutOpen);
+            desktopWindowFullscreenButton.setEnabled(popoutOpen);
+            desktopWindowCloseButton.setEnabled(popoutOpen);
+            desktopWindowFullscreenButton.setText(desktopDashboardFullscreen ? "Exit Fullscreen (Esc)" : "Enter Fullscreen");
         });
     }
 
