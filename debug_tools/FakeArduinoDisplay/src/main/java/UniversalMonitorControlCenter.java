@@ -270,6 +270,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
     private boolean desktopDashboardFullscreen;
+    private Rectangle desktopDashboardPreFullscreenBounds;
+    private GraphicsDevice desktopDashboardFullscreenDevice;
     private boolean syncingThemeToggles;
 
     private final Color darkBackground = new Color(23, 39, 66);
@@ -4776,16 +4778,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void closeDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow != null) {
-                if (desktopDashboardFullscreen) {
-                    GraphicsDevice device = desktopDashboardWindow.getGraphicsConfiguration().getDevice();
-                    if (device != null) {
-                        device.setFullScreenWindow(null);
-                    }
-                }
+                exitDesktopDashboardFullscreen();
                 desktopDashboardWindow.dispose();
             }
             desktopDashboardWindow = null;
             desktopDashboardFullscreen = false;
+            desktopDashboardPreFullscreenBounds = null;
+            desktopDashboardFullscreenDevice = null;
             updatePreviewButtons();
         });
     }
@@ -4796,26 +4795,87 @@ public class UniversalMonitorControlCenter extends JFrame {
                 showDesktopDashboardWindow();
                 return;
             }
-            GraphicsDevice device = desktopDashboardWindow.getGraphicsConfiguration().getDevice();
-            if (device == null) {
-                return;
-            }
             if (!desktopDashboardFullscreen) {
-                desktopDashboardWindow.dispose();
-                desktopDashboardWindow.setUndecorated(true);
-                desktopDashboardWindow.setVisible(true);
-                device.setFullScreenWindow(desktopDashboardWindow);
-                desktopDashboardFullscreen = true;
+                enterDesktopDashboardFullscreen();
             } else {
-                device.setFullScreenWindow(null);
-                desktopDashboardWindow.dispose();
-                desktopDashboardWindow.setUndecorated(false);
-                desktopDashboardWindow.setVisible(true);
-                desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
-                desktopDashboardFullscreen = false;
+                exitDesktopDashboardFullscreen();
             }
             updatePreviewButtons();
         });
+    }
+
+    private void enterDesktopDashboardFullscreen() {
+        if (desktopDashboardWindow == null || desktopDashboardFullscreen) {
+            return;
+        }
+        GraphicsDevice targetDevice = resolveDashboardFullscreenDevice();
+        Rectangle targetBounds = targetDevice == null
+                ? GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds()
+                : targetDevice.getDefaultConfiguration().getBounds();
+        desktopDashboardPreFullscreenBounds = desktopDashboardWindow.getBounds();
+        desktopDashboardFullscreenDevice = targetDevice;
+        try {
+            desktopDashboardWindow.dispose();
+            desktopDashboardWindow.setUndecorated(true);
+            desktopDashboardWindow.setVisible(true);
+            desktopDashboardWindow.setBounds(targetBounds);
+            desktopDashboardWindow.setExtendedState(Frame.NORMAL);
+            desktopDashboardFullscreen = true;
+        } catch (RuntimeException ex) {
+            log("[ERROR] Unable to enter fullscreen cleanly: " + ex.getMessage());
+            desktopDashboardWindow.setUndecorated(false);
+            desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
+            desktopDashboardFullscreen = false;
+            desktopDashboardPreFullscreenBounds = null;
+            desktopDashboardFullscreenDevice = null;
+        }
+    }
+
+    private void exitDesktopDashboardFullscreen() {
+        if (desktopDashboardWindow == null) {
+            return;
+        }
+        try {
+            if (desktopDashboardFullscreenDevice != null
+                    && desktopDashboardFullscreenDevice.getFullScreenWindow() == desktopDashboardWindow) {
+                desktopDashboardFullscreenDevice.setFullScreenWindow(null);
+            }
+            if (desktopDashboardWindow.isUndecorated()) {
+                desktopDashboardWindow.dispose();
+                desktopDashboardWindow.setUndecorated(false);
+                desktopDashboardWindow.setVisible(true);
+            }
+            if (desktopDashboardPreFullscreenBounds != null) {
+                desktopDashboardWindow.setBounds(desktopDashboardPreFullscreenBounds);
+            } else {
+                desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
+            }
+        } finally {
+            desktopDashboardFullscreen = false;
+            desktopDashboardPreFullscreenBounds = null;
+            desktopDashboardFullscreenDevice = null;
+        }
+    }
+
+    private GraphicsDevice resolveDashboardFullscreenDevice() {
+        if (desktopDashboardWindow != null && desktopDashboardWindow.getGraphicsConfiguration() != null) {
+            return desktopDashboardWindow.getGraphicsConfiguration().getDevice();
+        }
+        PointerInfo pointerInfo = MouseInfo.getPointerInfo();
+        if (pointerInfo != null) {
+            Point pointer = pointerInfo.getLocation();
+            for (GraphicsDevice device : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
+                GraphicsConfiguration config = device.getDefaultConfiguration();
+                if (config != null && config.getBounds().contains(pointer)) {
+                    return device;
+                }
+            }
+        }
+        if (getGraphicsConfiguration() != null) {
+            return getGraphicsConfiguration().getDevice();
+        }
+        GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+        return devices.length > 0 ? devices[0] : null;
     }
 
     private JPanel buildDesktopDashboardSidePanel() {
