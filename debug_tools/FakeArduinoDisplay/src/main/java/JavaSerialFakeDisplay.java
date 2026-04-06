@@ -550,7 +550,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             g2.setColor(CYAN);
             g2.setFont(new Font(MONO, Font.BOLD, 22));
-            g2.drawString("Desktop Monitor Dashboard", left, top + 18);
+            g2.drawString("Ray Co. Desktop Monitor Dashboard", left, top + 18);
             g2.setFont(new Font(MONO, Font.PLAIN, 13));
             g2.setColor(WHITE);
             g2.drawString("All monitor sections combined (same live packet stream)", left, top + 38);

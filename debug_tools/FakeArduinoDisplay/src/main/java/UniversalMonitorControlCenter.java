@@ -43,7 +43,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String UPDATE_SOURCE_FILE = ".last_update_source";
-    private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
+    private static final String APP_NAME = "Ray Co. Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = ProjectVersion.loadVersion(UniversalMonitorControlCenter.class);
     private static final String APP_VERSION_DISPLAY = "Version: " + APP_VERSION;
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
@@ -140,7 +140,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel versionLabel = new JLabel(APP_VERSION_DISPLAY);
     private final JCheckBox alwaysShowFlashPreviewToggle = new JCheckBox("Always show preview before flashing");
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
+    private final JCheckBox blackModeToggle = new JCheckBox("Black mode");
     private final JCheckBox desktopDashboardLightModeToggle = new JCheckBox("Light mode");
+    private final JCheckBox desktopDashboardBlackModeToggle = new JCheckBox("Black mode");
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> megaScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> r4RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
@@ -190,8 +192,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel wifiCredentialsIndicator = new JLabel("Credentials not saved");
     private final JLabel previewWifiStateLabel = new JLabel("Disabled");
     private final JLabel previewWifiHostnameLabel = new JLabel("--");
-    private final JLabel previewWifiIpLabel = new JLabel("--");
-    private final JButton popOutPreviewButton = new JButton("Pop Out Desktop Dashboard");
+    private final JLabel previewPrimaryIpLabel = new JLabel("--");
+    private final JLabel previewSecondaryIpLabel = new JLabel("--");
+    private final JButton popOutPreviewButton = new JButton("Open Pop Out Desktop Dashboard");
     private final JButton closePopOutPreviewButton = new JButton("Close Pop-Out");
     private final JButton fullscreenPopOutPreviewButton = new JButton("Fullscreen");
     private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
@@ -244,6 +247,22 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel desktopDashboardStorageSummaryLabel = new JLabel("Storage: Disk0 -- | Disk1 --");
     private final JPanel desktopDashboardSidePanel = new JPanel(new BorderLayout(8, 8));
     private final JScrollPane desktopDashboardLogScroller = new JScrollPane(desktopDashboardLogArea);
+    private final JTabbedPane desktopDashboardTabs = new JTabbedPane();
+    private final JTextField sshStatsHostField = new JTextField(14);
+    private final JTextField sshStatsUserField = new JTextField(10);
+    private final JTextField sshStatsPortField = new JTextField("22", 4);
+    private final JTextField sshStatsRepoField = new JTextField(20);
+    private final JButton sshStatsProbeButton = new JButton("Probe SSH Monitor");
+    private final JButton sshStatsSyncFromRemoteButton = new JButton("Use Remote Target");
+    private final JLabel sshStatsConnectionLabel = new JLabel("SSH Monitor: not connected");
+    private final JLabel sshStatsRuntimeLabel = new JLabel("Runtime: --");
+    private final JLabel sshStatsTransportLabel = new JLabel("Transport: --");
+    private final JLabel sshStatsNetworkLabel = new JLabel("Network: --");
+    private final JTextArea sshStatsOutputArea = new JTextArea();
+    private final JCheckBox desktopSettingsAutoRefreshToggle = new JCheckBox("Auto-refresh summary cards");
+    private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
+    private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
+    private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
     private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
@@ -259,6 +278,15 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color darkCriticalButtonBackground = new Color(176, 58, 58);
     private final Color darkRestartButtonBackground = new Color(196, 74, 74);
     private final Color darkPositiveButtonBackground = new Color(49, 145, 86);
+    private final Color blackBackground = new Color(10, 10, 10);
+    private final Color blackPanelBackground = new Color(20, 20, 20);
+    private final Color blackAccent = new Color(112, 112, 112);
+    private final Color blackText = new Color(236, 236, 236);
+    private final Color blackFieldBackground = new Color(16, 16, 16);
+    private final Color blackButtonBackground = new Color(52, 52, 52);
+    private final Color blackCriticalButtonBackground = new Color(144, 52, 52);
+    private final Color blackRestartButtonBackground = new Color(172, 72, 72);
+    private final Color blackPositiveButtonBackground = new Color(48, 126, 82);
     private final Color lightBackground = new Color(236, 242, 252);
     private final Color lightPanelBackground = new Color(248, 251, 255);
     private final Color lightAccent = new Color(125, 160, 219);
@@ -269,7 +297,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Color lightRestartButtonBackground = new Color(235, 112, 112);
     private final Color lightPositiveButtonBackground = new Color(91, 182, 127);
 
-    private boolean darkMode;
+    private enum ThemeMode {
+        LIGHT,
+        DARK_BLUE,
+        BLACK
+    }
+
+    private ThemeMode themeMode;
 
     private volatile Process fakePortsProcess;
     private volatile Process activeCommandProcess;
@@ -314,7 +348,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setLocationRelativeTo(null);
         applyWindowIcon();
 
-        darkMode = shouldUseDarkModeByDefault();
+        themeMode = shouldUseDarkModeByDefault() ? ThemeMode.DARK_BLUE : ThemeMode.LIGHT;
 
         setLayout(new BorderLayout(10, 10));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -379,6 +413,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         popOutPreviewButton.setToolTipText("Open the existing monitor preview in a separate resizable desktop window.");
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
+        sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
+        sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
         desktopDashboardLogArea.setEditable(false);
         desktopDashboardLogArea.setRows(10);
@@ -389,6 +425,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardDebugStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         desktopDashboardServiceDotLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
         desktopDashboardDebugDotLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        sshStatsOutputArea.setEditable(false);
+        sshStatsOutputArea.setRows(10);
+        sshStatsOutputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        desktopDashboardTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -397,7 +437,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         root.add(buildPersistentOutputFooter(), BorderLayout.SOUTH);
         add(root, BorderLayout.CENTER);
 
-        lightModeToggle.setSelected(!darkMode);
+        applyThemeToggleStateFromMode();
 
         wireActions();
         applyTheme();
@@ -414,6 +454,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
         initializeBoardProfileState();
         initializeRemoteActionState();
+        syncSshStatsFieldsFromRemoteTarget();
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
         updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
@@ -576,7 +617,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel helperPanel = new JPanel(new BorderLayout());
         helperPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         helperPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createTitledBorder("Profiles quick guide"),
+                BorderFactory.createTitledBorder("Profiles Quick Guide"),
                 new EmptyBorder(10, 14, 12, 14)));
 
         JLabel helper = new JLabel("<html><div style='width: 920px; line-height: 1.45;'>"
@@ -736,7 +777,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugPanel.add(debugIndicator);
         debugPanel.add(Box.createHorizontalGlue());
         lightModeToggle.setFocusable(false);
+        blackModeToggle.setFocusable(false);
         debugPanel.add(lightModeToggle);
+        debugPanel.add(blackModeToggle);
 
         debugPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return debugPanel;
@@ -1067,31 +1110,31 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.setBorder(BorderFactory.createTitledBorder("Arduino Preview (live from output port)"));
         panel.setMinimumSize(new Dimension(320, 420));
         panel.setPreferredSize(new Dimension(380, 620));
-        panel.add(fakeDisplayPanel, BorderLayout.CENTER);
-
-        JPanel footer = new JPanel();
-        footer.setLayout(new BoxLayout(footer, BoxLayout.Y_AXIS));
-        footer.add(buildPreviewWifiPanel());
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
         JPanel popOutActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         popOutActions.add(popOutPreviewButton);
         popOutActions.add(fullscreenPopOutPreviewButton);
         popOutActions.add(closePopOutPreviewButton);
         popOutActions.setAlignmentX(Component.LEFT_ALIGNMENT);
-        footer.add(popOutActions);
+        header.add(popOutActions);
+        header.add(buildPreviewWifiPanel());
         JLabel helper = new JLabel("Preview listens live to the Output port path used by the fake serial pair.");
         helper.setBorder(new EmptyBorder(0, 8, 8, 8));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        footer.add(helper);
-        panel.add(footer, BorderLayout.SOUTH);
+        header.add(helper);
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(fakeDisplayPanel, BorderLayout.CENTER);
         return panel;
     }
 
     private JPanel buildPreviewWifiPanel() {
-        JPanel panel = new JPanel(new GridLayout(0, 3, 8, 8));
+        JPanel panel = new JPanel(new GridLayout(0, 4, 8, 8));
         panel.setBorder(new EmptyBorder(8, 8, 4, 8));
         panel.add(buildInfoValuePanel("Preview Wi-Fi", previewWifiStateLabel));
         panel.add(buildInfoValuePanel("PC Hostname", previewWifiHostnameLabel));
-        panel.add(buildInfoValuePanel("PC IP", previewWifiIpLabel));
+        panel.add(buildInfoValuePanel("LAN / Primary IP", previewPrimaryIpLabel));
+        panel.add(buildInfoValuePanel("VPN / Secondary IP", previewSecondaryIpLabel));
         return panel;
     }
 
@@ -1163,6 +1206,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         clearSavedPasswordButton.addActionListener(e -> clearSavedSudoPassword(true));
         dashboardRememberPasswordToggle.addActionListener(e -> rememberPasswordToggle.setSelected(dashboardRememberPasswordToggle.isSelected()));
         killRunningTaskButton.addActionListener(e -> killActiveCommand());
+        sshStatsSyncFromRemoteButton.addActionListener(e -> syncSshStatsFieldsFromRemoteTarget());
+        sshStatsProbeButton.addActionListener(e -> runSshStatsProbe());
+        desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
+        desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
+        desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -1214,8 +1262,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveBoardSettingsButton.addActionListener(e -> saveBoardPageSettingsAndSyncHeaders(true));
         saveAllBoardsAndProfilesButton.addActionListener(e -> saveAllBoardsAndProfiles());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
-        lightModeToggle.addActionListener(e -> applyThemeSelection(lightModeToggle.isSelected()));
-        desktopDashboardLightModeToggle.addActionListener(e -> applyThemeSelection(desktopDashboardLightModeToggle.isSelected()));
+        lightModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(lightModeToggle, blackModeToggle));
+        blackModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(blackModeToggle, lightModeToggle));
+        desktopDashboardLightModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(desktopDashboardLightModeToggle, desktopDashboardBlackModeToggle));
+        desktopDashboardBlackModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(desktopDashboardBlackModeToggle, desktopDashboardLightModeToggle));
     }
 
 
@@ -1225,18 +1275,42 @@ public class UniversalMonitorControlCenter extends JFrame {
         return badge;
     }
 
-    private void applyThemeSelection(boolean lightModeEnabled) {
+    private void applyThemeSelectionFromToggles(JCheckBox selectedToggle, JCheckBox otherToggle) {
+        if (syncingThemeToggles) {
+            return;
+        }
+        ThemeMode selectedMode = ThemeMode.DARK_BLUE;
+        if (selectedToggle == lightModeToggle || selectedToggle == desktopDashboardLightModeToggle) {
+            selectedMode = selectedToggle.isSelected() ? ThemeMode.LIGHT : ThemeMode.DARK_BLUE;
+        } else if (selectedToggle == blackModeToggle || selectedToggle == desktopDashboardBlackModeToggle) {
+            selectedMode = selectedToggle.isSelected() ? ThemeMode.BLACK : ThemeMode.DARK_BLUE;
+        }
+        if (selectedToggle.isSelected()) {
+            otherToggle.setSelected(false);
+        }
+        setThemeMode(selectedMode);
+    }
+
+    private void applyThemeToggleStateFromMode() {
         if (syncingThemeToggles) {
             return;
         }
         syncingThemeToggles = true;
         try {
+            boolean lightModeEnabled = themeMode == ThemeMode.LIGHT;
+            boolean blackModeEnabled = themeMode == ThemeMode.BLACK;
             lightModeToggle.setSelected(lightModeEnabled);
             desktopDashboardLightModeToggle.setSelected(lightModeEnabled);
-            darkMode = !lightModeEnabled;
+            blackModeToggle.setSelected(blackModeEnabled);
+            desktopDashboardBlackModeToggle.setSelected(blackModeEnabled);
         } finally {
             syncingThemeToggles = false;
         }
+    }
+
+    private void setThemeMode(ThemeMode nextMode) {
+        themeMode = nextMode == null ? ThemeMode.DARK_BLUE : nextMode;
+        applyThemeToggleStateFromMode();
         applyTheme();
     }
 
@@ -1547,27 +1621,46 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (branch == null || branch.isBlank() || "HEAD".equals(branch)) {
             return new UpdateCheckResult(false, false, "Could not determine the current git branch for the selected repo.");
         }
+        branch = branch.trim();
 
-        String localHead = runGitQuery(repo, "git rev-parse HEAD");
-        if (localHead == null || localHead.isBlank()) {
-            return new UpdateCheckResult(false, false, "Could not read the local git commit for the selected repo.");
+        String fetchStatus = runGitQuery(repo, "git fetch --prune origin " + escape(branch) + " && echo FETCH_OK");
+        if (fetchStatus == null) {
+            return new UpdateCheckResult(false, false, "Could not fetch origin/" + branch + " to check for updates.");
         }
 
-        String remoteHeadLine = runGitQuery(repo, "git ls-remote --heads origin " + escape(branch));
-        if (remoteHeadLine == null || remoteHeadLine.isBlank()) {
-            return new UpdateCheckResult(false, false, "Could not contact origin/" + branch + " to check for updates.");
+        String remoteRef = "origin/" + branch;
+        String remoteHead = runGitQuery(repo, "git rev-parse --verify " + escape(remoteRef));
+        if (remoteHead == null || remoteHead.isBlank()) {
+            return new UpdateCheckResult(false, false, "Could not resolve origin/" + branch + " after fetch.");
         }
 
-        String remoteHead = remoteHeadLine.split("\\s+")[0].trim();
-        if (remoteHead.isBlank()) {
-            return new UpdateCheckResult(false, false, "Git returned an invalid remote hash for origin/" + branch + ".");
+        String divergence = runGitQuery(repo, "git rev-list --left-right --count HEAD..." + escape(remoteRef));
+        if (divergence == null || divergence.isBlank()) {
+            return new UpdateCheckResult(false, false, "Could not compare local and remote history for branch '" + branch + "'.");
+        }
+        String[] counts = divergence.trim().split("\\s+");
+        if (counts.length < 2) {
+            return new UpdateCheckResult(false, false, "Git returned an invalid branch comparison result: '" + divergence.trim() + "'.");
+        }
+        int localAhead;
+        int localBehind;
+        try {
+            localAhead = Integer.parseInt(counts[0]);
+            localBehind = Integer.parseInt(counts[1]);
+        } catch (NumberFormatException ex) {
+            return new UpdateCheckResult(false, false, "Could not parse branch comparison counts: '" + divergence.trim() + "'.");
         }
 
-        if (localHead.equals(remoteHead)) {
+        if (localBehind <= 0) {
+            if (localAhead > 0) {
+                return new UpdateCheckResult(true, false,
+                        "This project is up to date with origin/" + branch + " (local branch is ahead by " + localAhead + " commit(s)).");
+            }
             return new UpdateCheckResult(true, false, "This project is already up to date on branch '" + branch + "'.");
         }
 
-        return new UpdateCheckResult(true, true, "New updates are available on origin/" + branch + ". Running the update now.");
+        return new UpdateCheckResult(true, true,
+                "Updates found on origin/" + branch + " (behind by " + localBehind + ", ahead by " + localAhead + "). Running the update now.");
     }
 
     private String runGitQuery(Path repo, String commandText) {
@@ -2501,14 +2594,20 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void updatePreviewWifiStatus(boolean wifiEnabled) {
         String hostname = detectLocalHostname();
-        String ipAddress = resolveLocalIpv4Address();
+        List<InterfaceIpv4Info> ipAddresses = resolveInterfaceIpv4Addresses();
+        String primaryIp = ipAddresses.isEmpty() ? "No IPv4 address" : formatInterfaceIp(ipAddresses.get(0));
+        String secondaryIp = ipAddresses.size() > 1 ? formatInterfaceIp(ipAddresses.get(1)) : "--";
         previewWifiStateLabel.setText(wifiEnabled ? "Enabled" : "Disabled");
         previewWifiStateLabel.setForeground(wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24));
         previewWifiHostnameLabel.setText(hostname);
-        previewWifiIpLabel.setText(ipAddress);
+        previewPrimaryIpLabel.setText(primaryIp);
+        previewSecondaryIpLabel.setText(secondaryIp);
         int port = parseWifiPort(wifiPortField.getText(), Integer.parseInt(DEFAULT_WIFI_PORT));
-        fakeDisplayPanel.setPreviewWifiStatus(wifiEnabled, hostname, ipAddress, port);
-        desktopDashboardPanel.setPreviewWifiStatus(wifiEnabled, hostname, ipAddress, port);
+        String compactIpDisplay = ipAddresses.isEmpty()
+                ? "No IPv4 address"
+                : ipAddresses.get(0).ipAddress() + (ipAddresses.size() > 1 ? " | " + ipAddresses.get(1).ipAddress() : "");
+        fakeDisplayPanel.setPreviewWifiStatus(wifiEnabled, hostname, compactIpDisplay, port);
+        desktopDashboardPanel.setPreviewWifiStatus(wifiEnabled, hostname, compactIpDisplay, port);
     }
 
     private String detectLocalHostname() {
@@ -2520,27 +2619,69 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private String resolveLocalIpv4Address() {
+    private List<InterfaceIpv4Info> resolveInterfaceIpv4Addresses() {
+        List<InterfaceIpv4Info> candidates = new ArrayList<>();
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces != null && interfaces.hasMoreElements()) {
                 NetworkInterface network = interfaces.nextElement();
-                if (!network.isUp() || network.isLoopback() || network.isVirtual()) {
+                if (!network.isUp() || network.isLoopback()) {
                     continue;
                 }
                 Enumeration<InetAddress> addresses = network.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     InetAddress address = addresses.nextElement();
                     if (address instanceof Inet4Address && !address.isLoopbackAddress()) {
-                        return address.getHostAddress();
+                        candidates.add(new InterfaceIpv4Info(
+                                network.getName(),
+                                address.getHostAddress(),
+                                looksLikeVpnInterface(network.getName())
+                        ));
                     }
                 }
             }
         } catch (SocketException ignored) {
-            // Fall through to unknown state below.
+            return List.of();
         }
-        return "No IPv4 address";
+        candidates.sort((a, b) -> {
+            if (a.vpn() != b.vpn()) {
+                return a.vpn() ? 1 : -1;
+            }
+            return a.interfaceName().compareToIgnoreCase(b.interfaceName());
+        });
+        List<InterfaceIpv4Info> selected = new ArrayList<>();
+        for (InterfaceIpv4Info candidate : candidates) {
+            boolean duplicateIp = selected.stream().anyMatch(existing -> existing.ipAddress().equals(candidate.ipAddress()));
+            if (!duplicateIp) {
+                selected.add(candidate);
+            }
+            if (selected.size() >= 2) {
+                break;
+            }
+        }
+        return selected;
     }
+
+    private boolean looksLikeVpnInterface(String name) {
+        String normalized = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("wg")
+                || normalized.startsWith("tun")
+                || normalized.startsWith("tap")
+                || normalized.startsWith("ppp")
+                || normalized.startsWith("tailscale")
+                || normalized.startsWith("zt")
+                || normalized.contains("vpn");
+    }
+
+    private String formatInterfaceIp(InterfaceIpv4Info info) {
+        if (info == null) {
+            return "--";
+        }
+        String label = info.vpn() ? "VPN" : "LAN";
+        return label + " (" + info.interfaceName() + "): " + info.ipAddress();
+    }
+
+    private record InterfaceIpv4Info(String interfaceName, String ipAddress, boolean vpn) {}
 
     private Path configDir() {
         return repoPath().resolve("config");
@@ -4502,29 +4643,17 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void showDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow == null) {
-                desktopDashboardWindow = new JFrame("Desktop Monitor Dashboard (Pop-Out)");
+                desktopDashboardWindow = new JFrame("Ray Co. Desktop Monitor Dashboard (Pop-Out)");
                 desktopDashboardWindow.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
                 desktopDashboardWindow.setSize(1600, 960);
-                JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, desktopDashboardPanel, buildDesktopDashboardSidePanel());
-                mainSplit.setResizeWeight(0.78);
-                mainSplit.setContinuousLayout(true);
-                mainSplit.setDividerSize(10);
-                mainSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
-                mainSplit.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
-
-                desktopDashboardLogScroller.setBorder(BorderFactory.createTitledBorder("Live Monitor Log (Footer, Resizable)"));
-                desktopDashboardLogScroller.putClientProperty("uasmDashboardLogScroller", Boolean.TRUE);
-
-                JSplitPane rootSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainSplit, desktopDashboardLogScroller);
-                rootSplit.setResizeWeight(0.80);
-                rootSplit.setContinuousLayout(true);
-                rootSplit.setDividerSize(10);
-                rootSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
-                rootSplit.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
-
-                desktopDashboardWindow.add(rootSplit, BorderLayout.CENTER);
+                desktopDashboardTabs.removeAll();
+                desktopDashboardTabs.addTab("Main Desktop Monitor", buildDesktopMonitorMainTab());
+                desktopDashboardTabs.addTab("SSH Stats", buildDesktopSshStatsTab());
+                desktopDashboardTabs.addTab("Gaming Mode", buildDesktopGamingModeTab());
+                desktopDashboardTabs.addTab("Desktop Monitor Settings", buildDesktopMonitorSettingsTab());
+                desktopDashboardWindow.add(desktopDashboardTabs, BorderLayout.CENTER);
                 desktopDashboardWindow.addComponentListener(new java.awt.event.ComponentAdapter() {
                     @Override
                     public void componentResized(java.awt.event.ComponentEvent e) {
@@ -4550,7 +4679,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                     }
                 });
             }
-            desktopDashboardLightModeToggle.setSelected(!darkMode);
+            applyThemeToggleStateFromMode();
             applyTheme();
             desktopDashboardWindow.setVisible(true);
             desktopDashboardWindow.setState(Frame.NORMAL);
@@ -4625,6 +4754,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         desktopDashboardControlsPanel.removeAll();
         desktopDashboardLightModeToggle.setFocusable(false);
+        desktopDashboardBlackModeToggle.setFocusable(false);
         JButton startButton = new JButton("Start Service");
         startButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         startButton.addActionListener(e -> runServiceCommand("start"));
@@ -4650,12 +4780,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         JButton refreshPortsButton = new JButton("Refresh Monitor Ports");
         refreshPortsButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         refreshPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
-        JButton refreshSettingsButton = new JButton("Refresh Monitor Settings");
-        refreshSettingsButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
-        refreshSettingsButton.addActionListener(e -> {
-            refreshMonitorConnectionSettings(true);
-            refreshDesktopDashboardQuickStatus();
-        });
+        JButton updateAndRestartButton = new JButton("Update & Restart");
+        updateAndRestartButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        updateAndRestartButton.addActionListener(e -> runUpdateWorkflow());
         JButton logsButton = new JButton("Fetch Service Logs");
         logsButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         logsButton.addActionListener(e -> fetchServiceLogsIntoDashboard());
@@ -4673,10 +4800,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardControlsPanel.add(dashboardStartButton);
         desktopDashboardControlsPanel.add(dashboardStopButton);
         desktopDashboardControlsPanel.add(refreshPortsButton);
-        desktopDashboardControlsPanel.add(refreshSettingsButton);
+        desktopDashboardControlsPanel.add(updateAndRestartButton);
         desktopDashboardControlsPanel.add(logsButton);
         desktopDashboardControlsPanel.add(clearButton);
         desktopDashboardControlsPanel.add(desktopDashboardLightModeToggle);
+        desktopDashboardControlsPanel.add(desktopDashboardBlackModeToggle);
         desktopDashboardControlsPanel.putClientProperty("uasmDashboardControls", Boolean.TRUE);
         desktopDashboardSummaryPanel.removeAll();
         desktopDashboardSummaryPanel.putClientProperty("uasmDashboardSummary", Boolean.TRUE);
@@ -4695,6 +4823,136 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardSidePanel.add(desktopDashboardSummaryPanel, BorderLayout.CENTER);
         refreshDesktopDashboardMiniSummary(null);
         return desktopDashboardSidePanel;
+    }
+
+    private JPanel buildDesktopMonitorMainTab() {
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, desktopDashboardPanel, buildDesktopDashboardSidePanel());
+        mainSplit.setResizeWeight(0.78);
+        mainSplit.setContinuousLayout(true);
+        mainSplit.setDividerSize(10);
+        mainSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
+        mainSplit.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
+
+        desktopDashboardLogScroller.setBorder(BorderFactory.createTitledBorder("Live Monitor Log (Footer, Resizable)"));
+        desktopDashboardLogScroller.putClientProperty("uasmDashboardLogScroller", Boolean.TRUE);
+
+        JSplitPane rootSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainSplit, desktopDashboardLogScroller);
+        rootSplit.setResizeWeight(0.80);
+        rootSplit.setContinuousLayout(true);
+        rootSplit.setDividerSize(10);
+        rootSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
+        rootSplit.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
+
+        JPanel tabPanel = new JPanel(new BorderLayout());
+        tabPanel.add(rootSplit, BorderLayout.CENTER);
+        return tabPanel;
+    }
+
+    private JPanel buildDesktopSshStatsTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JPanel top = new JPanel();
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+        top.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
+
+        JPanel targetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        targetRow.add(new JLabel("User:"));
+        targetRow.add(sshStatsUserField);
+        targetRow.add(new JLabel("Host/IP:"));
+        targetRow.add(sshStatsHostField);
+        targetRow.add(new JLabel("Port:"));
+        targetRow.add(sshStatsPortField);
+        targetRow.add(new JLabel("Repo:"));
+        targetRow.add(sshStatsRepoField);
+        targetRow.add(sshStatsSyncFromRemoteButton);
+        targetRow.add(sshStatsProbeButton);
+        top.add(targetRow);
+
+        JPanel statusRow = new JPanel(new GridLayout(0, 2, 8, 8));
+        statusRow.add(buildInfoValuePanel("Connection", sshStatsConnectionLabel));
+        statusRow.add(buildInfoValuePanel("Remote Runtime", sshStatsRuntimeLabel));
+        statusRow.add(buildInfoValuePanel("Remote Transport", sshStatsTransportLabel));
+        statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
+        top.add(statusRow);
+
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v10.5 scaffold):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+                + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
+        helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
+        top.add(helper);
+        panel.add(top, BorderLayout.NORTH);
+
+        JScrollPane outputScroll = new JScrollPane(sshStatsOutputArea);
+        outputScroll.setBorder(BorderFactory.createTitledBorder("SSH Stats Output / Placeholder Stream Log"));
+        panel.add(outputScroll, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel buildDesktopGamingModeTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        JPanel cards = new JPanel(new GridLayout(0, 2, 10, 10));
+        cards.add(buildDashboardSummaryCard("Gaming Mode Status", new JLabel("Placeholder: disabled (framework ready).")));
+        cards.add(buildDashboardSummaryCard("Game/System Stats", new JLabel("Future: FPS, frame-time, latency, GPU hotspots.")));
+        cards.add(buildDashboardSummaryCard("Performance Profile", new JLabel("Future: high-performance service/profile toggles.")));
+        cards.add(buildDashboardSummaryCard("Input / Integration", new JLabel("Future: controller/game event integrations.")));
+        panel.add(cards, BorderLayout.CENTER);
+        JLabel footer = new JLabel("<html>Gaming Mode page is intentionally a v10.5 placeholder scaffold for future desktop-dashboard expansions.</html>");
+        footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
+        panel.add(footer, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private JPanel buildDesktopMonitorSettingsTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        JPanel controls = new JPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+        controls.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
+
+        JPanel themeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        themeRow.add(new JLabel("Theme:"));
+        themeRow.add(desktopDashboardLightModeToggle);
+        themeRow.add(desktopDashboardBlackModeToggle);
+        controls.add(themeRow);
+
+        JPanel optionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        optionRow.add(desktopSettingsAutoRefreshToggle);
+        optionRow.add(desktopSettingsShowHistoryLegendToggle);
+        optionRow.add(desktopSettingsCompactSidePanelToggle);
+        controls.add(optionRow);
+
+        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        JButton updateAndRestartButton = new JButton("Update & Restart");
+        updateAndRestartButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        updateAndRestartButton.addActionListener(e -> runUpdateWorkflow());
+        JButton refreshNowButton = new JButton("Refresh Dashboard Status");
+        refreshNowButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        refreshNowButton.addActionListener(e -> {
+            refreshDesktopDashboardQuickStatus();
+            refreshDesktopDashboardLogSnapshot();
+            updateDesktopSettingsStatus();
+        });
+        actionRow.add(updateAndRestartButton);
+        actionRow.add(refreshNowButton);
+        controls.add(actionRow);
+        panel.add(controls, BorderLayout.NORTH);
+
+        JTextArea notes = new JTextArea(
+                "Desktop Monitor Settings page scaffold (v10.5):\n"
+                        + "- Theme controls are active and shared with the main popout controls.\n"
+                        + "- Checkbox options are framework toggles for future layout/graph behavior.\n"
+                        + "- This page is intended to become the central desktop-only settings hub.");
+        notes.setEditable(false);
+        notes.setLineWrap(true);
+        notes.setWrapStyleWord(true);
+        notes.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
+        panel.add(notes, BorderLayout.CENTER);
+
+        desktopSettingsStatusLabel.setBorder(new EmptyBorder(4, 2, 4, 2));
+        panel.add(desktopSettingsStatusLabel, BorderLayout.SOUTH);
+        updateDesktopSettingsStatus();
+        return panel;
     }
 
     private JPanel buildDashboardSummaryCard(String title, JLabel valueLabel) {
@@ -4776,9 +5034,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void enforceDashboardThemeStability() {
-        Color panelBackground = darkMode ? darkPanelBackground : lightPanelBackground;
-        Color textColor = darkMode ? darkText : lightText;
-        Color fieldBackground = darkMode ? darkFieldBackground : lightFieldBackground;
+        Color panelBackground = themePanelBackground();
+        Color textColor = themeTextColor();
+        Color fieldBackground = themeFieldBackground();
         desktopDashboardLogArea.setBackground(fieldBackground);
         desktopDashboardLogArea.setForeground(textColor);
         desktopDashboardLogArea.setCaretColor(textColor);
@@ -4794,6 +5052,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardSummaryPanel.setBackground(panelBackground);
         desktopDashboardLightModeToggle.setBackground(panelBackground);
         desktopDashboardLightModeToggle.setForeground(textColor);
+        desktopDashboardBlackModeToggle.setBackground(panelBackground);
+        desktopDashboardBlackModeToggle.setForeground(textColor);
     }
 
     private boolean isTransportConnectedState(String text) {
@@ -4843,6 +5103,142 @@ public class UniversalMonitorControlCenter extends JFrame {
         t.start();
     }
 
+    private void syncSshStatsFieldsFromRemoteTarget() {
+        sshStatsHostField.setText(remoteHostField.getText().trim());
+        sshStatsUserField.setText(remoteUserField.getText().trim());
+        String port = remotePortField.getText().trim();
+        sshStatsPortField.setText(port.isBlank() ? "22" : port);
+        sshStatsRepoField.setText(remoteRepoField.getText().trim());
+        appendSshStatsOutput("[INFO] Pulled SSH target values from main Remote Actions fields.");
+    }
+
+    private void runSshStatsProbe() {
+        String host = sshStatsHostField.getText().trim();
+        String user = sshStatsUserField.getText().trim();
+        String port = sshStatsPortField.getText().trim();
+        String remoteRepo = sshStatsRepoField.getText().trim();
+        if (host.isBlank() || user.isBlank()) {
+            sshStatsConnectionLabel.setText("SSH Monitor: missing user/host");
+            appendSshStatsOutput("[WARN] SSH probe canceled: set both user and host/IP.");
+            return;
+        }
+        if (port.isBlank()) {
+            port = "22";
+            sshStatsPortField.setText(port);
+        }
+        if (remoteRepo.isBlank()) {
+            sshStatsConnectionLabel.setText("SSH Monitor: missing repo path");
+            appendSshStatsOutput("[WARN] SSH probe canceled: set remote project path.");
+            return;
+        }
+
+        String serviceStatusCmd = buildRemoteActionCommand(RemoteAction.SHOW_MONITOR_STATUS, remoteRepo);
+        String monitorConfigProbe = "cd " + escape(remoteRepo)
+                + " && python3 - <<'PY'\n"
+                + "import json\n"
+                + "from pathlib import Path\n"
+                + "paths=[Path('config/monitor_config.local.json'),Path('config/monitor_config.json'),Path('config/monitor_config.default.json')]\n"
+                + "cfg={}\n"
+                + "for p in paths:\n"
+                + "  if p.exists():\n"
+                + "    try:\n"
+                + "      data=json.loads(p.read_text())\n"
+                + "      if isinstance(data,dict): cfg.update(data)\n"
+                + "    except Exception:\n"
+                + "      pass\n"
+                + "print('runtime=' + str(cfg.get('send_interval','--')))\n"
+                + "print('transport=' + ('WIFI' if cfg.get('wifi_enabled',True) else 'USB ONLY'))\n"
+                + "print('wifi_host=' + str(cfg.get('wifi_host','--')))\n"
+                + "PY";
+        String remoteBundle = serviceStatusCmd + " ; echo __SSH_STATS_SPLIT__ ; " + monitorConfigProbe;
+        String finalPort = port;
+        String finalHost = host;
+        String finalUser = user;
+        String sshWrappedCommand = "ssh -p " + escape(finalPort) + " " + escape(finalUser + "@" + finalHost) + " " + escape(remoteBundle);
+
+        Thread probeThread = new Thread(() -> {
+            appendSshStatsOutput("[INFO] Probing " + finalUser + "@" + finalHost + ":" + finalPort + " ...");
+            try {
+                Process process = new ProcessBuilder("bash", "-lc", sshWrappedCommand)
+                        .directory(repoPath().toFile())
+                        .redirectErrorStream(true)
+                        .start();
+                StringBuilder all = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (all.length() > 0) all.append('\n');
+                        all.append(line);
+                        appendSshStatsOutput("[ssh] " + line);
+                    }
+                }
+                int code = process.waitFor();
+                if (code != 0) {
+                    SwingUtilities.invokeLater(() -> sshStatsConnectionLabel.setText("SSH Monitor: probe failed (exit " + code + ")"));
+                    return;
+                }
+                parseSshProbeOutput(finalHost, all.toString());
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> sshStatsConnectionLabel.setText("SSH Monitor: probe error"));
+                appendSshStatsOutput("[ERROR] SSH probe failed: " + ex.getMessage());
+            }
+        }, "ssh-stats-probe-thread");
+        probeThread.setDaemon(true);
+        probeThread.start();
+    }
+
+    private void parseSshProbeOutput(String host, String output) {
+        String runtime = "--";
+        String transport = "--";
+        String wifiHost = "--";
+        boolean serviceSeen = false;
+        for (String raw : output.split("\\R")) {
+            String line = raw == null ? "" : raw.trim();
+            if (line.contains("Active: active (running)")) {
+                serviceSeen = true;
+            }
+            if (line.startsWith("runtime=")) {
+                runtime = line.substring("runtime=".length()).trim();
+            } else if (line.startsWith("transport=")) {
+                transport = line.substring("transport=".length()).trim();
+            } else if (line.startsWith("wifi_host=")) {
+                wifiHost = line.substring("wifi_host=".length()).trim();
+            }
+        }
+        boolean finalServiceSeen = serviceSeen;
+        String finalRuntime = runtime;
+        String finalTransport = transport;
+        String finalWifiHost = wifiHost;
+        SwingUtilities.invokeLater(() -> {
+            sshStatsConnectionLabel.setText("SSH Monitor: " + (finalServiceSeen ? "connected" : "reachable (service unknown)") + " @ " + host);
+            sshStatsRuntimeLabel.setText("Runtime Interval: " + finalRuntime + "s");
+            sshStatsTransportLabel.setText("Transport: " + finalTransport);
+            sshStatsNetworkLabel.setText("Wi-Fi Host/IP: " + finalWifiHost);
+        });
+    }
+
+    private void appendSshStatsOutput(String message) {
+        SwingUtilities.invokeLater(() -> {
+            String existing = sshStatsOutputArea.getText();
+            String line = "[" + LocalDateTime.now().format(dashboardLogTimeFormat) + "] " + message;
+            String next = existing == null || existing.isBlank() ? line : existing + "\n" + line;
+            String[] rows = next.split("\\R");
+            if (rows.length > 220) {
+                next = String.join("\n", Arrays.copyOfRange(rows, rows.length - 220, rows.length));
+            }
+            sshStatsOutputArea.setText(next);
+            sshStatsOutputArea.setCaretPosition(sshStatsOutputArea.getDocument().getLength());
+        });
+    }
+
+    private void updateDesktopSettingsStatus() {
+        int enabled = 0;
+        if (desktopSettingsAutoRefreshToggle.isSelected()) enabled++;
+        if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
+        if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
+        desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3");
+    }
+
     private void startDashboardPreviewFlow() {
         startFakePorts();
         Timer delayedConnect = new Timer(900, e -> connectPreviewPort());
@@ -4855,19 +5251,62 @@ public class UniversalMonitorControlCenter extends JFrame {
         stopFakePorts();
     }
 
+    private boolean isLightTheme() {
+        return themeMode == ThemeMode.LIGHT;
+    }
+
+    private boolean isBlackTheme() {
+        return themeMode == ThemeMode.BLACK;
+    }
+
+    private Color themeBackground() {
+        return isLightTheme() ? lightBackground : (isBlackTheme() ? blackBackground : darkBackground);
+    }
+
+    private Color themePanelBackground() {
+        return isLightTheme() ? lightPanelBackground : (isBlackTheme() ? blackPanelBackground : darkPanelBackground);
+    }
+
+    private Color themeTextColor() {
+        return isLightTheme() ? lightText : (isBlackTheme() ? blackText : darkText);
+    }
+
+    private Color themeAccent() {
+        return isLightTheme() ? lightAccent : (isBlackTheme() ? blackAccent : darkAccent);
+    }
+
+    private Color themeFieldBackground() {
+        return isLightTheme() ? lightFieldBackground : (isBlackTheme() ? blackFieldBackground : darkFieldBackground);
+    }
+
+    private Color themeButtonBackground() {
+        return isLightTheme() ? lightButtonBackground : (isBlackTheme() ? blackButtonBackground : darkButtonBackground);
+    }
+
+    private Color themeCriticalButtonBackground() {
+        return isLightTheme() ? lightCriticalButtonBackground : (isBlackTheme() ? blackCriticalButtonBackground : darkCriticalButtonBackground);
+    }
+
+    private Color themeRestartButtonBackground() {
+        return isLightTheme() ? lightRestartButtonBackground : (isBlackTheme() ? blackRestartButtonBackground : darkRestartButtonBackground);
+    }
+
+    private Color themePositiveButtonBackground() {
+        return isLightTheme() ? lightPositiveButtonBackground : (isBlackTheme() ? blackPositiveButtonBackground : darkPositiveButtonBackground);
+    }
 
 
     private void applyTheme() {
         SwingUtilities.invokeLater(() -> {
-            Color background = darkMode ? darkBackground : lightBackground;
-            Color panelBackground = darkMode ? darkPanelBackground : lightPanelBackground;
-            Color textColor = darkMode ? darkText : lightText;
-            Color accent = darkMode ? darkAccent : lightAccent;
-            Color fieldBackground = darkMode ? darkFieldBackground : lightFieldBackground;
-            Color buttonBackground = darkMode ? darkButtonBackground : lightButtonBackground;
-            Color criticalButtonBackground = darkMode ? darkCriticalButtonBackground : lightCriticalButtonBackground;
-            Color restartButtonBackground = darkMode ? darkRestartButtonBackground : lightRestartButtonBackground;
-            Color positiveButtonBackground = darkMode ? darkPositiveButtonBackground : lightPositiveButtonBackground;
+            Color background = themeBackground();
+            Color panelBackground = themePanelBackground();
+            Color textColor = themeTextColor();
+            Color accent = themeAccent();
+            Color fieldBackground = themeFieldBackground();
+            Color buttonBackground = themeButtonBackground();
+            Color criticalButtonBackground = themeCriticalButtonBackground();
+            Color restartButtonBackground = themeRestartButtonBackground();
+            Color positiveButtonBackground = themePositiveButtonBackground();
 
             getContentPane().setBackground(background);
             styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
@@ -4880,6 +5319,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
             lightModeToggle.setBackground(panelBackground);
+            blackModeToggle.setForeground(textColor);
+            blackModeToggle.setBackground(panelBackground);
             updateCustomSketchIndicatorAppearance(accent, textColor);
             fakeDisplayPanel.setBorder(new LineBorder(accent, 1, true));
             desktopDashboardPanel.setBorder(new LineBorder(accent, 1, true));
@@ -5003,6 +5444,12 @@ public class UniversalMonitorControlCenter extends JFrame {
                         BorderFactory.createLineBorder(accent, 1, true),
                         BorderFactory.createEmptyBorder(6, 8, 6, 8)
                 ));
+                String html = (String) label.getClientProperty("uasmHtmlSource");
+                if (html == null) {
+                    html = label.getText();
+                    label.putClientProperty("uasmHtmlSource", html);
+                }
+                label.setText(wrapHtmlWithColor(html, textColor));
             }
         } else if (component instanceof JComboBox<?> comboBox) {
             comboBox.setBackground(fieldBackground);
@@ -5034,6 +5481,22 @@ public class UniversalMonitorControlCenter extends JFrame {
                 styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
             }
         }
+    }
+
+    private String wrapHtmlWithColor(String html, Color textColor) {
+        if (html == null || html.isBlank()) {
+            return html;
+        }
+        String lower = html.toLowerCase(Locale.ROOT);
+        if (!lower.contains("<html")) {
+            return html;
+        }
+        String colorHex = String.format("#%02x%02x%02x", textColor.getRed(), textColor.getGreen(), textColor.getBlue());
+        String startWrapped = html.replaceFirst("(?i)<html>", "<html><div style='color:" + colorHex + ";'>");
+        if (startWrapped.toLowerCase(Locale.ROOT).contains("</html>")) {
+            return startWrapped.replaceFirst("(?i)</html>", "</div></html>");
+        }
+        return startWrapped + "</div>";
     }
 
     private boolean shouldUseDarkModeByDefault() {

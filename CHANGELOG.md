@@ -1,5 +1,16 @@
 # Changelog
 
+## v10.5 Beta - 2026-04-06
+- Bumped the shared project version to v10.5 Beta across VERSION and generated Arduino app headers.
+- Fixed Control Center update detection so it compares local/remote branch divergence and reports already-up-to-date states instead of always running update flow.
+- Moved preview pop-out controls + preview network stats to the top of the preview panel so they are reachable without scrolling and prioritized ahead of the embedded monitor view.
+- Expanded preview network labeling to show interface-aware LAN/VPN IPv4 lines (when available) instead of a single unqualified PC IP field.
+- Renamed visible Control Center and desktop pop-out dashboard titles to Ray Co. branding.
+- Added a new pop-out **Update & Restart** control and preserved existing service/log controls.
+- Added a third theme option (Black mode) while keeping Light mode and the existing dark-blue mode, with synchronized behavior in the main window and pop-out dashboard.
+- Fixed Settings / Profiles help text readability for dark themes by forcing theme-aware text coloring for HTML help blocks (including **Profiles Quick Guide**).
+- Added a new multi-tab pop-out framework with **Main Desktop Monitor**, **SSH Stats**, **Gaming Mode**, and **Desktop Monitor Settings** pages; the SSH tab now includes a reusable remote-target scaffold and SSH probe starter workflow for future remote stat streaming.
+
 ## v10.4 Beta - 2026-04-06
 - Bumped the shared project version to v10.4 Beta across VERSION and generated Arduino app headers.
 - Fixed desktop pop-out GPU temperature gauge scaling so Fahrenheit-formatted values no longer pin to 100%.
