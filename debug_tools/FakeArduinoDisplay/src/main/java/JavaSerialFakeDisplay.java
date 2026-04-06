@@ -402,6 +402,8 @@ public class JavaSerialFakeDisplay extends JFrame {
         private final int[] ramHistory = new int[GRAPH_POINTS];
         private final int[] gpuHistory = new int[GRAPH_POINTS];
         private final int[] vramHistory = new int[GRAPH_POINTS];
+        private final int[] netDownHistory = new int[GRAPH_POINTS];
+        private final int[] netUpHistory = new int[GRAPH_POINTS];
         private boolean previewWifiEnabled;
         private String previewWifiHostname = "unknown-host";
         private String previewWifiIp = "No IPv4 address";
@@ -436,6 +438,10 @@ public class JavaSerialFakeDisplay extends JFrame {
             repaint();
         }
 
+        ParsedPacket getPacketSnapshot() {
+            return packet;
+        }
+
         void setPreviewWifiStatus(boolean enabled, String hostname, String ipAddress, int port) {
             previewWifiEnabled = enabled;
             previewWifiHostname = (hostname == null || hostname.isBlank()) ? "unknown-host" : hostname.trim();
@@ -449,6 +455,8 @@ public class JavaSerialFakeDisplay extends JFrame {
             shiftAppend(ramHistory, packet.getInt("RAM", 0));
             shiftAppend(gpuHistory, packet.getInt("GPU", 0));
             shiftAppend(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
+            shiftAppend(netDownHistory, normalizeNetRatePercent(packet.get("DOWN", packet.get("NETDOWN", "0 KB/s"))));
+            shiftAppend(netUpHistory, normalizeNetRatePercent(packet.get("UPNET", packet.get("NETUP", "0 KB/s"))));
         }
 
         private void shiftAppend(int[] history, int value) {
@@ -530,7 +538,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int left = outerPad;
             int contentW = Math.max(320, w - outerPad * 2);
             int contentH = Math.max(280, h - outerPad * 2 - 12);
-            int rightColumnW = Math.max(280, (int) (contentW * 0.37));
+            int rightColumnW = Math.max(340, (int) (contentW * 0.44));
             int leftColumnW = contentW - rightColumnW - 12;
             int rowGap = 10;
 
@@ -549,13 +557,17 @@ public class JavaSerialFakeDisplay extends JFrame {
             int remainingH = contentH - (y - top);
             int leftTopH = Math.max(64, (int) (remainingH * 0.22));
             int leftBottomH = Math.max(120, remainingH - leftTopH - rowGap);
-            int rightTopH = Math.max(170, (int) (remainingH * 0.50));
+            int rightTopH = Math.max(150, (int) (remainingH * 0.42));
             int rightBottomH = Math.max(120, remainingH - rightTopH - rowGap);
 
             drawCpuThreadsDesktop(g2, left, y, leftColumnW, leftTopH);
-            drawProcessesDesktop(g2, left, y + leftTopH + rowGap, leftColumnW, leftBottomH);
+            int processY = y + leftTopH + rowGap;
+            int processH = Math.max(90, (int) (leftBottomH * 0.58));
+            int gpuH = Math.max(86, leftBottomH - processH - rowGap);
+            drawProcessesDesktop(g2, left, processY, leftColumnW, processH);
+            drawDesktopGpuCard(g2, left, processY + processH + rowGap, leftColumnW, gpuH);
             int rightX = left + leftColumnW + 12;
-            drawNetworkGpuStorageDesktop(g2, rightX, y, rightColumnW, rightTopH);
+            drawNetworkStorageDesktop(g2, rightX, y, rightColumnW, rightTopH);
             drawHistoryDesktop(g2, rightX, y + rightTopH + rowGap, rightColumnW, rightBottomH);
         }
 
@@ -620,7 +632,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("RAM", x + w - 66, y + 30);
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             int rowY = y + 48;
-            for (int i = 1; i <= 5; i++) {
+            for (int i = 1; i <= 4; i++) {
                 String name = truncate(packet.get("P" + i, "--"), 30);
                 String cpu = packet.get("P" + i + "CPU", "--");
                 String ram = packet.get("P" + i + "RAM", "--");
@@ -644,8 +656,21 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopMiniBar(g2, "Load", netBlend, x + 12, statsTop + 32, w - 24, ORANGE);
         }
 
-        private void drawNetworkGpuStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "Network / GPU / Storage", x, y, w, h);
+        private void drawDesktopGpuCard(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "GPU", x, y, w, h);
+            int gpu = packet.getInt("GPU", 0);
+            int vram = packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0));
+            int tempPct = parseTemperaturePct(packet.get("GPUTEMP", packet.get("GPU_TEMP", "0")));
+            drawDesktopMiniBar(g2, "GPU", gpu, x + 12, y + 30, w - 24, ORANGE);
+            drawDesktopMiniBar(g2, "VRAM", vram, x + 12, y + 46, w - 24, MAGENTA);
+            drawDesktopMiniBar(g2, "TEMP", tempPct, x + 12, y + 62, w - 24, YELLOW);
+            g2.setFont(new Font(MONO, Font.PLAIN, 11));
+            g2.setColor(CYAN);
+            g2.drawString("Name: " + truncate(packet.get("GPUNAME", "GPU"), 34), x + 12, y + h - 12);
+        }
+
+        private void drawNetworkStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "Network / Storage", x, y, w, h);
             g2.setFont(new Font(MONO, Font.PLAIN, 12));
             int rowY = y + 30;
             drawDesktopField(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "--")), x + 10, rowY, LIME);
@@ -656,13 +681,17 @@ public class JavaSerialFakeDisplay extends JFrame {
             rowY += 18;
             drawDesktopField(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "--")), x + 10, rowY, WHITE);
             rowY += 20;
-            drawDesktopField(g2, "GPU Temp", packet.get("GPUTEMP", packet.get("GPU_TEMP", "--")), x + 10, rowY, ORANGE);
-            rowY += 18;
-            drawDesktopField(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "--")), x + 10, rowY, MAGENTA);
-            rowY += 18;
             drawDesktopField(g2, "Disk0", packet.get("DISK0", packet.get("D0", "--")) + "%", x + 10, rowY, CYAN);
             rowY += 18;
             drawDesktopField(g2, "Disk1", packet.get("DISK1", packet.get("D1", "--")) + "%", x + 10, rowY, YELLOW);
+            rowY += 18;
+            for (String storageLine : collectStorageLines(3)) {
+                if (rowY > y + h - 12) {
+                    break;
+                }
+                drawDesktopField(g2, "Mount", storageLine, x + 10, rowY, MAGENTA);
+                rowY += 17;
+            }
         }
 
         private void drawHistoryDesktop(Graphics2D g2, int x, int y, int w, int h) {
@@ -688,6 +717,8 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopHistoryLine(g2, ramHistory, gx, gy, gw, gh, CYAN);
             drawDesktopHistoryLine(g2, gpuHistory, gx, gy, gw, gh, ORANGE);
             drawDesktopHistoryLine(g2, vramHistory, gx, gy, gw, gh, MAGENTA);
+            drawDesktopHistoryLine(g2, netDownHistory, gx, gy, gw, gh, new Color(92, 224, 138));
+            drawDesktopHistoryLine(g2, netUpHistory, gx, gy, gw, gh, new Color(255, 145, 92));
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             g2.setColor(WHITE);
             g2.drawString("CPU", x + 12, y + h - 10);
@@ -697,6 +728,10 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("GPU", x + 98, y + h - 10);
             g2.setColor(MAGENTA);
             g2.drawString("VRAM", x + 142, y + h - 10);
+            g2.setColor(new Color(92, 224, 138));
+            g2.drawString("DOWN", x + 196, y + h - 10);
+            g2.setColor(new Color(255, 145, 92));
+            g2.drawString("UP", x + 252, y + h - 10);
         }
 
         private void drawDesktopMiniBar(Graphics2D g2, String label, int value, int x, int y, int w, Color color) {
@@ -726,6 +761,69 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(label + ":", x, y);
             g2.setColor(valueColor);
             g2.drawString(truncate(value, 22), x + 66, y);
+        }
+
+        private int parseTemperaturePct(String text) {
+            if (text == null) {
+                return 0;
+            }
+            String digits = text.replaceAll("[^0-9]", "");
+            if (digits.isEmpty()) {
+                return 0;
+            }
+            try {
+                int temp = Integer.parseInt(digits);
+                return Math.max(0, Math.min(100, temp));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+
+        private int normalizeNetRatePercent(String rateText) {
+            double kbps = parseRateToKilobytes(rateText);
+            double mbps = kbps / 1024.0;
+            return (int) Math.max(0, Math.min(100, Math.round((mbps / 40.0) * 100.0)));
+        }
+
+        private double parseRateToKilobytes(String rateText) {
+            if (rateText == null || rateText.isBlank()) {
+                return 0;
+            }
+            String normalized = rateText.trim().toUpperCase().replace("IB", "B");
+            String numeric = normalized.replaceAll("[^0-9.]", "");
+            if (numeric.isEmpty()) {
+                return 0;
+            }
+            double value;
+            try {
+                value = Double.parseDouble(numeric);
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+            if (normalized.contains("GB/S")) {
+                return value * 1024 * 1024;
+            }
+            if (normalized.contains("MB/S")) {
+                return value * 1024;
+            }
+            if (normalized.contains("B/S") && !normalized.contains("KB/S")) {
+                return value / 1024.0;
+            }
+            return value;
+        }
+
+        private List<String> collectStorageLines(int maxLines) {
+            List<String> lines = new ArrayList<>();
+            for (int i = 1; i <= 8; i++) {
+                String storage = packet.get("DRV" + i, "").trim();
+                if (!storage.isEmpty() && !"--".equals(storage)) {
+                    lines.add(truncate(storage, 24));
+                    if (lines.size() >= maxLines) {
+                        break;
+                    }
+                }
+            }
+            return lines;
         }
 
         private void drawDesktopCard(Graphics2D g2, String title, int x, int y, int w, int h) {

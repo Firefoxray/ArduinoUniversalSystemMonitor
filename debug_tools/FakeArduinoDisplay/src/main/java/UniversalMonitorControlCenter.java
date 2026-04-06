@@ -231,12 +231,17 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JavaSerialFakeDisplay.FakeDisplayPanel desktopDashboardPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
     private final JTextArea desktopDashboardLogArea = new JTextArea();
     private final JLabel desktopDashboardServiceStateLabel = new JLabel("Service Running: --");
-    private final JLabel desktopDashboardTransportStateLabel = new JLabel("Port Open / Connected: --");
+    private final JLabel desktopDashboardDebugStateLabel = new JLabel("Debug Mode: --");
     private final JLabel desktopDashboardServiceDotLabel = new JLabel("\u25cf");
-    private final JLabel desktopDashboardTransportDotLabel = new JLabel("\u25cf");
+    private final JLabel desktopDashboardDebugDotLabel = new JLabel("\u25cf");
     private final JPanel desktopDashboardStatusPanel = new JPanel(new GridLayout(0, 1, 4, 4));
     private final JPanel desktopDashboardControlsPanel = new JPanel(new GridLayout(0, 2, 6, 6));
     private final JPanel desktopDashboardSidePanel = new JPanel(new BorderLayout(8, 8));
+    private final JPanel desktopDashboardInsightsPanel = new JPanel(new GridLayout(0, 1, 6, 6));
+    private final JLabel desktopDashboardLoadSummaryLabel = new JLabel("Load: CPU -- | RAM -- | GPU --");
+    private final JLabel desktopDashboardNetworkSummaryLabel = new JLabel("Network: Down -- | Up --");
+    private final JLabel desktopDashboardStorageSummaryLabel = new JLabel("Storage: Disk0 -- | Disk1 --");
+    private final JLabel desktopDashboardUptimeSummaryLabel = new JLabel("Uptime: --");
     private final JScrollPane desktopDashboardLogScroller = new JScrollPane(desktopDashboardLogArea);
     private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -379,9 +384,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardLogArea.setLineWrap(false);
         desktopDashboardLogArea.setWrapStyleWord(false);
         desktopDashboardServiceStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
-        desktopDashboardTransportStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
+        desktopDashboardDebugStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         desktopDashboardServiceDotLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
-        desktopDashboardTransportDotLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        desktopDashboardDebugDotLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        Font dashboardInsightFont = new Font(Font.MONOSPACED, Font.PLAIN, 12);
+        desktopDashboardLoadSummaryLabel.setFont(dashboardInsightFont);
+        desktopDashboardNetworkSummaryLabel.setFont(dashboardInsightFont);
+        desktopDashboardStorageSummaryLabel.setFont(dashboardInsightFont);
+        desktopDashboardUptimeSummaryLabel.setFont(dashboardInsightFont);
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -4486,13 +4496,31 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
                 desktopDashboardWindow.setSize(1600, 960);
-                JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, desktopDashboardPanel, buildDesktopDashboardSidePanel());
-                splitPane.setResizeWeight(0.72);
-                splitPane.setContinuousLayout(true);
-                splitPane.setDividerSize(10);
-                splitPane.setBorder(new EmptyBorder(0, 0, 0, 0));
-                splitPane.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
-                desktopDashboardWindow.add(splitPane, BorderLayout.CENTER);
+                JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, desktopDashboardPanel, buildDesktopDashboardSidePanel());
+                mainSplit.setResizeWeight(0.78);
+                mainSplit.setContinuousLayout(true);
+                mainSplit.setDividerSize(10);
+                mainSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
+                mainSplit.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
+
+                desktopDashboardLogScroller.setBorder(BorderFactory.createTitledBorder("Live Monitor Log (Footer, Resizable)"));
+                desktopDashboardLogScroller.putClientProperty("uasmDashboardLogScroller", Boolean.TRUE);
+
+                JSplitPane rootSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainSplit, desktopDashboardLogScroller);
+                rootSplit.setResizeWeight(0.72);
+                rootSplit.setContinuousLayout(true);
+                rootSplit.setDividerSize(10);
+                rootSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
+                rootSplit.putClientProperty("uasmDashboardSplit", Boolean.TRUE);
+
+                desktopDashboardWindow.add(rootSplit, BorderLayout.CENTER);
+                desktopDashboardWindow.addComponentListener(new java.awt.event.ComponentAdapter() {
+                    @Override
+                    public void componentResized(java.awt.event.ComponentEvent e) {
+                        applyTheme();
+                        refreshDesktopDashboardQuickStatus();
+                    }
+                });
                 desktopDashboardWindow.addWindowListener(new java.awt.event.WindowAdapter() {
                     @Override
                     public void windowClosing(java.awt.event.WindowEvent e) {
@@ -4513,6 +4541,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             desktopDashboardWindow.requestFocus();
             refreshDesktopDashboardQuickStatus();
             refreshDesktopDashboardLogSnapshot();
+            applyTheme();
             updatePreviewButtons();
         });
     }
@@ -4565,15 +4594,15 @@ public class UniversalMonitorControlCenter extends JFrame {
     private JPanel buildDesktopDashboardSidePanel() {
         desktopDashboardSidePanel.removeAll();
         desktopDashboardSidePanel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        desktopDashboardSidePanel.setPreferredSize(new Dimension(430, 10));
+        desktopDashboardSidePanel.setPreferredSize(new Dimension(360, 10));
 
         desktopDashboardStatusPanel.removeAll();
         JPanel serviceStatusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         serviceStatusRow.add(desktopDashboardServiceDotLabel);
         serviceStatusRow.add(desktopDashboardServiceStateLabel);
         JPanel transportStatusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        transportStatusRow.add(desktopDashboardTransportDotLabel);
-        transportStatusRow.add(desktopDashboardTransportStateLabel);
+        transportStatusRow.add(desktopDashboardDebugDotLabel);
+        transportStatusRow.add(desktopDashboardDebugStateLabel);
         desktopDashboardStatusPanel.add(serviceStatusRow);
         desktopDashboardStatusPanel.add(transportStatusRow);
         desktopDashboardStatusPanel.putClientProperty("uasmDashboardStatus", Boolean.TRUE);
@@ -4624,8 +4653,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardControlsPanel.add(clearButton);
         desktopDashboardControlsPanel.putClientProperty("uasmDashboardControls", Boolean.TRUE);
 
-        desktopDashboardLogScroller.setBorder(BorderFactory.createTitledBorder("Live Monitor Log"));
-        desktopDashboardLogScroller.putClientProperty("uasmDashboardLogScroller", Boolean.TRUE);
+        desktopDashboardInsightsPanel.removeAll();
+        desktopDashboardInsightsPanel.add(desktopDashboardLoadSummaryLabel);
+        desktopDashboardInsightsPanel.add(desktopDashboardNetworkSummaryLabel);
+        desktopDashboardInsightsPanel.add(desktopDashboardStorageSummaryLabel);
+        desktopDashboardInsightsPanel.add(desktopDashboardUptimeSummaryLabel);
+        desktopDashboardInsightsPanel.putClientProperty("uasmDashboardInsights", Boolean.TRUE);
 
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
@@ -4634,7 +4667,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         top.add(desktopDashboardControlsPanel);
 
         desktopDashboardSidePanel.add(top, BorderLayout.NORTH);
-        desktopDashboardSidePanel.add(desktopDashboardLogScroller, BorderLayout.CENTER);
+        desktopDashboardSidePanel.add(desktopDashboardInsightsPanel, BorderLayout.CENTER);
         return desktopDashboardSidePanel;
     }
 
@@ -4664,10 +4697,24 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void refreshDesktopDashboardQuickStatus() {
         SwingUtilities.invokeLater(() -> {
             desktopDashboardServiceStateLabel.setText("Service Running: " + serviceIndicator.getText());
-            desktopDashboardTransportStateLabel.setText("Port Open / Connected: " + transportIndicator.getText());
+            desktopDashboardDebugStateLabel.setText("Debug Mode: " + debugIndicator.getText());
             desktopDashboardServiceDotLabel.setForeground("RUNNING".equalsIgnoreCase(serviceIndicator.getText()) ? new Color(74, 212, 120) : new Color(223, 121, 73));
-            desktopDashboardTransportDotLabel.setForeground(isTransportConnectedState(transportIndicator.getText()) ? new Color(74, 212, 120) : new Color(223, 121, 73));
+            desktopDashboardDebugDotLabel.setForeground("ENABLED".equalsIgnoreCase(debugIndicator.getText()) ? new Color(74, 212, 120) : new Color(223, 121, 73));
+            desktopDashboardLoadSummaryLabel.setText("Load: CPU " + packetValue("CPU", "--") + "% | RAM " + packetValue("RAM", "--") + "% | GPU " + packetValue("GPU", "--") + "%");
+            desktopDashboardNetworkSummaryLabel.setText("Network: Down " + packetValue("DOWN", packetValue("NETDOWN", "--"))
+                    + " | Up " + packetValue("UPNET", packetValue("NETUP", "--")));
+            desktopDashboardStorageSummaryLabel.setText("Storage: D0 " + packetValue("DISK0", packetValue("D0", "--"))
+                    + "% | D1 " + packetValue("DISK1", packetValue("D1", "--")) + "%");
+            desktopDashboardUptimeSummaryLabel.setText("Uptime: " + packetValue("UPTIME", packetValue("UP", "--")));
         });
+    }
+
+    private String packetValue(String key, String fallback) {
+        JavaSerialFakeDisplay.ParsedPacket latest = desktopDashboardPanel.getPacketSnapshot();
+        if (latest == null) {
+            return fallback;
+        }
+        return latest.get(key, fallback);
     }
 
     private boolean isTransportConnectedState(String text) {
@@ -4733,7 +4780,13 @@ public class UniversalMonitorControlCenter extends JFrame {
 
             getContentPane().setBackground(background);
             styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
+            if (desktopDashboardWindow != null) {
+                desktopDashboardWindow.getContentPane().setBackground(background);
+                styleComponentTree(desktopDashboardWindow.getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
+            }
             outputArea.setCaretColor(textColor);
+            desktopDashboardLogArea.setCaretColor(textColor);
+            applyDesktopDashboardThemeFixups(panelBackground, fieldBackground, textColor, accent);
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
             lightModeToggle.setBackground(panelBackground);
@@ -4743,6 +4796,31 @@ public class UniversalMonitorControlCenter extends JFrame {
 
             repaint();
         });
+    }
+
+    private void applyDesktopDashboardThemeFixups(Color panelBackground, Color fieldBackground, Color textColor, Color accent) {
+        Color statusBackground = darkMode ? new Color(24, 41, 72) : panelBackground;
+        desktopDashboardServiceStateLabel.setForeground(textColor);
+        desktopDashboardDebugStateLabel.setForeground(textColor);
+        desktopDashboardLoadSummaryLabel.setForeground(textColor);
+        desktopDashboardNetworkSummaryLabel.setForeground(textColor);
+        desktopDashboardStorageSummaryLabel.setForeground(textColor);
+        desktopDashboardUptimeSummaryLabel.setForeground(textColor);
+
+        desktopDashboardStatusPanel.setOpaque(true);
+        desktopDashboardStatusPanel.setBackground(statusBackground);
+        desktopDashboardControlsPanel.setOpaque(true);
+        desktopDashboardControlsPanel.setBackground(statusBackground);
+        desktopDashboardInsightsPanel.setOpaque(true);
+        desktopDashboardInsightsPanel.setBackground(statusBackground);
+        desktopDashboardLogArea.setOpaque(true);
+        desktopDashboardLogArea.setBackground(fieldBackground);
+        desktopDashboardLogArea.setForeground(textColor);
+        desktopDashboardLogScroller.getViewport().setBackground(fieldBackground);
+        desktopDashboardLogScroller.setBackground(panelBackground);
+        if (desktopDashboardLogScroller.getBorder() instanceof javax.swing.border.TitledBorder titledBorder) {
+            titledBorder.setTitleColor(accent);
+        }
     }
 
     private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent,
@@ -4758,7 +4836,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                         BorderFactory.createEmptyBorder(6, 6, 6, 6)
                 ));
             } else if (Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardStatus"))
-                    || Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardControls"))) {
+                    || Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardControls"))
+                    || Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardInsights"))) {
                 panel.setBorder(BorderFactory.createCompoundBorder(
                         BorderFactory.createLineBorder(accent, 1, true),
                         BorderFactory.createEmptyBorder(6, 8, 6, 8)
@@ -4843,7 +4922,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } else if (component instanceof JLabel label) {
             if (label != serviceIndicator && label != startupIndicator && label != debugIndicator
                     && label != transportIndicator && label != flashTransportIndicator
-                    && label != desktopDashboardServiceDotLabel && label != desktopDashboardTransportDotLabel) {
+                    && label != desktopDashboardServiceDotLabel && label != desktopDashboardDebugDotLabel) {
                 label.setForeground(textColor);
             }
             if (Boolean.TRUE.equals(label.getClientProperty("uasmSettingsHelpBlock"))) {
@@ -6379,7 +6458,6 @@ public class UniversalMonitorControlCenter extends JFrame {
             flashTransportIndicator.setText(text);
             flashTransportIndicator.setBackground(color);
             flashTransportIndicator.setForeground(Color.WHITE);
-            desktopDashboardTransportStateLabel.setText("Transport: " + text);
         });
     }
 
