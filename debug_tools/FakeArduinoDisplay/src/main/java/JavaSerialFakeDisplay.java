@@ -451,16 +451,22 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void pushHistory(ParsedPacket packet) {
-            shiftAppend(cpuHistory, packet.getInt("CPU", 0));
-            shiftAppend(ramHistory, packet.getInt("RAM", 0));
-            shiftAppend(gpuHistory, packet.getInt("GPU", 0));
-            shiftAppend(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
-            shiftAppend(netDownHistory, parseRateKbps(packet.get("DOWN", packet.get("NETDOWN", "0"))));
-            shiftAppend(netUpHistory, parseRateKbps(packet.get("UPNET", packet.get("NETUP", "0"))));
+            shiftAppendPercent(cpuHistory, packet.getInt("CPU", 0));
+            shiftAppendPercent(ramHistory, packet.getInt("RAM", 0));
+            shiftAppendPercent(gpuHistory, packet.getInt("GPU", 0));
+            shiftAppendPercent(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
+            shiftAppendRaw(netDownHistory, parseRateKbps(packet.get("DOWN", packet.get("NETDOWN", "0"))));
+            shiftAppendRaw(netUpHistory, parseRateKbps(packet.get("UPNET", packet.get("NETUP", "0"))));
         }
 
-        private void shiftAppend(int[] history, int value) {
+        private void shiftAppendPercent(int[] history, int value) {
             value = Math.max(0, Math.min(100, value));
+            System.arraycopy(history, 1, history, 0, history.length - 1);
+            history[history.length - 1] = value;
+        }
+
+        private void shiftAppendRaw(int[] history, int value) {
+            value = Math.max(0, value);
             System.arraycopy(history, 1, history, 0, history.length - 1);
             history[history.length - 1] = value;
         }
