@@ -1,5 +1,12 @@
 # Changelog
 
+## v10.2 Beta - 2026-04-06
+- Bumped the shared project version to v10.2 Beta across VERSION and generated Arduino app headers.
+- Improved desktop pop-out dashboard reliability in dark mode so log/status text remains readable after resize/re-layout.
+- Added download/upload history overlays to the Live History graph in desktop overview mode.
+- Expanded Network / Storage telemetry rendering to show additional detected storage mount lines when available.
+- Filled the previous empty side-panel space under pop-out controls with compact runtime summary cards.
+
 ## v9.9 - 2026-03-28
 - Bumped the shared project version to v9.9 across VERSION, generated Arduino app headers, and docs.
 - Added configurable storage selection + disk0/disk1 mapping controls and wiring across monitor/control-center flows.

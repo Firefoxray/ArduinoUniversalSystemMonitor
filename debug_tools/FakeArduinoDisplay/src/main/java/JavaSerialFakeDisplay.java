@@ -351,6 +351,10 @@ public class JavaSerialFakeDisplay extends JFrame {
             }
         }
 
+        Map<String, String> snapshotValues() {
+            return Map.copyOf(values);
+        }
+
         List<String> getList(String prefix, int count, String fallbackPrefix) {
             List<String> out = new ArrayList<>();
             for (int i = 0; i < count; i++) {
@@ -402,6 +406,8 @@ public class JavaSerialFakeDisplay extends JFrame {
         private final int[] ramHistory = new int[GRAPH_POINTS];
         private final int[] gpuHistory = new int[GRAPH_POINTS];
         private final int[] vramHistory = new int[GRAPH_POINTS];
+        private final int[] netDownHistory = new int[GRAPH_POINTS];
+        private final int[] netUpHistory = new int[GRAPH_POINTS];
         private boolean previewWifiEnabled;
         private String previewWifiHostname = "unknown-host";
         private String previewWifiIp = "No IPv4 address";
@@ -445,14 +451,22 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void pushHistory(ParsedPacket packet) {
-            shiftAppend(cpuHistory, packet.getInt("CPU", 0));
-            shiftAppend(ramHistory, packet.getInt("RAM", 0));
-            shiftAppend(gpuHistory, packet.getInt("GPU", 0));
-            shiftAppend(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
+            shiftAppendPercent(cpuHistory, packet.getInt("CPU", 0));
+            shiftAppendPercent(ramHistory, packet.getInt("RAM", 0));
+            shiftAppendPercent(gpuHistory, packet.getInt("GPU", 0));
+            shiftAppendPercent(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
+            shiftAppendRaw(netDownHistory, parseRateKbps(packet.get("DOWN", packet.get("NETDOWN", "0"))));
+            shiftAppendRaw(netUpHistory, parseRateKbps(packet.get("UPNET", packet.get("NETUP", "0"))));
         }
 
-        private void shiftAppend(int[] history, int value) {
+        private void shiftAppendPercent(int[] history, int value) {
             value = Math.max(0, Math.min(100, value));
+            System.arraycopy(history, 1, history, 0, history.length - 1);
+            history[history.length - 1] = value;
+        }
+
+        private void shiftAppendRaw(int[] history, int value) {
+            value = Math.max(0, value);
             System.arraycopy(history, 1, history, 0, history.length - 1);
             history[history.length - 1] = value;
         }
@@ -676,6 +690,17 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopField(g2, "Disk0", packet.get("DISK0", packet.get("D0", "--")) + "%", x + 10, rowY, CYAN);
             rowY += 18;
             drawDesktopField(g2, "Disk1", packet.get("DISK1", packet.get("D1", "--")) + "%", x + 10, rowY, YELLOW);
+
+            List<String> mounts = collectStorageMounts();
+            int extraY = rowY + 18;
+            int maxRows = Math.max(0, (y + h - 14 - extraY) / 16);
+            int shown = 0;
+            for (String mount : mounts) {
+                if (shown >= maxRows) break;
+                drawDesktopField(g2, "Disk" + (shown + 2), mount, x + 10, extraY, ORANGE);
+                extraY += 16;
+                shown++;
+            }
         }
 
         private void drawHistoryDesktop(Graphics2D g2, int x, int y, int w, int h) {
@@ -701,6 +726,9 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopHistoryLine(g2, ramHistory, gx, gy, gw, gh, CYAN);
             drawDesktopHistoryLine(g2, gpuHistory, gx, gy, gw, gh, ORANGE);
             drawDesktopHistoryLine(g2, vramHistory, gx, gy, gw, gh, MAGENTA);
+            int networkScaleKbps = Math.max(1, Math.max(maxValue(netDownHistory), maxValue(netUpHistory)));
+            drawDesktopHistoryLineScaled(g2, netDownHistory, gx, gy, gw, gh, networkScaleKbps, new Color(124, 255, 169));
+            drawDesktopHistoryLineScaled(g2, netUpHistory, gx, gy, gw, gh, networkScaleKbps, new Color(255, 194, 104));
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             g2.setColor(WHITE);
             g2.drawString("CPU", x + 12, y + h - 10);
@@ -710,6 +738,12 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("GPU", x + 98, y + h - 10);
             g2.setColor(MAGENTA);
             g2.drawString("VRAM", x + 142, y + h - 10);
+            g2.setColor(new Color(124, 255, 169));
+            g2.drawString("Down", x + 194, y + h - 10);
+            g2.setColor(new Color(255, 194, 104));
+            g2.drawString("Up", x + 244, y + h - 10);
+            g2.setColor(WHITE);
+            g2.drawString("Net scale " + formatKbps(networkScaleKbps), x + w - 166, y + h - 10);
         }
 
         private void drawDesktopMiniBar(Graphics2D g2, String label, int value, int x, int y, int w, Color color) {
@@ -730,6 +764,20 @@ public class JavaSerialFakeDisplay extends JFrame {
                 int x2 = x + i * (w - 1) / (history.length - 1);
                 int y1 = y + h - 1 - (history[i - 1] * (h - 2) / 100);
                 int y2 = y + h - 1 - (history[i] * (h - 2) / 100);
+                g2.drawLine(x1, y1, x2, y2);
+            }
+        }
+
+        private void drawDesktopHistoryLineScaled(Graphics2D g2, int[] history, int x, int y, int w, int h, int scaleMax, Color color) {
+            if (scaleMax <= 0) {
+                return;
+            }
+            g2.setColor(color);
+            for (int i = 1; i < history.length; i++) {
+                int x1 = x + (i - 1) * (w - 1) / (history.length - 1);
+                int x2 = x + i * (w - 1) / (history.length - 1);
+                int y1 = y + h - 1 - (Math.min(history[i - 1], scaleMax) * (h - 2) / scaleMax);
+                int y2 = y + h - 1 - (Math.min(history[i], scaleMax) * (h - 2) / scaleMax);
                 g2.drawLine(x1, y1, x2, y2);
             }
         }
@@ -755,6 +803,73 @@ public class JavaSerialFakeDisplay extends JFrame {
             } catch (NumberFormatException ignored) {
                 return 0;
             }
+        }
+
+        private int parseRateKbps(String rateText) {
+            if (rateText == null || rateText.isBlank()) {
+                return 0;
+            }
+            String normalized = rateText.trim().toUpperCase();
+            String digits = normalized.replaceAll("[^0-9.]", "");
+            if (digits.isBlank()) {
+                return 0;
+            }
+            double value;
+            try {
+                value = Double.parseDouble(digits);
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
+            if (normalized.contains("GB")) {
+                value *= 1024 * 1024;
+            } else if (normalized.contains("MB")) {
+                value *= 1024;
+            } else if (normalized.contains("B") && !normalized.contains("KB")) {
+                value /= 1024.0;
+            }
+            return Math.max(0, (int) Math.round(value));
+        }
+
+        private int maxValue(int[] values) {
+            int max = 0;
+            for (int value : values) {
+                max = Math.max(max, value);
+            }
+            return max;
+        }
+
+        private String formatKbps(int kbps) {
+            if (kbps >= 1024 * 1024) {
+                return String.format("%.1f GB/s", kbps / (1024.0 * 1024.0));
+            }
+            if (kbps >= 1024) {
+                return String.format("%.1f MB/s", kbps / 1024.0);
+            }
+            return kbps + " KB/s";
+        }
+
+        private List<String> collectStorageMounts() {
+            List<String> mounts = new ArrayList<>();
+            Map<String, String> values = packet.snapshotValues();
+            for (int i = 1; i <= 8; i++) {
+                String entry = values.get("DRV" + i);
+                if (entry == null || entry.isBlank() || "--".equals(entry.trim())) {
+                    continue;
+                }
+                mounts.add(truncate(entry.trim(), 26));
+            }
+            for (Map.Entry<String, String> entry : values.entrySet()) {
+                String key = entry.getKey();
+                if (!(key.startsWith("DISK") && key.length() > 4)) {
+                    continue;
+                }
+                String value = entry.getValue();
+                if (value == null || value.isBlank() || "--".equals(value.trim())) {
+                    continue;
+                }
+                mounts.add(truncate(key + " " + value + "%", 26));
+            }
+            return mounts;
         }
 
         private void drawDesktopCard(Graphics2D g2, String title, int x, int y, int w, int h) {
