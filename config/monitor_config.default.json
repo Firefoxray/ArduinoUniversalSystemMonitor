@@ -10,7 +10,7 @@
   "storage_disk1_target": "",
   "graph_net_down_enabled": false,
   "graph_net_up_enabled": false,
-  "send_interval": 2.0,
+  "send_interval": 0.5,
   "arduino_ports": [],
   "wifi_enabled": true,
   "wifi_host": "",

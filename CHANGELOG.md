@@ -1,5 +1,10 @@
 # Changelog
 
+## v10.4 Beta - 2026-04-06
+- Bumped the shared project version to v10.4 Beta across VERSION and generated Arduino app headers.
+- Fixed desktop pop-out GPU temperature gauge scaling so Fahrenheit-formatted values no longer pin to 100%.
+- Moved the System Summary Wi-Fi/IP/Version row upward to avoid clipping/overlap in the pop-out dashboard card.
+
 ## v10.3 Beta - 2026-04-06
 - Bumped the shared project version to v10.3 Beta and updated all VERSION-driven display surfaces to render as `Version: v10.3 Beta`.
 - Fixed first-open desktop pop-out theming so dark/light mode now applies immediately (including child controls/indicators) without requiring a manual toggle refresh.
