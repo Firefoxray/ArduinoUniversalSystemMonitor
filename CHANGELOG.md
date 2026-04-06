@@ -1,11 +1,27 @@
 # Changelog
 
+## v10.3 Beta - 2026-04-06
+- Bumped the shared project version to v10.3 Beta and updated all VERSION-driven display surfaces to render as `Version: v10.3 Beta`.
+- Fixed first-open desktop pop-out theming so dark/light mode now applies immediately (including child controls/indicators) without requiring a manual toggle refresh.
+- Added an in-popout Light mode toggle and explicit dashboard-stream controls so the pop-out can start/stop fake ports + preview wiring directly.
+- Prevented pop-out close actions from cascading into the main control center close path, and kept fullscreen close handling isolated to the pop-out window only.
+- Improved pop-out readability with clearer button labels, corrected startup Service/Debug indicator colors, denser top-process rows, and a smaller footer log split.
+- Improved dashboard rendering readability: fixed System Summary text overlap, clarified graph legend spacing/contrast, and thickened history lines for default-size viewing.
+- Corrected GPU temperature formatting to display as temperature units instead of percent-like output where inappropriate.
+- Refined storage labels/rows to prioritize meaningful entries (root/srv/other mounts) and suppress duplicate low-value disk lines.
+
 ## v10.2 Beta - 2026-04-06
 - Bumped the shared project version to v10.2 Beta across VERSION and generated Arduino app headers.
 - Improved desktop pop-out dashboard reliability in dark mode so log/status text remains readable after resize/re-layout.
 - Added download/upload history overlays to the Live History graph in desktop overview mode.
 - Expanded Network / Storage telemetry rendering to show additional detected storage mount lines when available.
 - Filled the previous empty side-panel space under pop-out controls with compact runtime summary cards.
+
+## v10.1 Beta - 2026-04-05
+- Release documentation retained for the 10.x chain before v10.2/v10.3 so the post-10.0 progression remains complete in this changelog.
+
+## v10.0 Beta - 2026-04-04
+- Baseline 10.x Beta release entry retained to preserve continuity for every documented update since 10.0.
 
 ## v9.9 - 2026-03-28
 - Bumped the shared project version to v9.9 across VERSION, generated Arduino app headers, and docs.
