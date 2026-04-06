@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 final class ProjectVersion {
+    private static final String UPDATE_SOURCE_FILE = ".last_update_source";
     private static final Pattern[] CODEX_BRANCH_PATTERNS = new Pattern[]{
             Pattern.compile("^codex/.*"),
             Pattern.compile("^codex-.*")
@@ -22,9 +23,10 @@ final class ProjectVersion {
             return "unknown version";
         }
         try {
-            String version = Files.readString(versionFile, StandardCharsets.UTF_8).trim();
+            String version = normalizeVersion(Files.readString(versionFile, StandardCharsets.UTF_8).trim());
             if (!version.isEmpty()) {
-                if (isCodexBranchBuild(versionFile.getParent()) && !version.toUpperCase(Locale.ROOT).contains("(CODEX-BRANCH)")) {
+                UpdateSource updateSource = detectUpdateSource(versionFile.getParent());
+                if (updateSource == UpdateSource.CODEX && !version.toUpperCase(Locale.ROOT).contains("(CODEX-BRANCH)")) {
                     return version + " (CODEX-BRANCH)";
                 }
                 return version;
@@ -94,11 +96,54 @@ final class ProjectVersion {
         return false;
     }
 
+    private static UpdateSource detectUpdateSource(Path repoRoot) {
+        UpdateSource fromMarker = readUpdateSourceMarker(repoRoot);
+        if (fromMarker != UpdateSource.UNKNOWN) {
+            return fromMarker;
+        }
+        return isCodexBranchBuild(repoRoot) ? UpdateSource.CODEX : UpdateSource.UNKNOWN;
+    }
+
+    private static UpdateSource readUpdateSourceMarker(Path repoRoot) {
+        Path markerPath = repoRoot.resolve(UPDATE_SOURCE_FILE);
+        if (!Files.isRegularFile(markerPath)) {
+            return UpdateSource.UNKNOWN;
+        }
+        try {
+            String marker = Files.readString(markerPath, StandardCharsets.UTF_8).trim().toLowerCase(Locale.ROOT);
+            if ("main".equals(marker)) {
+                return UpdateSource.MAIN;
+            }
+            if ("codex".equals(marker)) {
+                return UpdateSource.CODEX;
+            }
+        } catch (IOException ignored) {
+        }
+        return UpdateSource.UNKNOWN;
+    }
+
+    private static String normalizeVersion(String version) {
+        String text = version == null ? "" : version.trim();
+        if (text.isEmpty()) {
+            return "";
+        }
+        if (text.startsWith("V") && text.length() >= 2 && Character.isDigit(text.charAt(1))) {
+            return "v" + text.substring(1);
+        }
+        return text;
+    }
+
     private static String extractBranchName(String head) {
         String prefix = "ref: refs/heads/";
         if (head == null || !head.startsWith(prefix)) {
             return null;
         }
         return head.substring(prefix.length()).trim();
+    }
+
+    private enum UpdateSource {
+        MAIN,
+        CODEX,
+        UNKNOWN
     }
 }
