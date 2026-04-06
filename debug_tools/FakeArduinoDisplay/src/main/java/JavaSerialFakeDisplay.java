@@ -373,6 +373,11 @@ public class JavaSerialFakeDisplay extends JFrame {
     }
 
     static class FakeDisplayPanel extends JPanel {
+        enum RenderMode {
+            ARDUINO_PREVIEW,
+            DESKTOP_OVERVIEW
+        }
+
         private static final int SCREEN_W = 480;
         private static final int SCREEN_H = 320;
         private static final int GRAPH_POINTS = 62;
@@ -392,6 +397,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private ParsedPacket packet = new ParsedPacket();
         private int pageIndex = 0;
+        private RenderMode renderMode = RenderMode.ARDUINO_PREVIEW;
         private final int[] cpuHistory = new int[GRAPH_POINTS];
         private final int[] ramHistory = new int[GRAPH_POINTS];
         private final int[] gpuHistory = new int[GRAPH_POINTS];
@@ -410,10 +416,18 @@ public class JavaSerialFakeDisplay extends JFrame {
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
+                    if (renderMode != RenderMode.ARDUINO_PREVIEW) {
+                        return;
+                    }
                     pageIndex = (pageIndex + 1) % 7;
                     repaint();
                 }
             });
+        }
+
+        void setRenderMode(RenderMode mode) {
+            renderMode = mode == null ? RenderMode.ARDUINO_PREVIEW : mode;
+            repaint();
         }
 
         void updatePacket(ParsedPacket packet) {
@@ -452,6 +466,11 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             int w = getWidth();
             int h = getHeight();
+            if (renderMode == RenderMode.DESKTOP_OVERVIEW) {
+                drawDesktopOverview(g2, w, h);
+                g2.dispose();
+                return;
+            }
             g2.setColor(new Color(15, 20, 32));
             g2.fillRect(0, 0, w, h);
 
@@ -499,6 +518,191 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setClip(oldClip);
 
             g2.dispose();
+        }
+
+        private void drawDesktopOverview(Graphics2D g2, int w, int h) {
+            g2.setColor(new Color(12, 17, 30));
+            g2.fillRect(0, 0, w, h);
+
+            int outerPad = 16;
+            int top = outerPad + 8;
+            int left = outerPad;
+            int contentW = Math.max(320, w - outerPad * 2);
+            int contentH = Math.max(280, h - outerPad * 2 - 12);
+            int rightColumnW = Math.max(250, contentW / 3);
+            int leftColumnW = contentW - rightColumnW - 12;
+            int rowGap = 10;
+
+            g2.setColor(CYAN);
+            g2.setFont(new Font(MONO, Font.BOLD, 22));
+            g2.drawString("Desktop Monitor Dashboard", left, top + 18);
+            g2.setFont(new Font(MONO, Font.PLAIN, 13));
+            g2.setColor(WHITE);
+            g2.drawString("All monitor sections combined (same live packet stream)", left, top + 38);
+
+            int y = top + 50;
+            int summaryH = 84;
+            drawDesktopSummary(g2, left, y, contentW, summaryH);
+
+            y += summaryH + rowGap;
+            int remainingH = contentH - (y - top);
+            int leftTopH = Math.max(120, remainingH / 2 - rowGap / 2);
+            int leftBottomH = Math.max(120, remainingH - leftTopH - rowGap);
+            int rightTopH = Math.max(170, remainingH / 2 - rowGap / 2);
+            int rightBottomH = Math.max(120, remainingH - rightTopH - rowGap);
+
+            drawCpuThreadsDesktop(g2, left, y, leftColumnW, leftTopH);
+            drawProcessesDesktop(g2, left, y + leftTopH + rowGap, leftColumnW, leftBottomH);
+            int rightX = left + leftColumnW + 12;
+            drawNetworkGpuStorageDesktop(g2, rightX, y, rightColumnW, rightTopH);
+            drawHistoryDesktop(g2, rightX, y + rightTopH + rowGap, rightColumnW, rightBottomH);
+        }
+
+        private void drawDesktopSummary(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "System Summary", x, y, w, h);
+            int innerX = x + 12;
+            int innerY = y + 28;
+            int colW = (w - 28) / 3;
+
+            g2.setFont(new Font(MONO, Font.BOLD, 14));
+            g2.setColor(WHITE);
+            g2.drawString("CPU " + packet.get("CPU", "0") + "%", innerX, innerY);
+            g2.drawString("RAM " + packet.get("RAM", "0") + "%", innerX + colW, innerY);
+            g2.drawString("GPU " + packet.get("GPU", "0") + "%", innerX + colW * 2, innerY);
+
+            g2.setFont(new Font(MONO, Font.PLAIN, 12));
+            g2.setColor(CYAN);
+            g2.drawString("Host: " + truncate(resolvePreviewHostname(), 26), innerX, innerY + 24);
+            g2.drawString("OS: " + truncate(packet.get("OS", "Linux"), 26), innerX + colW, innerY + 24);
+            g2.drawString("Up: " + packet.get("UPTIME", packet.get("UP", "--")), innerX + colW * 2, innerY + 24);
+
+            g2.setColor(previewWifiEnabled ? LIME : ORANGE);
+            g2.drawString(previewWifiEnabled ? "Wi-Fi Connected" : "Wi-Fi Disabled", innerX, innerY + 46);
+            g2.setColor(WHITE);
+            g2.drawString("IP: " + truncate(resolvePreviewIpDisplay(), 24), innerX + colW, innerY + 46);
+            g2.drawString("v" + APP_VERSION, innerX + colW * 2, innerY + 46);
+        }
+
+        private void drawCpuThreadsDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "CPU Threads", x, y, w, h);
+            int cols = 4;
+            int rows = 4;
+            int cellW = Math.max(80, (w - 24) / cols);
+            int cellH = Math.max(24, (h - 44) / rows);
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            for (int i = 0; i < 16; i++) {
+                int col = i % cols;
+                int row = i / cols;
+                int cellX = x + 10 + col * cellW;
+                int cellY = y + 30 + row * cellH;
+                int val = packet.getInt("C" + i, packet.getInt("CPU" + i, 0));
+                g2.setColor(WHITE);
+                g2.drawString("C" + i, cellX, cellY);
+                g2.setColor(getHeatColor(val));
+                g2.drawString(val + "%", cellX + 34, cellY);
+            }
+        }
+
+        private void drawProcessesDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "Top Processes", x, y, w, h);
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(WHITE);
+            g2.drawString("Name", x + 12, y + 30);
+            g2.drawString("CPU", x + w - 120, y + 30);
+            g2.drawString("RAM", x + w - 62, y + 30);
+            g2.setFont(new Font(MONO, Font.PLAIN, 11));
+            int rowY = y + 48;
+            for (int i = 1; i <= 6; i++) {
+                String name = truncate(packet.get("P" + i, "--"), 34);
+                String cpu = packet.get("P" + i + "CPU", "--");
+                String ram = packet.get("P" + i + "RAM", "--");
+                g2.setColor(WHITE);
+                g2.drawString(i + ". " + name, x + 12, rowY);
+                g2.setColor(YELLOW);
+                g2.drawString(cpu, x + w - 120, rowY);
+                g2.setColor(CYAN);
+                g2.drawString(ram, x + w - 62, rowY);
+                rowY += 18;
+                if (rowY > y + h - 10) break;
+            }
+        }
+
+        private void drawNetworkGpuStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "Network / GPU / Storage", x, y, w, h);
+            g2.setFont(new Font(MONO, Font.PLAIN, 12));
+            int rowY = y + 30;
+            drawDesktopField(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "--")), x + 10, rowY, LIME);
+            rowY += 18;
+            drawDesktopField(g2, "Up", packet.get("UPNET", packet.get("NETUP", "--")), x + 10, rowY, YELLOW);
+            rowY += 18;
+            drawDesktopField(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "--")), x + 10, rowY, CYAN);
+            rowY += 18;
+            drawDesktopField(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "--")), x + 10, rowY, WHITE);
+            rowY += 20;
+            drawDesktopField(g2, "GPU Temp", packet.get("GPUTEMP", packet.get("GPU_TEMP", "--")), x + 10, rowY, ORANGE);
+            rowY += 18;
+            drawDesktopField(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "--")), x + 10, rowY, MAGENTA);
+            rowY += 18;
+            drawDesktopField(g2, "Disk0", packet.get("DISK0", packet.get("D0", "--")) + "%", x + 10, rowY, CYAN);
+            rowY += 18;
+            drawDesktopField(g2, "Disk1", packet.get("DISK1", packet.get("D1", "--")) + "%", x + 10, rowY, YELLOW);
+        }
+
+        private void drawHistoryDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "History", x, y, w, h);
+            int gx = x + 10;
+            int gy = y + 30;
+            int gw = w - 20;
+            int gh = h - 44;
+            g2.setColor(new Color(18, 24, 42));
+            g2.fillRect(gx, gy, gw, gh);
+            g2.setColor(GRID);
+            g2.drawRect(gx, gy, gw, gh);
+            for (int i = 1; i < 4; i++) {
+                int yLine = gy + (gh * i) / 4;
+                g2.drawLine(gx, yLine, gx + gw, yLine);
+            }
+            drawDesktopHistoryLine(g2, cpuHistory, gx, gy, gw, gh, LIME);
+            drawDesktopHistoryLine(g2, ramHistory, gx, gy, gw, gh, CYAN);
+            drawDesktopHistoryLine(g2, gpuHistory, gx, gy, gw, gh, ORANGE);
+            drawDesktopHistoryLine(g2, vramHistory, gx, gy, gw, gh, MAGENTA);
+            g2.setFont(new Font(MONO, Font.PLAIN, 11));
+            g2.setColor(WHITE);
+            g2.drawString("CPU", x + 12, y + h - 10);
+            g2.setColor(CYAN);
+            g2.drawString("RAM", x + 54, y + h - 10);
+            g2.setColor(ORANGE);
+            g2.drawString("GPU", x + 98, y + h - 10);
+            g2.setColor(MAGENTA);
+            g2.drawString("VRAM", x + 142, y + h - 10);
+        }
+
+        private void drawDesktopHistoryLine(Graphics2D g2, int[] history, int x, int y, int w, int h, Color color) {
+            g2.setColor(color);
+            for (int i = 1; i < history.length; i++) {
+                int x1 = x + (i - 1) * (w - 1) / (history.length - 1);
+                int x2 = x + i * (w - 1) / (history.length - 1);
+                int y1 = y + h - 1 - (history[i - 1] * (h - 2) / 100);
+                int y2 = y + h - 1 - (history[i] * (h - 2) / 100);
+                g2.drawLine(x1, y1, x2, y2);
+            }
+        }
+
+        private void drawDesktopField(Graphics2D g2, String label, String value, int x, int y, Color valueColor) {
+            g2.setColor(WHITE);
+            g2.drawString(label + ":", x, y);
+            g2.setColor(valueColor);
+            g2.drawString(truncate(value, 22), x + 66, y);
+        }
+
+        private void drawDesktopCard(Graphics2D g2, String title, int x, int y, int w, int h) {
+            g2.setColor(new Color(20, 30, 53));
+            g2.fillRoundRect(x, y, w, h, 12, 12);
+            g2.setColor(PANEL_LINE);
+            g2.drawRoundRect(x, y, w, h, 12, 12);
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(CYAN);
+            g2.drawString(title, x + 10, y + 16);
         }
 
         private int drawHeader(Graphics2D g2, String title, int w, int m) {
