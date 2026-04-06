@@ -45,7 +45,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final String UPDATE_SOURCE_FILE = ".last_update_source";
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = ProjectVersion.loadVersion(UniversalMonitorControlCenter.class);
-    private static final String APP_VERSION_DISPLAY = APP_VERSION;
+    private static final String APP_VERSION_DISPLAY = "Version: " + APP_VERSION;
     private static final String SUDO_PASSWORD_FILE = ".control_center_sudo_password";
     private static final String WIFI_SETTINGS_BACKUP_FILE = ".control_center_wifi_settings.properties";
     private static final String REMOTE_TARGETS_FILE = ".control_center_remote_targets.properties";
@@ -93,8 +93,8 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
     private final JButton stopFakePortsButton = new JButton("Stop Fake Ports");
-    private final JButton connectPreviewButton = new JButton("Connect Preview Port");
-    private final JButton disconnectPreviewButton = new JButton("Disconnect Preview Port");
+    private final JButton connectPreviewButton = new JButton("Connect Preview Stream");
+    private final JButton disconnectPreviewButton = new JButton("Disconnect Preview Stream");
 
     private final JButton desktopInstallButton = new JButton("Reinstall Monitor");
     private final JButton desktopAppletButton = new JButton("Install Desktop Applet");
@@ -140,6 +140,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel versionLabel = new JLabel(APP_VERSION_DISPLAY);
     private final JCheckBox alwaysShowFlashPreviewToggle = new JCheckBox("Always show preview before flashing");
     private final JCheckBox lightModeToggle = new JCheckBox("Light mode");
+    private final JCheckBox desktopDashboardLightModeToggle = new JCheckBox("Light mode");
     private final JComboBox<String> unoR3ScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> megaScreenSizeSelector = new JComboBox<>(new String[]{"2.8\" mode", "3.5\" mode"});
     private final JComboBox<String> r4RotationSelector = new JComboBox<>(new String[]{rotationLabel(DISPLAY_ROTATION_NORMAL), rotationLabel(DISPLAY_ROTATION_FLIPPED)});
@@ -247,6 +248,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
     private boolean desktopDashboardFullscreen;
+    private boolean syncingThemeToggles;
 
     private final Color darkBackground = new Color(23, 39, 66);
     private final Color darkPanelBackground = new Color(34, 54, 86);
@@ -379,7 +381,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
         desktopDashboardLogArea.setEditable(false);
-        desktopDashboardLogArea.setRows(18);
+        desktopDashboardLogArea.setRows(10);
         desktopDashboardLogArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         desktopDashboardLogArea.setLineWrap(false);
         desktopDashboardLogArea.setWrapStyleWord(false);
@@ -1212,10 +1214,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveBoardSettingsButton.addActionListener(e -> saveBoardPageSettingsAndSyncHeaders(true));
         saveAllBoardsAndProfilesButton.addActionListener(e -> saveAllBoardsAndProfiles());
         dashboardSudoPasswordField.addActionListener(e -> syncDashboardSudoPassword());
-        lightModeToggle.addActionListener(e -> {
-            darkMode = !lightModeToggle.isSelected();
-            applyTheme();
-        });
+        lightModeToggle.addActionListener(e -> applyThemeSelection(lightModeToggle.isSelected()));
+        desktopDashboardLightModeToggle.addActionListener(e -> applyThemeSelection(desktopDashboardLightModeToggle.isSelected()));
     }
 
 
@@ -1223,6 +1223,21 @@ public class UniversalMonitorControlCenter extends JFrame {
         JLabel badge = new JLabel(APP_VERSION_DISPLAY);
         badge.setFont(badge.getFont().deriveFont(Font.BOLD));
         return badge;
+    }
+
+    private void applyThemeSelection(boolean lightModeEnabled) {
+        if (syncingThemeToggles) {
+            return;
+        }
+        syncingThemeToggles = true;
+        try {
+            lightModeToggle.setSelected(lightModeEnabled);
+            desktopDashboardLightModeToggle.setSelected(lightModeEnabled);
+            darkMode = !lightModeEnabled;
+        } finally {
+            syncingThemeToggles = false;
+        }
+        applyTheme();
     }
 
     private void syncDashboardSudoPassword() {
@@ -4488,7 +4503,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow == null) {
                 desktopDashboardWindow = new JFrame("Desktop Monitor Dashboard (Pop-Out)");
-                desktopDashboardWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+                desktopDashboardWindow.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
                 desktopDashboardWindow.setSize(1600, 960);
@@ -4503,7 +4518,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardLogScroller.putClientProperty("uasmDashboardLogScroller", Boolean.TRUE);
 
                 JSplitPane rootSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainSplit, desktopDashboardLogScroller);
-                rootSplit.setResizeWeight(0.72);
+                rootSplit.setResizeWeight(0.80);
                 rootSplit.setContinuousLayout(true);
                 rootSplit.setDividerSize(10);
                 rootSplit.setBorder(new EmptyBorder(0, 0, 0, 0));
@@ -4524,7 +4539,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindow.addWindowListener(new java.awt.event.WindowAdapter() {
                     @Override
                     public void windowClosing(java.awt.event.WindowEvent e) {
-                        desktopDashboardFullscreen = false;
+                        closeDesktopDashboardWindow();
                     }
 
                     @Override
@@ -4535,6 +4550,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                     }
                 });
             }
+            desktopDashboardLightModeToggle.setSelected(!darkMode);
+            applyTheme();
             desktopDashboardWindow.setVisible(true);
             desktopDashboardWindow.setState(Frame.NORMAL);
             desktopDashboardWindow.toFront();
@@ -4607,32 +4624,39 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardStatusPanel.putClientProperty("uasmDashboardStatus", Boolean.TRUE);
 
         desktopDashboardControlsPanel.removeAll();
-        JButton startButton = new JButton("Start");
+        desktopDashboardLightModeToggle.setFocusable(false);
+        JButton startButton = new JButton("Start Service");
         startButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         startButton.addActionListener(e -> runServiceCommand("start"));
-        JButton stopButton = new JButton("Stop");
+        JButton stopButton = new JButton("Stop Service");
         stopButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         stopButton.addActionListener(e -> runServiceCommand("stop"));
-        JButton statusButton = new JButton("Status");
+        JButton statusButton = new JButton("Service Status");
         statusButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         statusButton.addActionListener(e -> {
             refreshServiceStatus(true);
             refreshServiceStartupStatus(true);
             refreshDesktopDashboardQuickStatus();
         });
-        JButton restartButton = new JButton("Restart");
+        JButton restartButton = new JButton("Restart Service");
         restartButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         restartButton.addActionListener(e -> runServiceCommand("restart"));
-        JButton refreshPortsButton = new JButton("Ports");
+        JButton dashboardStartButton = new JButton("Start Dashboard Stream");
+        dashboardStartButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        dashboardStartButton.addActionListener(e -> startDashboardPreviewFlow());
+        JButton dashboardStopButton = new JButton("Stop Dashboard Stream");
+        dashboardStopButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        dashboardStopButton.addActionListener(e -> stopDashboardPreviewFlow());
+        JButton refreshPortsButton = new JButton("Refresh Monitor Ports");
         refreshPortsButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         refreshPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
-        JButton refreshSettingsButton = new JButton("Refresh");
+        JButton refreshSettingsButton = new JButton("Refresh Monitor Settings");
         refreshSettingsButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         refreshSettingsButton.addActionListener(e -> {
             refreshMonitorConnectionSettings(true);
             refreshDesktopDashboardQuickStatus();
         });
-        JButton logsButton = new JButton("Logs");
+        JButton logsButton = new JButton("Fetch Service Logs");
         logsButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         logsButton.addActionListener(e -> fetchServiceLogsIntoDashboard());
         JButton clearButton = new JButton("Clear Log");
@@ -4646,10 +4670,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardControlsPanel.add(stopButton);
         desktopDashboardControlsPanel.add(statusButton);
         desktopDashboardControlsPanel.add(restartButton);
+        desktopDashboardControlsPanel.add(dashboardStartButton);
+        desktopDashboardControlsPanel.add(dashboardStopButton);
         desktopDashboardControlsPanel.add(refreshPortsButton);
         desktopDashboardControlsPanel.add(refreshSettingsButton);
         desktopDashboardControlsPanel.add(logsButton);
         desktopDashboardControlsPanel.add(clearButton);
+        desktopDashboardControlsPanel.add(desktopDashboardLightModeToggle);
         desktopDashboardControlsPanel.putClientProperty("uasmDashboardControls", Boolean.TRUE);
         desktopDashboardSummaryPanel.removeAll();
         desktopDashboardSummaryPanel.putClientProperty("uasmDashboardSummary", Boolean.TRUE);
@@ -4710,7 +4737,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             desktopDashboardServiceStateLabel.setText("Service Running: " + serviceIndicator.getText());
             desktopDashboardDebugStateLabel.setText("Debug Mode: " + debugIndicator.getText());
             desktopDashboardServiceDotLabel.setForeground("RUNNING".equalsIgnoreCase(serviceIndicator.getText()) ? new Color(74, 212, 120) : new Color(223, 121, 73));
-            desktopDashboardDebugDotLabel.setForeground("ENABLED".equalsIgnoreCase(debugIndicator.getText()) ? new Color(74, 212, 120) : new Color(223, 121, 73));
+            desktopDashboardDebugDotLabel.setForeground("ON".equalsIgnoreCase(debugIndicator.getText()) ? new Color(74, 212, 120) : new Color(223, 121, 73));
             refreshDesktopDashboardMiniSummary(null);
             enforceDashboardThemeStability();
         });
@@ -4765,6 +4792,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardStatusPanel.setBackground(panelBackground);
         desktopDashboardControlsPanel.setBackground(panelBackground);
         desktopDashboardSummaryPanel.setBackground(panelBackground);
+        desktopDashboardLightModeToggle.setBackground(panelBackground);
+        desktopDashboardLightModeToggle.setForeground(textColor);
     }
 
     private boolean isTransportConnectedState(String text) {
@@ -4812,6 +4841,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         }, "dashboard-log-refresh-thread");
         t.setDaemon(true);
         t.start();
+    }
+
+    private void startDashboardPreviewFlow() {
+        startFakePorts();
+        Timer delayedConnect = new Timer(900, e -> connectPreviewPort());
+        delayedConnect.setRepeats(false);
+        delayedConnect.start();
+    }
+
+    private void stopDashboardPreviewFlow() {
+        disconnectPreviewPort();
+        stopFakePorts();
     }
 
 
@@ -4969,7 +5010,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         if (component instanceof JComponent jComponent) {
-            jComponent.setForeground(textColor);
+            boolean isIndicatorLabel = jComponent == serviceIndicator
+                    || jComponent == startupIndicator
+                    || jComponent == debugIndicator
+                    || jComponent == transportIndicator
+                    || jComponent == flashTransportIndicator;
+            if (!isIndicatorLabel) {
+                jComponent.setForeground(textColor);
+            }
             if (!(jComponent instanceof JTextArea) && !(jComponent instanceof JTextField)
                     && !(jComponent instanceof JPasswordField) && !(jComponent instanceof JScrollPane)
                     && !(jComponent instanceof JSplitPane) && !(jComponent instanceof JPanel)
