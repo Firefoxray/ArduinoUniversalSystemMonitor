@@ -24,6 +24,9 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -39,6 +42,7 @@ import java.util.regex.Pattern;
 public class UniversalMonitorControlCenter extends JFrame {
 
     private static final String SERVICE_NAME = "arduino-monitor.service";
+    private static final String UPDATE_SOURCE_FILE = ".last_update_source";
     private static final String APP_NAME = "Universal Arduino System Monitor - Control Center";
     private static final String APP_VERSION = ProjectVersion.loadVersion(UniversalMonitorControlCenter.class);
     private static final String APP_VERSION_DISPLAY = APP_VERSION;
@@ -225,6 +229,11 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
     private final JavaSerialFakeDisplay.FakeDisplayPanel desktopDashboardPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
+    private final JTextArea desktopDashboardLogArea = new JTextArea();
+    private final JLabel desktopDashboardServiceStateLabel = new JLabel("Service: --");
+    private final JLabel desktopDashboardTransportStateLabel = new JLabel("Transport: --");
+    private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
+    private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
     private boolean desktopDashboardFullscreen;
 
@@ -358,6 +367,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
+        desktopDashboardLogArea.setEditable(false);
+        desktopDashboardLogArea.setRows(12);
+        desktopDashboardLogArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        desktopDashboardLogArea.setLineWrap(true);
+        desktopDashboardLogArea.setWrapStyleWord(true);
+        desktopDashboardServiceStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
+        desktopDashboardTransportStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -2362,7 +2378,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + " && " + checkoutCommand
                 + " && (git ls-remote --exit-code --heads origin " + escape(targetBranch)
                 + " >/dev/null 2>&1 && git pull --ff-only origin " + escape(targetBranch)
-                + " || echo \"[INFO] origin/" + safeBranchForEcho + " not found; skipped pull\")";
+                + " || echo \"[INFO] origin/" + safeBranchForEcho + " not found; skipped pull\")"
+                + " && printf '%s\\n' codex > " + escape(UPDATE_SOURCE_FILE);
     }
 
     private void logCodexUpdateSummary(String previousBranch, String previousHash) {
@@ -4462,6 +4479,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindow.setMinimumSize(new Dimension(760, 520));
                 desktopDashboardWindow.setSize(1400, 900);
                 desktopDashboardWindow.add(desktopDashboardPanel, BorderLayout.CENTER);
+                desktopDashboardWindow.add(buildDesktopDashboardSidePanel(), BorderLayout.EAST);
                 desktopDashboardWindow.addWindowListener(new java.awt.event.WindowAdapter() {
                     @Override
                     public void windowClosing(java.awt.event.WindowEvent e) {
@@ -4480,6 +4498,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             desktopDashboardWindow.setState(Frame.NORMAL);
             desktopDashboardWindow.toFront();
             desktopDashboardWindow.requestFocus();
+            refreshDesktopDashboardQuickStatus();
+            refreshDesktopDashboardLogSnapshot();
             updatePreviewButtons();
         });
     }
@@ -4527,6 +4547,126 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             updatePreviewButtons();
         });
+    }
+
+    private JPanel buildDesktopDashboardSidePanel() {
+        JPanel side = new JPanel(new BorderLayout(8, 8));
+        side.setBorder(new EmptyBorder(10, 10, 10, 10));
+        side.setPreferredSize(new Dimension(360, 10));
+
+        JPanel statusPanel = new JPanel(new GridLayout(0, 1, 4, 4));
+        statusPanel.add(desktopDashboardServiceStateLabel);
+        statusPanel.add(desktopDashboardTransportStateLabel);
+
+        JPanel controls = new JPanel(new GridLayout(0, 2, 6, 6));
+        JButton startButton = new JButton("Start");
+        startButton.addActionListener(e -> runServiceCommand("start"));
+        JButton stopButton = new JButton("Stop");
+        stopButton.addActionListener(e -> runServiceCommand("stop"));
+        JButton statusButton = new JButton("Status");
+        statusButton.addActionListener(e -> {
+            refreshServiceStatus(true);
+            refreshServiceStartupStatus(true);
+            refreshDesktopDashboardQuickStatus();
+        });
+        JButton restartButton = new JButton("Restart");
+        restartButton.addActionListener(e -> runServiceCommand("restart"));
+        JButton refreshPortsButton = new JButton("Ports");
+        refreshPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
+        JButton refreshSettingsButton = new JButton("Refresh");
+        refreshSettingsButton.addActionListener(e -> {
+            refreshMonitorConnectionSettings(true);
+            refreshDesktopDashboardQuickStatus();
+        });
+        JButton logsButton = new JButton("Logs");
+        logsButton.addActionListener(e -> fetchServiceLogsIntoDashboard());
+        JButton clearButton = new JButton("Clear Log");
+        clearButton.addActionListener(e -> {
+            desktopDashboardLogLines.clear();
+            desktopDashboardLogArea.setText("");
+        });
+
+        controls.add(startButton);
+        controls.add(stopButton);
+        controls.add(statusButton);
+        controls.add(restartButton);
+        controls.add(refreshPortsButton);
+        controls.add(refreshSettingsButton);
+        controls.add(logsButton);
+        controls.add(clearButton);
+
+        JScrollPane logScroller = new JScrollPane(desktopDashboardLogArea);
+        logScroller.setBorder(BorderFactory.createTitledBorder("Live Monitor Log"));
+
+        side.add(statusPanel, BorderLayout.NORTH);
+        side.add(controls, BorderLayout.CENTER);
+        side.add(logScroller, BorderLayout.SOUTH);
+        return side;
+    }
+
+    private void appendDesktopDashboardLogLine(String message) {
+        String text = "[" + LocalDateTime.now().format(dashboardLogTimeFormat) + "] " + message;
+        while (desktopDashboardLogLines.size() >= 120) {
+            desktopDashboardLogLines.pollFirst();
+        }
+        desktopDashboardLogLines.addLast(text);
+        SwingUtilities.invokeLater(() -> {
+            desktopDashboardLogArea.setText(String.join("\n", desktopDashboardLogLines));
+            desktopDashboardLogArea.setCaretPosition(desktopDashboardLogArea.getDocument().getLength());
+        });
+    }
+
+    private void refreshDesktopDashboardLogSnapshot() {
+        String[] lines = outputArea.getText().split("\\R");
+        desktopDashboardLogLines.clear();
+        int start = Math.max(0, lines.length - 80);
+        for (int i = start; i < lines.length; i++) {
+            if (!lines[i].isBlank()) {
+                appendDesktopDashboardLogLine(lines[i]);
+            }
+        }
+    }
+
+    private void refreshDesktopDashboardQuickStatus() {
+        SwingUtilities.invokeLater(() -> {
+            desktopDashboardServiceStateLabel.setText("Service: " + serviceIndicator.getText());
+            desktopDashboardTransportStateLabel.setText("Transport: " + transportIndicator.getText());
+        });
+    }
+
+    private void fetchServiceLogsIntoDashboard() {
+        Thread t = new Thread(() -> {
+            CommandSpec spec = buildShellCommand("journalctl -u " + SERVICE_NAME + " -n 40 --no-pager", true, false);
+            if (spec == null) {
+                appendDesktopDashboardLogLine("[WARN] Could not build service log command.");
+                return;
+            }
+            try {
+                ProcessBuilder pb = new ProcessBuilder(spec.command);
+                pb.directory(repoPath().toFile());
+                pb.redirectErrorStream(true);
+                if (spec.sudoPassword != null) {
+                    pb.environment().put("SUDO_PASS", spec.sudoPassword);
+                }
+                Process process = pb.start();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!line.trim().isEmpty()) {
+                            appendDesktopDashboardLogLine("[svc] " + line.trim());
+                        }
+                    }
+                }
+                int code = process.waitFor();
+                if (code != 0) {
+                    appendDesktopDashboardLogLine("[WARN] journalctl exited with code " + code + ".");
+                }
+            } catch (Exception ex) {
+                appendDesktopDashboardLogLine("[ERROR] Failed to load service logs: " + ex.getMessage());
+            }
+        }, "dashboard-log-refresh-thread");
+        t.setDaemon(true);
+        t.start();
     }
 
 
@@ -6172,6 +6312,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             flashTransportIndicator.setText(text);
             flashTransportIndicator.setBackground(color);
             flashTransportIndicator.setForeground(Color.WHITE);
+            desktopDashboardTransportStateLabel.setText("Transport: " + text);
         });
     }
 
@@ -6192,6 +6333,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             serviceIndicator.setText(label);
             serviceIndicator.setBackground(color);
             serviceIndicator.setForeground(Color.WHITE);
+            desktopDashboardServiceStateLabel.setText("Service: " + label);
         });
     }
 
@@ -6216,6 +6358,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             outputArea.append(message + "\n");
             outputArea.setCaretPosition(outputArea.getDocument().getLength());
         });
+        appendDesktopDashboardLogLine(message);
     }
 
     private Path repoPath() {

@@ -521,7 +521,8 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawDesktopOverview(Graphics2D g2, int w, int h) {
-            g2.setColor(new Color(12, 17, 30));
+            GradientPaint background = new GradientPaint(0, 0, new Color(10, 16, 30), 0, h, new Color(6, 10, 18));
+            g2.setPaint(background);
             g2.fillRect(0, 0, w, h);
 
             int outerPad = 16;
@@ -546,9 +547,9 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             y += summaryH + rowGap;
             int remainingH = contentH - (y - top);
-            int leftTopH = Math.max(120, remainingH / 2 - rowGap / 2);
+            int leftTopH = Math.max(82, (int) (remainingH * 0.36));
             int leftBottomH = Math.max(120, remainingH - leftTopH - rowGap);
-            int rightTopH = Math.max(170, remainingH / 2 - rowGap / 2);
+            int rightTopH = Math.max(170, (int) (remainingH * 0.44));
             int rightBottomH = Math.max(120, remainingH - rightTopH - rowGap);
 
             drawCpuThreadsDesktop(g2, left, y, leftColumnW, leftTopH);
@@ -580,27 +581,34 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(previewWifiEnabled ? "Wi-Fi Connected" : "Wi-Fi Disabled", innerX, innerY + 46);
             g2.setColor(WHITE);
             g2.drawString("IP: " + truncate(resolvePreviewIpDisplay(), 24), innerX + colW, innerY + 46);
-            g2.drawString("v" + APP_VERSION, innerX + colW * 2, innerY + 46);
+            g2.drawString(APP_VERSION, innerX + colW * 2, innerY + 46);
         }
 
         private void drawCpuThreadsDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "CPU Threads", x, y, w, h);
-            int cols = 4;
-            int rows = 4;
-            int cellW = Math.max(80, (w - 24) / cols);
-            int cellH = Math.max(24, (h - 44) / rows);
-            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            drawDesktopCard(g2, "CPU Threads (Compact)", x, y, w, h);
+            int cols = 8;
+            int rows = 2;
+            int cellW = Math.max(52, (w - 24) / cols);
+            int cellH = Math.max(20, (h - 38) / rows);
+            g2.setFont(new Font(MONO, Font.BOLD, 10));
             for (int i = 0; i < 16; i++) {
                 int col = i % cols;
                 int row = i / cols;
                 int cellX = x + 10 + col * cellW;
-                int cellY = y + 30 + row * cellH;
+                int cellY = y + 26 + row * cellH;
                 int val = packet.getInt("C" + i, packet.getInt("CPU" + i, 0));
                 g2.setColor(WHITE);
                 g2.drawString("C" + i, cellX, cellY);
                 g2.setColor(getHeatColor(val));
-                g2.drawString(val + "%", cellX + 34, cellY);
+                g2.drawString(val + "%", cellX + 20, cellY + 10);
             }
+            int total = packet.getInt("CPU", 0);
+            int barY = y + h - 16;
+            g2.setColor(WHITE);
+            g2.drawString("Total", x + 10, barY);
+            drawBar(g2, x + 48, barY - 9, Math.max(80, w - 128), 8, total, getHeatColor(total));
+            g2.setColor(getHeatColor(total));
+            g2.drawString(total + "%", x + w - 52, barY);
         }
 
         private void drawProcessesDesktop(Graphics2D g2, int x, int y, int w, int h) {
@@ -623,8 +631,14 @@ public class JavaSerialFakeDisplay extends JFrame {
                 g2.setColor(CYAN);
                 g2.drawString(ram, x + w - 62, rowY);
                 rowY += 18;
-                if (rowY > y + h - 10) break;
+                if (rowY > y + h - 62) break;
             }
+
+            int statsTop = y + h - 54;
+            drawDesktopMiniBar(g2, "CPU", packet.getInt("CPU", 0), x + 12, statsTop, w - 24, LIME);
+            drawDesktopMiniBar(g2, "RAM", packet.getInt("RAM", 0), x + 12, statsTop + 16, w - 24, CYAN);
+            int netBlend = Math.min(100, Math.max(packet.getInt("CPU", 0), packet.getInt("RAM", 0)));
+            drawDesktopMiniBar(g2, "Load", netBlend, x + 12, statsTop + 32, w - 24, ORANGE);
         }
 
         private void drawNetworkGpuStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
@@ -649,18 +663,23 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawHistoryDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "History", x, y, w, h);
+            drawDesktopCard(g2, "Live History", x, y, w, h);
             int gx = x + 10;
             int gy = y + 30;
             int gw = w - 20;
             int gh = h - 44;
-            g2.setColor(new Color(18, 24, 42));
+            GradientPaint chartPaint = new GradientPaint(gx, gy, new Color(18, 28, 46), gx, gy + gh, new Color(10, 16, 30));
+            g2.setPaint(chartPaint);
             g2.fillRect(gx, gy, gw, gh);
             g2.setColor(GRID);
             g2.drawRect(gx, gy, gw, gh);
             for (int i = 1; i < 4; i++) {
                 int yLine = gy + (gh * i) / 4;
                 g2.drawLine(gx, yLine, gx + gw, yLine);
+            }
+            for (int i = 1; i < 6; i++) {
+                int xLine = gx + (gw * i) / 6;
+                g2.drawLine(xLine, gy, xLine, gy + gh);
             }
             drawDesktopHistoryLine(g2, cpuHistory, gx, gy, gw, gh, LIME);
             drawDesktopHistoryLine(g2, ramHistory, gx, gy, gw, gh, CYAN);
@@ -675,6 +694,17 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("GPU", x + 98, y + h - 10);
             g2.setColor(MAGENTA);
             g2.drawString("VRAM", x + 142, y + h - 10);
+        }
+
+        private void drawDesktopMiniBar(Graphics2D g2, String label, int value, int x, int y, int w, Color color) {
+            g2.setFont(new Font(MONO, Font.BOLD, 10));
+            g2.setColor(WHITE);
+            g2.drawString(label, x, y + 8);
+            int barX = x + 36;
+            int barW = Math.max(40, w - 82);
+            drawBar(g2, barX, y + 1, barW, 8, value, color);
+            g2.setColor(color);
+            g2.drawString(value + "%", x + w - 34, y + 8);
         }
 
         private void drawDesktopHistoryLine(Graphics2D g2, int[] history, int x, int y, int w, int h, Color color) {

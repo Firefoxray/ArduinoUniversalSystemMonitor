@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/project_paths.sh"
 PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$SCRIPT_DIR/..}" "${BASH_SOURCE[0]}")"
 SERVICE_NAME="${SERVICE_NAME:-arduino-monitor.service}"
+UPDATE_SOURCE_FILE="${UPDATE_SOURCE_FILE:-.last_update_source}"
 VENV_DIR="$PROJECT_DIR/.venv"
 PYTHON_BIN="$VENV_DIR/bin/python3"
 PIP_BIN="$VENV_DIR/bin/pip"
@@ -191,6 +192,7 @@ echo "[1/7] Checking GitHub for new changes..."
 if git_remote_has_updates main; then
     echo "Updates found on origin/main. Pulling latest changes from GitHub..."
     run_as_repo_user "git pull origin main"
+    run_as_repo_user "printf '%s\n' main > $(printf '%q' "$UPDATE_SOURCE_FILE")"
     fix_repo_ownership
 else
     status=$?
@@ -198,6 +200,7 @@ else
         exit 1
     fi
     echo "Project is already up to date on origin/main. Nothing to pull or reinstall."
+    run_as_repo_user "printf '%s\n' main > $(printf '%q' "$UPDATE_SOURCE_FILE")"
     exit 0
 fi
 
