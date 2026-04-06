@@ -186,6 +186,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel previewWifiStateLabel = new JLabel("Disabled");
     private final JLabel previewWifiHostnameLabel = new JLabel("--");
     private final JLabel previewWifiIpLabel = new JLabel("--");
+    private final JButton popOutPreviewButton = new JButton("Pop Out Desktop Dashboard");
+    private final JButton closePopOutPreviewButton = new JButton("Close Pop-Out");
+    private final JButton fullscreenPopOutPreviewButton = new JButton("Fullscreen");
     private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
     private final JCheckBox dashboardRememberPasswordToggle = new JCheckBox("Remember");
     private final JButton scanNetworkButton = new JButton("Start Arduino Scan");
@@ -221,6 +224,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final Map<String, StorageTarget> storageTargetsById = new LinkedHashMap<>();
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
+    private final JavaSerialFakeDisplay.FakeDisplayPanel desktopDashboardPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
+    private JFrame desktopDashboardWindow;
+    private boolean desktopDashboardFullscreen;
 
     private final Color darkBackground = new Color(23, 39, 66);
     private final Color darkPanelBackground = new Color(34, 54, 86);
@@ -348,6 +354,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         macroEntriesArea.setLineWrap(true);
         macroEntriesArea.setWrapStyleWord(true);
         macroTriggerModelSelector.setToolTipText("Staged trigger approach for unreliable touch calibration. Stores macro_trigger_model for future firmware behavior.");
+        popOutPreviewButton.setToolTipText("Open the existing monitor preview in a separate resizable desktop window.");
+        closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
+        fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
+        desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -1031,6 +1041,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel footer = new JPanel();
         footer.setLayout(new BoxLayout(footer, BoxLayout.Y_AXIS));
         footer.add(buildPreviewWifiPanel());
+        JPanel popOutActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        popOutActions.add(popOutPreviewButton);
+        popOutActions.add(fullscreenPopOutPreviewButton);
+        popOutActions.add(closePopOutPreviewButton);
+        popOutActions.setAlignmentX(Component.LEFT_ALIGNMENT);
+        footer.add(popOutActions);
         JLabel helper = new JLabel("Preview listens live to the Output port path used by the fake serial pair.");
         helper.setBorder(new EmptyBorder(0, 8, 8, 8));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1139,6 +1155,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
         connectPreviewButton.addActionListener(e -> connectPreviewPort());
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
+        popOutPreviewButton.addActionListener(e -> showDesktopDashboardWindow());
+        closePopOutPreviewButton.addActionListener(e -> closeDesktopDashboardWindow());
+        fullscreenPopOutPreviewButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
@@ -2427,6 +2446,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         previewWifiIpLabel.setText(ipAddress);
         int port = parseWifiPort(wifiPortField.getText(), Integer.parseInt(DEFAULT_WIFI_PORT));
         fakeDisplayPanel.setPreviewWifiStatus(wifiEnabled, hostname, ipAddress, port);
+        desktopDashboardPanel.setPreviewWifiStatus(wifiEnabled, hostname, ipAddress, port);
     }
 
     private String detectLocalHostname() {
@@ -4404,13 +4424,92 @@ public class UniversalMonitorControlCenter extends JFrame {
                 }
 
                 JavaSerialFakeDisplay.ParsedPacket packet = JavaSerialFakeDisplay.ParsedPacket.parse(trimmed);
-                SwingUtilities.invokeLater(() -> fakeDisplayPanel.updatePacket(packet));
+                SwingUtilities.invokeLater(() -> {
+                    fakeDisplayPanel.updatePacket(packet);
+                    desktopDashboardPanel.updatePacket(packet);
+                });
             }
         } catch (Exception ex) {
             log("[ERROR] Preview stream failure: " + ex.getMessage());
         }
 
         SwingUtilities.invokeLater(this::disconnectPreviewPort);
+    }
+
+    private void showDesktopDashboardWindow() {
+        SwingUtilities.invokeLater(() -> {
+            if (desktopDashboardWindow == null) {
+                desktopDashboardWindow = new JFrame("Desktop Monitor Dashboard (Pop-Out)");
+                desktopDashboardWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+                desktopDashboardWindow.setLayout(new BorderLayout());
+                desktopDashboardWindow.setMinimumSize(new Dimension(760, 520));
+                desktopDashboardWindow.setSize(1400, 900);
+                desktopDashboardWindow.add(desktopDashboardPanel, BorderLayout.CENTER);
+                desktopDashboardWindow.addWindowListener(new java.awt.event.WindowAdapter() {
+                    @Override
+                    public void windowClosing(java.awt.event.WindowEvent e) {
+                        desktopDashboardFullscreen = false;
+                    }
+
+                    @Override
+                    public void windowClosed(java.awt.event.WindowEvent e) {
+                        desktopDashboardWindow = null;
+                        desktopDashboardFullscreen = false;
+                        updatePreviewButtons();
+                    }
+                });
+            }
+            desktopDashboardWindow.setVisible(true);
+            desktopDashboardWindow.setState(Frame.NORMAL);
+            desktopDashboardWindow.toFront();
+            desktopDashboardWindow.requestFocus();
+            updatePreviewButtons();
+        });
+    }
+
+    private void closeDesktopDashboardWindow() {
+        SwingUtilities.invokeLater(() -> {
+            if (desktopDashboardWindow != null) {
+                if (desktopDashboardFullscreen) {
+                    GraphicsDevice device = desktopDashboardWindow.getGraphicsConfiguration().getDevice();
+                    if (device != null) {
+                        device.setFullScreenWindow(null);
+                    }
+                }
+                desktopDashboardWindow.dispose();
+            }
+            desktopDashboardWindow = null;
+            desktopDashboardFullscreen = false;
+            updatePreviewButtons();
+        });
+    }
+
+    private void toggleDesktopDashboardFullscreen() {
+        SwingUtilities.invokeLater(() -> {
+            if (desktopDashboardWindow == null) {
+                showDesktopDashboardWindow();
+                return;
+            }
+            GraphicsDevice device = desktopDashboardWindow.getGraphicsConfiguration().getDevice();
+            if (device == null) {
+                return;
+            }
+            if (!desktopDashboardFullscreen) {
+                desktopDashboardWindow.dispose();
+                desktopDashboardWindow.setUndecorated(true);
+                desktopDashboardWindow.setVisible(true);
+                device.setFullScreenWindow(desktopDashboardWindow);
+                desktopDashboardFullscreen = true;
+            } else {
+                device.setFullScreenWindow(null);
+                desktopDashboardWindow.dispose();
+                desktopDashboardWindow.setUndecorated(false);
+                desktopDashboardWindow.setVisible(true);
+                desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
+                desktopDashboardFullscreen = false;
+            }
+            updatePreviewButtons();
+        });
     }
 
 
@@ -4435,6 +4534,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             lightModeToggle.setBackground(panelBackground);
             updateCustomSketchIndicatorAppearance(accent, textColor);
             fakeDisplayPanel.setBorder(new LineBorder(accent, 1, true));
+            desktopDashboardPanel.setBorder(new LineBorder(accent, 1, true));
 
             repaint();
         });
@@ -6063,6 +6163,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             boolean connected = previewPort != null && previewPort.isOpen();
             connectPreviewButton.setEnabled(!connected);
             disconnectPreviewButton.setEnabled(connected);
+            boolean popoutOpen = desktopDashboardWindow != null && desktopDashboardWindow.isDisplayable();
+            popOutPreviewButton.setEnabled(!popoutOpen);
+            closePopOutPreviewButton.setEnabled(popoutOpen);
+            fullscreenPopOutPreviewButton.setEnabled(popoutOpen);
         });
     }
 
