@@ -197,8 +197,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel previewSecondaryIpLabel = new JLabel("--");
     private final JButton popOutPreviewButton = new JButton("Open Pop Out Desktop Dashboard");
     private final JButton closePopOutPreviewButton = new JButton("Close Pop-Out");
-    private final JButton fullscreenPopOutPreviewButton = new JButton("Fullscreen");
-    private final JButton desktopWindowFullscreenButton = new JButton("Fullscreen");
     private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
     private final JCheckBox dashboardRememberPasswordToggle = new JCheckBox("Remember");
     private final JButton scanNetworkButton = new JButton("Start Arduino Scan");
@@ -269,9 +267,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
-    private boolean desktopDashboardFullscreen;
-    private Rectangle desktopDashboardPreFullscreenBounds;
-    private GraphicsDevice desktopDashboardFullscreenDevice;
     private boolean syncingThemeToggles;
 
     private final Color darkBackground = new Color(23, 39, 66);
@@ -417,10 +412,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         macroTriggerModelSelector.setToolTipText("Staged trigger approach for unreliable touch calibration. Stores macro_trigger_model for future firmware behavior.");
         popOutPreviewButton.setToolTipText("Open the existing monitor preview in a separate resizable desktop window.");
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
-        fullscreenPopOutPreviewButton.setToolTipText("Toggle fullscreen for the desktop dashboard pop-out.");
-        desktopWindowFullscreenButton.setToolTipText("Toggle fullscreen for this pop-out window. Press Esc to exit fullscreen.");
-        desktopWindowFullscreenButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
-        desktopWindowFullscreenButton.setPreferredSize(new Dimension(140, desktopWindowFullscreenButton.getPreferredSize().height));
         sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
@@ -437,6 +428,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         sshStatsOutputArea.setRows(10);
         sshStatsOutputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         desktopDashboardTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+        desktopDashboardTabs.setTabPlacement(JTabbedPane.TOP);
 
         JTabbedPane mainTabs = buildMainTabs();
 
@@ -529,6 +521,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private JTabbedPane buildMainTabs() {
         JTabbedPane tabs = new JTabbedPane();
+        tabs.setTabPlacement(JTabbedPane.TOP);
         tabs.addTab("Dashboard", buildDashboardTab());
         tabs.addTab("Flash", buildFlashTab());
         tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
@@ -1252,8 +1245,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
         popOutPreviewButton.addActionListener(e -> showDesktopDashboardWindow());
         closePopOutPreviewButton.addActionListener(e -> closeDesktopDashboardWindow());
-        fullscreenPopOutPreviewButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
-        desktopWindowFullscreenButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
@@ -4721,23 +4712,14 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindow.setSize(1600, 960);
                 desktopDashboardWindowControlsPanel.removeAll();
                 desktopDashboardWindowControlsPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
-                desktopDashboardWindowControlsPanel.add(desktopWindowFullscreenButton);
                 desktopDashboardTabs.removeAll();
+                desktopDashboardTabs.setTabPlacement(JTabbedPane.TOP);
                 desktopDashboardTabs.addTab("Main Desktop Monitor", buildDesktopMonitorMainTab());
                 desktopDashboardTabs.addTab("SSH Stats", buildDesktopSshStatsTab());
                 desktopDashboardTabs.addTab("Gaming Mode", buildDesktopGamingModeTab());
                 desktopDashboardTabs.addTab("Desktop Monitor Settings", buildDesktopMonitorSettingsTab());
                 desktopDashboardWindow.add(desktopDashboardWindowControlsPanel, BorderLayout.NORTH);
                 desktopDashboardWindow.add(desktopDashboardTabs, BorderLayout.CENTER);
-                desktopDashboardWindow.getRootPane().registerKeyboardAction(
-                        e -> {
-                            if (desktopDashboardFullscreen) {
-                                toggleDesktopDashboardFullscreen();
-                            }
-                        },
-                        KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
-                        JComponent.WHEN_IN_FOCUSED_WINDOW
-                );
                 desktopDashboardWindow.addComponentListener(new java.awt.event.ComponentAdapter() {
                     @Override
                     public void componentResized(java.awt.event.ComponentEvent e) {
@@ -4758,7 +4740,6 @@ public class UniversalMonitorControlCenter extends JFrame {
                     @Override
                     public void windowClosed(java.awt.event.WindowEvent e) {
                         desktopDashboardWindow = null;
-                        desktopDashboardFullscreen = false;
                         updatePreviewButtons();
                     }
                 });
@@ -4778,104 +4759,11 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void closeDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow != null) {
-                exitDesktopDashboardFullscreen();
                 desktopDashboardWindow.dispose();
             }
             desktopDashboardWindow = null;
-            desktopDashboardFullscreen = false;
-            desktopDashboardPreFullscreenBounds = null;
-            desktopDashboardFullscreenDevice = null;
             updatePreviewButtons();
         });
-    }
-
-    private void toggleDesktopDashboardFullscreen() {
-        SwingUtilities.invokeLater(() -> {
-            if (desktopDashboardWindow == null) {
-                showDesktopDashboardWindow();
-                return;
-            }
-            if (!desktopDashboardFullscreen) {
-                enterDesktopDashboardFullscreen();
-            } else {
-                exitDesktopDashboardFullscreen();
-            }
-            updatePreviewButtons();
-        });
-    }
-
-    private void enterDesktopDashboardFullscreen() {
-        if (desktopDashboardWindow == null || desktopDashboardFullscreen) {
-            return;
-        }
-        GraphicsDevice targetDevice = resolveDashboardFullscreenDevice();
-        Rectangle targetBounds = targetDevice == null
-                ? GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds()
-                : targetDevice.getDefaultConfiguration().getBounds();
-        desktopDashboardPreFullscreenBounds = desktopDashboardWindow.getBounds();
-        desktopDashboardFullscreenDevice = targetDevice;
-        try {
-            desktopDashboardWindow.dispose();
-            desktopDashboardWindow.setUndecorated(true);
-            desktopDashboardWindow.setVisible(true);
-            desktopDashboardWindow.setBounds(targetBounds);
-            desktopDashboardWindow.setExtendedState(Frame.NORMAL);
-            desktopDashboardFullscreen = true;
-        } catch (RuntimeException ex) {
-            log("[ERROR] Unable to enter fullscreen cleanly: " + ex.getMessage());
-            desktopDashboardWindow.setUndecorated(false);
-            desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
-            desktopDashboardFullscreen = false;
-            desktopDashboardPreFullscreenBounds = null;
-            desktopDashboardFullscreenDevice = null;
-        }
-    }
-
-    private void exitDesktopDashboardFullscreen() {
-        if (desktopDashboardWindow == null) {
-            return;
-        }
-        try {
-            if (desktopDashboardFullscreenDevice != null
-                    && desktopDashboardFullscreenDevice.getFullScreenWindow() == desktopDashboardWindow) {
-                desktopDashboardFullscreenDevice.setFullScreenWindow(null);
-            }
-            if (desktopDashboardWindow.isUndecorated()) {
-                desktopDashboardWindow.dispose();
-                desktopDashboardWindow.setUndecorated(false);
-                desktopDashboardWindow.setVisible(true);
-            }
-            if (desktopDashboardPreFullscreenBounds != null) {
-                desktopDashboardWindow.setBounds(desktopDashboardPreFullscreenBounds);
-            } else {
-                desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
-            }
-        } finally {
-            desktopDashboardFullscreen = false;
-            desktopDashboardPreFullscreenBounds = null;
-            desktopDashboardFullscreenDevice = null;
-        }
-    }
-
-    private GraphicsDevice resolveDashboardFullscreenDevice() {
-        if (desktopDashboardWindow != null && desktopDashboardWindow.getGraphicsConfiguration() != null) {
-            return desktopDashboardWindow.getGraphicsConfiguration().getDevice();
-        }
-        PointerInfo pointerInfo = MouseInfo.getPointerInfo();
-        if (pointerInfo != null) {
-            Point pointer = pointerInfo.getLocation();
-            for (GraphicsDevice device : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
-                GraphicsConfiguration config = device.getDefaultConfiguration();
-                if (config != null && config.getBounds().contains(pointer)) {
-                    return device;
-                }
-            }
-        }
-        if (getGraphicsConfiguration() != null) {
-            return getGraphicsConfiguration().getDevice();
-        }
-        GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
-        return devices.length > 0 ? devices[0] : null;
     }
 
     private JPanel buildDesktopDashboardSidePanel() {
@@ -7155,9 +7043,6 @@ public class UniversalMonitorControlCenter extends JFrame {
             boolean popoutOpen = desktopDashboardWindow != null && desktopDashboardWindow.isDisplayable();
             popOutPreviewButton.setEnabled(!popoutOpen);
             closePopOutPreviewButton.setEnabled(popoutOpen);
-            fullscreenPopOutPreviewButton.setEnabled(true);
-            desktopWindowFullscreenButton.setEnabled(true);
-            desktopWindowFullscreenButton.setText(desktopDashboardFullscreen ? "Exit Fullscreen" : "Fullscreen");
         });
     }
 
