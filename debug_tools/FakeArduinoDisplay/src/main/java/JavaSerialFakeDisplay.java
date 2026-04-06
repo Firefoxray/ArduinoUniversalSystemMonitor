@@ -530,7 +530,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int left = outerPad;
             int contentW = Math.max(320, w - outerPad * 2);
             int contentH = Math.max(280, h - outerPad * 2 - 12);
-            int rightColumnW = Math.max(280, (int) (contentW * 0.37));
+            int rightColumnW = Math.max(340, (int) (contentW * 0.44));
             int leftColumnW = contentW - rightColumnW - 12;
             int rowGap = 10;
 
@@ -549,13 +549,17 @@ public class JavaSerialFakeDisplay extends JFrame {
             int remainingH = contentH - (y - top);
             int leftTopH = Math.max(64, (int) (remainingH * 0.22));
             int leftBottomH = Math.max(120, remainingH - leftTopH - rowGap);
-            int rightTopH = Math.max(170, (int) (remainingH * 0.50));
+            int rightTopH = Math.max(150, (int) (remainingH * 0.42));
             int rightBottomH = Math.max(120, remainingH - rightTopH - rowGap);
 
             drawCpuThreadsDesktop(g2, left, y, leftColumnW, leftTopH);
-            drawProcessesDesktop(g2, left, y + leftTopH + rowGap, leftColumnW, leftBottomH);
+            int processY = y + leftTopH + rowGap;
+            int processH = Math.max(90, (int) (leftBottomH * 0.58));
+            int gpuH = Math.max(86, leftBottomH - processH - rowGap);
+            drawProcessesDesktop(g2, left, processY, leftColumnW, processH);
+            drawDesktopGpuCard(g2, left, processY + processH + rowGap, leftColumnW, gpuH);
             int rightX = left + leftColumnW + 12;
-            drawNetworkGpuStorageDesktop(g2, rightX, y, rightColumnW, rightTopH);
+            drawNetworkStorageDesktop(g2, rightX, y, rightColumnW, rightTopH);
             drawHistoryDesktop(g2, rightX, y + rightTopH + rowGap, rightColumnW, rightBottomH);
         }
 
@@ -620,7 +624,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("RAM", x + w - 66, y + 30);
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             int rowY = y + 48;
-            for (int i = 1; i <= 5; i++) {
+            for (int i = 1; i <= 4; i++) {
                 String name = truncate(packet.get("P" + i, "--"), 30);
                 String cpu = packet.get("P" + i + "CPU", "--");
                 String ram = packet.get("P" + i + "RAM", "--");
@@ -644,8 +648,21 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopMiniBar(g2, "Load", netBlend, x + 12, statsTop + 32, w - 24, ORANGE);
         }
 
-        private void drawNetworkGpuStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "Network / GPU / Storage", x, y, w, h);
+        private void drawDesktopGpuCard(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "GPU", x, y, w, h);
+            int gpu = packet.getInt("GPU", 0);
+            int vram = packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0));
+            int tempPct = parseTemperaturePct(packet.get("GPUTEMP", packet.get("GPU_TEMP", "0")));
+            drawDesktopMiniBar(g2, "GPU", gpu, x + 12, y + 30, w - 24, ORANGE);
+            drawDesktopMiniBar(g2, "VRAM", vram, x + 12, y + 46, w - 24, MAGENTA);
+            drawDesktopMiniBar(g2, "TEMP", tempPct, x + 12, y + 62, w - 24, YELLOW);
+            g2.setFont(new Font(MONO, Font.PLAIN, 11));
+            g2.setColor(CYAN);
+            g2.drawString("Name: " + truncate(packet.get("GPUNAME", "GPU"), 34), x + 12, y + h - 12);
+        }
+
+        private void drawNetworkStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            drawDesktopCard(g2, "Network / Storage", x, y, w, h);
             g2.setFont(new Font(MONO, Font.PLAIN, 12));
             int rowY = y + 30;
             drawDesktopField(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "--")), x + 10, rowY, LIME);
@@ -656,10 +673,6 @@ public class JavaSerialFakeDisplay extends JFrame {
             rowY += 18;
             drawDesktopField(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "--")), x + 10, rowY, WHITE);
             rowY += 20;
-            drawDesktopField(g2, "GPU Temp", packet.get("GPUTEMP", packet.get("GPU_TEMP", "--")), x + 10, rowY, ORANGE);
-            rowY += 18;
-            drawDesktopField(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "--")), x + 10, rowY, MAGENTA);
-            rowY += 18;
             drawDesktopField(g2, "Disk0", packet.get("DISK0", packet.get("D0", "--")) + "%", x + 10, rowY, CYAN);
             rowY += 18;
             drawDesktopField(g2, "Disk1", packet.get("DISK1", packet.get("D1", "--")) + "%", x + 10, rowY, YELLOW);
@@ -726,6 +739,22 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(label + ":", x, y);
             g2.setColor(valueColor);
             g2.drawString(truncate(value, 22), x + 66, y);
+        }
+
+        private int parseTemperaturePct(String text) {
+            if (text == null) {
+                return 0;
+            }
+            String digits = text.replaceAll("[^0-9]", "");
+            if (digits.isEmpty()) {
+                return 0;
+            }
+            try {
+                int temp = Integer.parseInt(digits);
+                return Math.max(0, Math.min(100, temp));
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
         }
 
         private void drawDesktopCard(Graphics2D g2, String title, int x, int y, int w, int h) {
