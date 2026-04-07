@@ -79,6 +79,27 @@ public class UniversalMonitorControlCenter extends JFrame {
             Pattern.compile("^codex/.*"),
             Pattern.compile("^codex-.*")
     );
+    // RayFetch quick-command customization:
+    // - edit RAYFETCH_ASCII_LOGO to change the displayed RayFetch logo
+    // - edit RAYFETCH_COMMAND_ALIASES to change accepted aliases + mapped Python flags
+    private static final String RAYFETCH_ASCII_LOGO = """
+            ██████╗  █████╗ ██╗   ██╗     ██████╗ ██████╗
+            ██╔══██╗██╔══██╗╚██╗ ██╔╝    ██╔════╝██╔═══██╗
+            ██████╔╝███████║ ╚████╔╝     ██║     ██║   ██║
+            ██╔══██╗██╔══██║  ╚██╔╝      ██║     ██║   ██║
+            ██║  ██║██║  ██║   ██║       ╚██████╗╚██████╔╝
+            ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝        ╚═════╝ ╚═════╝
+                    Universal System Monitor
+            """;
+    private static final Map<String, String> RAYFETCH_COMMAND_ALIASES = Map.ofEntries(
+            Map.entry("rayfetch", "--rayfetch"),
+            Map.entry("rf", "--rayfetch"),
+            Map.entry("json", "--json"),
+            Map.entry("payload-preview", "--payload-preview"),
+            Map.entry("payload", "--payload-preview"),
+            Map.entry("arduino-status", "--arduino-status"),
+            Map.entry("status", "--arduino-status")
+    );
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -245,6 +266,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel desktopDashboardUptimeSummaryLabel = new JLabel("Uptime: --");
     private final JLabel desktopDashboardNetworkSummaryLabel = new JLabel("Network: Down -- | Up --");
     private final JLabel desktopDashboardStorageSummaryLabel = new JLabel("Storage: Disk0 -- | Disk1 --");
+    private final JLabel desktopDashboardVersionSummaryLabel = new JLabel(APP_VERSION_DISPLAY);
     private final JPanel desktopDashboardSidePanel = new JPanel(new BorderLayout(8, 8));
     private final JPanel desktopDashboardWindowControlsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
     private final JScrollPane desktopDashboardLogScroller = new JScrollPane(desktopDashboardLogArea);
@@ -264,6 +286,22 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
     private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
     private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
+    private final JTextField rayfetchCommandInputField = new JTextField(26);
+    private final JButton rayfetchRunCommandButton = new JButton("Run RayFetch Command");
+    private final JLabel gamingTelemetrySourceLabel = new JLabel("Telemetry Source: MangoHud (Linux/Fedora path)");
+    private final JLabel gamingTelemetryStateLabel = new JLabel("Source Status: waiting");
+    private final JLabel gamingSessionStateLabel = new JLabel("Session: idle");
+    private final JLabel gamingGameNameLabel = new JLabel("Game/App: --");
+    private final JLabel gamingFpsLabel = new JLabel("FPS: --");
+    private final JLabel gamingFrametimeLabel = new JLabel("Frametime: -- ms");
+    private final JLabel gamingOnePercentLowLabel = new JLabel("1% Low: --");
+    private final JLabel gamingAverageFpsLabel = new JLabel("Average FPS: --");
+    private final JLabel gamingGpuStatsLabel = new JLabel("GPU: load -- | temp --");
+    private final JLabel gamingCpuStatsLabel = new JLabel("CPU: load -- | temp --");
+    private final JLabel gamingMemoryStatsLabel = new JLabel("RAM/VRAM: --");
+    private final JLabel gamingMangoHudPathLabel = new JLabel("MangoHud log path: --");
+    private final MangoHudTelemetryService mangoHudTelemetryService = new MangoHudTelemetryService();
+    private final GamingTelemetryCache gamingTelemetryCache = new GamingTelemetryCache();
     private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
@@ -414,6 +452,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
+        rayfetchCommandInputField.setToolTipText("Try: rayfetch, json, payload-preview, arduino-status");
+        rayfetchRunCommandButton.setToolTipText("Runs the mapped UniversalArduinoMonitor.py one-shot mode and streams output into logs.");
+        rayfetchCommandInputField.setText("rayfetch");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
         desktopDashboardLogArea.setEditable(false);
         desktopDashboardLogArea.setRows(10);
@@ -467,10 +508,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         });
         serviceTimer.setRepeats(true);
         serviceTimer.start();
+        Timer gamingTelemetryTimer = new Timer(1800, e -> refreshGamingModeTelemetryCards());
+        gamingTelemetryTimer.setRepeats(true);
+        gamingTelemetryTimer.start();
         refreshServiceStatus(false);
         refreshServiceStartupStatus(false);
         refreshDebugStatus(false);
         refreshTransportModeStatus(false);
+        refreshGamingModeTelemetryCards();
     }
 
     private JPanel buildRepoPanel() {
@@ -1217,6 +1262,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         killRunningTaskButton.addActionListener(e -> killActiveCommand());
         sshStatsSyncFromRemoteButton.addActionListener(e -> syncSshStatsFieldsFromRemoteTarget());
         sshStatsProbeButton.addActionListener(e -> runSshStatsProbe());
+        rayfetchRunCommandButton.addActionListener(e -> runRayfetchDashboardCommand());
+        rayfetchCommandInputField.addActionListener(e -> runRayfetchDashboardCommand());
         desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
@@ -4705,7 +4752,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void showDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow == null) {
-                desktopDashboardWindow = new JFrame("Ray Co. Desktop Monitor Dashboard (Pop-Out)");
+                desktopDashboardWindow = new JFrame("Ray Co. Desktop Monitor Dashboard (Pop-Out) - " + APP_VERSION_DISPLAY);
                 desktopDashboardWindow.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
@@ -4842,6 +4889,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Runtime", desktopDashboardUptimeSummaryLabel));
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Network Mini", desktopDashboardNetworkSummaryLabel));
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Storage Mini", desktopDashboardStorageSummaryLabel));
+        desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Project Version", desktopDashboardVersionSummaryLabel));
 
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
@@ -4906,7 +4954,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
         top.add(statusRow);
 
-        JLabel helper = new JLabel("<html><b>SSH Stats framework (v10.5 scaffold):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.0 scaffold):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
                 + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
@@ -4922,14 +4970,24 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
         JPanel cards = new JPanel(new GridLayout(0, 2, 10, 10));
-        cards.add(buildDashboardSummaryCard("Gaming Mode Status", new JLabel("Placeholder: disabled (framework ready).")));
-        cards.add(buildDashboardSummaryCard("Game/System Stats", new JLabel("Future: FPS, frame-time, latency, GPU hotspots.")));
-        cards.add(buildDashboardSummaryCard("Performance Profile", new JLabel("Future: high-performance service/profile toggles.")));
-        cards.add(buildDashboardSummaryCard("Input / Integration", new JLabel("Future: controller/game event integrations.")));
+        cards.add(buildDashboardSummaryCard("Current Game / App", gamingGameNameLabel));
+        cards.add(buildDashboardSummaryCard("Session State", gamingSessionStateLabel));
+        cards.add(buildDashboardSummaryCard("FPS", gamingFpsLabel));
+        cards.add(buildDashboardSummaryCard("Frametime", gamingFrametimeLabel));
+        cards.add(buildDashboardSummaryCard("1% Low", gamingOnePercentLowLabel));
+        cards.add(buildDashboardSummaryCard("Average FPS", gamingAverageFpsLabel));
+        cards.add(buildDashboardSummaryCard("GPU Usage / Temp", gamingGpuStatsLabel));
+        cards.add(buildDashboardSummaryCard("CPU Usage / Temp", gamingCpuStatsLabel));
+        cards.add(buildDashboardSummaryCard("RAM / VRAM", gamingMemoryStatsLabel));
+        cards.add(buildDashboardSummaryCard("Telemetry Source", gamingTelemetrySourceLabel));
+        cards.add(buildDashboardSummaryCard("Telemetry Source Status", gamingTelemetryStateLabel));
+        cards.add(buildDashboardSummaryCard("MangoHud Log Path", gamingMangoHudPathLabel));
         panel.add(cards, BorderLayout.CENTER);
-        JLabel footer = new JLabel("<html>Gaming Mode page is intentionally a v10.5 placeholder scaffold for future desktop-dashboard expansions.</html>");
+        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.0 Beta):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
+                + "Live parsing hooks are scaffolded now and fields are aligned for later Arduino gaming-page output.</html>");
         footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         panel.add(footer, BorderLayout.SOUTH);
+        refreshGamingModeTelemetryCards();
         return panel;
     }
 
@@ -4966,10 +5024,19 @@ public class UniversalMonitorControlCenter extends JFrame {
         actionRow.add(updateAndRestartButton);
         actionRow.add(refreshNowButton);
         controls.add(actionRow);
+        JPanel rayfetchRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        rayfetchRow.add(new JLabel("RayFetch CLI:"));
+        rayfetchRow.add(rayfetchCommandInputField);
+        rayfetchRow.add(rayfetchRunCommandButton);
+        controls.add(rayfetchRow);
+        JLabel rayfetchHelp = new JLabel("<html>Alias examples: <code>rayfetch</code>, <code>json</code>, <code>payload-preview</code>, <code>arduino-status</code>.<br>"
+                + "Mapped commands call <code>python3 UniversalArduinoMonitor.py &lt;flag&gt;</code> in the repo and stream output to Logs + popout footer.</html>");
+        rayfetchHelp.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
+        controls.add(rayfetchHelp);
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
-                "Desktop Monitor Settings page scaffold (v10.5):\n"
+                "Desktop Monitor Settings page scaffold (v11.0):\n"
                         + "- Theme controls are active and shared with the main popout controls.\n"
                         + "- Checkbox options are framework toggles for future layout/graph behavior.\n"
                         + "- This page is intended to become the central desktop-only settings hub.");
@@ -4995,6 +5062,193 @@ public class UniversalMonitorControlCenter extends JFrame {
         card.add(titleLabel, BorderLayout.NORTH);
         card.add(valueLabel, BorderLayout.CENTER);
         return card;
+    }
+
+    private void refreshGamingModeTelemetryCards() {
+        MangoHudTelemetrySnapshot snapshot = mangoHudTelemetryService.readSnapshot();
+        gamingTelemetryCache.updateFrom(snapshot);
+        gamingGameNameLabel.setText("Game/App: " + gamingTelemetryCache.activeGame);
+        gamingSessionStateLabel.setText("Session: " + gamingTelemetryCache.sessionState);
+        gamingFpsLabel.setText("FPS: " + gamingTelemetryCache.fps);
+        gamingFrametimeLabel.setText("Frametime: " + gamingTelemetryCache.frametimeMs + " ms");
+        gamingOnePercentLowLabel.setText("1% Low: " + gamingTelemetryCache.onePercentLow);
+        gamingAverageFpsLabel.setText("Average FPS: " + gamingTelemetryCache.averageFps);
+        gamingGpuStatsLabel.setText("GPU: load " + gamingTelemetryCache.gpuLoad + " | temp " + gamingTelemetryCache.gpuTemp);
+        gamingCpuStatsLabel.setText("CPU: load " + gamingTelemetryCache.cpuLoad + " | temp " + gamingTelemetryCache.cpuTemp);
+        gamingMemoryStatsLabel.setText("RAM/VRAM: " + gamingTelemetryCache.ramVram);
+        gamingTelemetryStateLabel.setText("Source Status: " + snapshot.sourceStatus);
+        gamingMangoHudPathLabel.setText("MangoHud log path: " + snapshot.logPathDisplay);
+    }
+
+    private static class GamingTelemetryCache {
+        private String activeGame = "--";
+        private String sessionState = "idle";
+        private String fps = "--";
+        private String frametimeMs = "--";
+        private String onePercentLow = "--";
+        private String averageFps = "--";
+        private String gpuLoad = "--";
+        private String gpuTemp = "--";
+        private String cpuLoad = "--";
+        private String cpuTemp = "--";
+        private String ramVram = "--";
+
+        private void updateFrom(MangoHudTelemetrySnapshot snapshot) {
+            activeGame = snapshot.activeGame;
+            sessionState = snapshot.sessionState;
+            fps = snapshot.fps;
+            frametimeMs = snapshot.frametimeMs;
+            onePercentLow = snapshot.onePercentLow;
+            averageFps = snapshot.averageFps;
+            gpuLoad = snapshot.gpuLoad;
+            gpuTemp = snapshot.gpuTemp;
+            cpuLoad = snapshot.cpuLoad;
+            cpuTemp = snapshot.cpuTemp;
+            ramVram = snapshot.ramVram;
+        }
+    }
+
+    private static class MangoHudTelemetryService {
+        private static final List<Path> CANDIDATE_LOG_PATHS = List.of(
+                Path.of(System.getProperty("user.home", ".")).resolve(".config/MangoHud/MangoHud.log"),
+                Path.of(System.getProperty("user.home", ".")).resolve(".local/share/MangoHud/MangoHud.log"),
+                Path.of("/tmp/MangoHud.log")
+        );
+
+        private MangoHudTelemetrySnapshot readSnapshot() {
+            for (Path candidate : CANDIDATE_LOG_PATHS) {
+                MangoHudTelemetrySnapshot parsed = parseSnapshotFromLog(candidate);
+                if (parsed != null) {
+                    return parsed;
+                }
+            }
+            return MangoHudTelemetrySnapshot.scaffold("waiting for MangoHud log file", "--");
+        }
+
+        private MangoHudTelemetrySnapshot parseSnapshotFromLog(Path path) {
+            if (!Files.isRegularFile(path)) {
+                return null;
+            }
+            try {
+                List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+                for (int i = lines.size() - 1; i >= 0; i--) {
+                    String line = lines.get(i).trim();
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    return MangoHudTelemetrySnapshot.fromLogLine(line, path.toString());
+                }
+                return MangoHudTelemetrySnapshot.scaffold("log file exists but has no parsable lines", path.toString());
+            } catch (IOException ex) {
+                return MangoHudTelemetrySnapshot.scaffold("log read error: " + ex.getMessage(), path.toString());
+            }
+        }
+    }
+
+    private static class MangoHudTelemetrySnapshot {
+        private final String activeGame;
+        private final String sessionState;
+        private final String fps;
+        private final String frametimeMs;
+        private final String onePercentLow;
+        private final String averageFps;
+        private final String gpuLoad;
+        private final String gpuTemp;
+        private final String cpuLoad;
+        private final String cpuTemp;
+        private final String ramVram;
+        private final String sourceStatus;
+        private final String logPathDisplay;
+
+        private MangoHudTelemetrySnapshot(
+                String activeGame,
+                String sessionState,
+                String fps,
+                String frametimeMs,
+                String onePercentLow,
+                String averageFps,
+                String gpuLoad,
+                String gpuTemp,
+                String cpuLoad,
+                String cpuTemp,
+                String ramVram,
+                String sourceStatus,
+                String logPathDisplay
+        ) {
+            this.activeGame = activeGame;
+            this.sessionState = sessionState;
+            this.fps = fps;
+            this.frametimeMs = frametimeMs;
+            this.onePercentLow = onePercentLow;
+            this.averageFps = averageFps;
+            this.gpuLoad = gpuLoad;
+            this.gpuTemp = gpuTemp;
+            this.cpuLoad = cpuLoad;
+            this.cpuTemp = cpuTemp;
+            this.ramVram = ramVram;
+            this.sourceStatus = sourceStatus;
+            this.logPathDisplay = logPathDisplay;
+        }
+
+        private static MangoHudTelemetrySnapshot scaffold(String sourceStatus, String logPathDisplay) {
+            return new MangoHudTelemetrySnapshot(
+                    "--",
+                    "idle",
+                    "--",
+                    "--",
+                    "--",
+                    "--",
+                    "--",
+                    "--",
+                    "--",
+                    "--",
+                    "--",
+                    sourceStatus,
+                    logPathDisplay
+            );
+        }
+
+        private static MangoHudTelemetrySnapshot fromLogLine(String line, String logPathDisplay) {
+            String normalized = line.toLowerCase(Locale.ROOT);
+            String fps = extractTrailingNumber(normalized, "fps");
+            String frametime = extractTrailingNumber(normalized, "frametime");
+            String gpuLoad = extractTrailingNumber(normalized, "gpu");
+            String cpuLoad = extractTrailingNumber(normalized, "cpu");
+            String gpuTemp = extractTrailingNumber(normalized, "gpu_temp");
+            String cpuTemp = extractTrailingNumber(normalized, "cpu_temp");
+            String ram = extractTrailingNumber(normalized, "ram");
+            String vram = extractTrailingNumber(normalized, "vram");
+            String ramVram = "RAM " + (ram.equals("--") ? "--" : ram + " MB")
+                    + " | VRAM " + (vram.equals("--") ? "--" : vram + " MB");
+            return new MangoHudTelemetrySnapshot(
+                    "Detected via MangoHud log",
+                    "active",
+                    fps,
+                    frametime,
+                    "--",
+                    "--",
+                    gpuLoad.equals("--") ? "--" : gpuLoad + "%",
+                    gpuTemp.equals("--") ? "--" : gpuTemp + "C",
+                    cpuLoad.equals("--") ? "--" : cpuLoad + "%",
+                    cpuTemp.equals("--") ? "--" : cpuTemp + "C",
+                    ramVram,
+                    "MangoHud telemetry scaffold online",
+                    logPathDisplay
+            );
+        }
+
+        private static String extractTrailingNumber(String line, String key) {
+            int idx = line.lastIndexOf(key);
+            if (idx < 0) {
+                return "--";
+            }
+            String tail = line.substring(idx + key.length()).replaceAll("[^0-9.]+", " ").trim();
+            if (tail.isEmpty()) {
+                return "--";
+            }
+            String[] parts = tail.split("\\s+");
+            return parts.length == 0 ? "--" : parts[0];
+        }
     }
 
     private void appendDesktopDashboardLogLine(String message) {
@@ -5267,6 +5521,48 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
         if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
         desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3");
+    }
+
+    private void runRayfetchDashboardCommand() {
+        String raw = rayfetchCommandInputField.getText() == null ? "" : rayfetchCommandInputField.getText().trim().toLowerCase(Locale.ROOT);
+        if (raw.isBlank()) {
+            log("[WARN] RayFetch CLI input is empty. Try: rayfetch, json, payload-preview, arduino-status");
+            return;
+        }
+        String mappedArg = RAYFETCH_COMMAND_ALIASES.get(raw);
+        if (mappedArg == null) {
+            log("[WARN] Unknown RayFetch alias '" + raw + "'. Accepted aliases: " + String.join(", ", RAYFETCH_COMMAND_ALIASES.keySet()));
+            return;
+        }
+        log("[RayFetch] Running alias '" + raw + "' -> " + mappedArg);
+        for (String logoLine : RAYFETCH_ASCII_LOGO.split("\\R")) {
+            if (!logoLine.isBlank()) {
+                log("[RayFetch] " + logoLine);
+            }
+        }
+        Thread runner = new Thread(() -> {
+            try {
+                Process process = new ProcessBuilder("bash", "-lc",
+                        "cd " + escape(repoPath().toString()) + " && python3 UniversalArduinoMonitor.py " + mappedArg)
+                        .directory(repoPath().toFile())
+                        .redirectErrorStream(true)
+                        .start();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        log("[RayFetch] " + line);
+                    }
+                }
+                int code = process.waitFor();
+                log(code == 0
+                        ? "[RayFetch] Command completed successfully."
+                        : "[RayFetch] Command exited with code " + code + ".");
+            } catch (Exception ex) {
+                log("[RayFetch][ERROR] Failed to run command: " + ex.getMessage());
+            }
+        }, "rayfetch-dashboard-cli");
+        runner.setDaemon(true);
+        runner.start();
     }
 
     private void startDashboardPreviewFlow() {

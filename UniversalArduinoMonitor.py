@@ -15,6 +15,7 @@ Highlights:
 """
 
 import json
+import argparse
 import os
 import re
 import shutil
@@ -1872,7 +1873,7 @@ def resolve_storage_percent(targets: List[Dict[str, Any]], configured_target_id:
     return 0
 
 
-def build_snapshot(last_net, last_time):
+def collect_snapshot(last_net, last_time):
     cpu_total_val = psutil.cpu_percent(interval=CPU_SAMPLE_INTERVAL)
     per_core = psutil.cpu_percent(interval=None, percpu=True)
     while len(per_core) < CPU_THREADS_TO_SEND:
@@ -1944,6 +1945,87 @@ def build_snapshot(last_net, last_time):
     }
 
     return snapshot, now_net, now_time
+
+
+def build_snapshot(last_net, last_time):
+    """Backward-compatible wrapper for older call sites."""
+    return collect_snapshot(last_net, last_time)
+
+
+def print_rayfetch(snapshot: Dict[str, object]) -> None:
+    print("=== RayFetch :: Ray Co. Universal Arduino System Monitor ===")
+    print(f"OS: {snapshot['os_name']}")
+    print(f"Hostname: {snapshot['host_name']}")
+    print(f"Uptime: {snapshot['uptime']}")
+    print(f"Active Interface: {snapshot['iface']}")
+    print(f"IP Address: {snapshot['ip']}")
+    print(f"CPU Frequency: {snapshot['cpu_freq']}")
+    print(f"CPU Usage: {snapshot['cpu_total']}%")
+    print(f"CPU Temp: {snapshot['cpu_temp']}")
+    print(f"RAM Usage: {snapshot['ram_pct']}% ({snapshot['ram_usage_text']})")
+    print(f"GPU Name: {snapshot['gpu_name']}")
+    print(f"GPU Usage: {snapshot['gpu_util']}%")
+    print(f"GPU Temp: {snapshot['gpu_temp']}")
+    print(f"GPU VRAM: {snapshot['gpu_mem_used']}/{snapshot['gpu_mem_total']} MB ({snapshot['gpu_mem_pct']}%)")
+    print(f"Storage: Disk0 {snapshot['disk0_pct']}% | Disk1 {snapshot['disk1_pct']}%")
+    if snapshot.get("storage_lines"):
+        print("Storage Lines:")
+        for line in snapshot["storage_lines"][:4]:
+            print(f"  - {line}")
+    if snapshot.get("procs"):
+        print("Top Processes:")
+        for name, cpu, ram in snapshot["procs"][:3]:
+            print(f"  - {name} | CPU {cpu} | RAM {ram}")
+
+
+def build_arduino_status_snapshot() -> Dict[str, object]:
+    static = get_cached_static()
+    candidate_ports = list_candidate_ports()
+    listed_ports = []
+    for port in list_ports.comports():
+        listed_ports.append({
+            "device": port.device,
+            "description": port.description,
+            "hwid": port.hwid,
+        })
+    return {
+        "app_version": APP_VERSION,
+        "os_name": static["os_name"],
+        "host_name": static["host_name"],
+        "active_interface": static["iface"],
+        "ip": get_ip(),
+        "preferred_port": PREFERRED_PORT or "AUTO",
+        "explicit_ports": EXPLICIT_ARDUINO_PORTS,
+        "candidate_ports": candidate_ports,
+        "serial_ports_seen": listed_ports,
+        "baud": BAUD,
+        "wifi_enabled": WIFI_ENABLED,
+        "wifi_host": WIFI_HOST,
+        "wifi_port": WIFI_PORT,
+        "wifi_auto_discovery": WIFI_AUTO_DISCOVERY,
+        "program_mode": PROGRAM_MODE,
+        "debug_mirror_enabled": DEBUG_MIRROR_ENABLED,
+    }
+
+
+def print_arduino_status() -> None:
+    status = build_arduino_status_snapshot()
+    print("=== Arduino Sender Status (No connection attempted) ===")
+    print(f"Version: {status['app_version']}")
+    print(f"OS: {status['os_name']} | Host: {status['host_name']}")
+    print(f"Active Interface: {status['active_interface']} | IP: {status['ip']}")
+    print(f"Preferred Port: {status['preferred_port']}")
+    print(f"Explicit Ports: {status['explicit_ports']}")
+    print(f"Candidate Ports: {status['candidate_ports']}")
+    print(f"Baud: {status['baud']}")
+    print(f"Wi-Fi: enabled={status['wifi_enabled']} host={status['wifi_host']} port={status['wifi_port']} auto_discovery={status['wifi_auto_discovery']}")
+    print(f"Program Mode: {status['program_mode']}")
+    print(f"Debug Mirror Enabled: {status['debug_mirror_enabled']}")
+    print("Detected serial devices:")
+    for entry in status["serial_ports_seen"]:
+        print(f"  - {entry['device']} :: {entry['description']} :: {entry['hwid']}")
+    if not status["serial_ports_seen"]:
+        print("  - none")
 
 
 def build_arduino_payload(snapshot) -> str:
@@ -2074,7 +2156,7 @@ def build_debug_payload(snapshot) -> str:
     return "|".join(pairs) + "\n"
 
 
-def main() -> None:
+def main_sender() -> None:
     if not acquire_single_instance_lock():
         print("Another instance is already running.")
         return
@@ -2160,7 +2242,7 @@ def main() -> None:
                     time.sleep(IDLE_LOOP_SLEEP)
                     continue
 
-                snapshot, last_net, last_time = build_snapshot(last_net, last_time)
+                snapshot, last_net, last_time = collect_snapshot(last_net, last_time)
                 payload = build_arduino_payload(snapshot)
                 qbt_payload = build_qbittorrent_payload(snapshot)
                 outbound_payload = payload + qbt_payload
@@ -2277,6 +2359,49 @@ def main() -> None:
         except Exception:
             pass
         release_single_instance_lock()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Ray Co. Universal Arduino System Monitor sender + RayFetch one-shot tools."
+    )
+    parser.add_argument("--rayfetch", action="store_true", help="Print one-shot terminal summary without connecting to Arduino.")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Print one-shot snapshot as JSON.")
+    parser.add_argument(
+        "--payload-preview",
+        action="store_true",
+        help="Print the exact Arduino payload generated from a one-shot snapshot without connecting.",
+    )
+    parser.add_argument(
+        "--arduino-status",
+        action="store_true",
+        help="Print Arduino sender diagnostics (ports/interface/transport config) without connecting.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    one_shot_mode = args.rayfetch or args.as_json or args.payload_preview or args.arduino_status
+    if one_shot_mode:
+        if args.arduino_status:
+            print_arduino_status()
+        if args.rayfetch or args.as_json or args.payload_preview:
+            static = get_cached_static()
+            iface = static["iface"]
+            net_stats = psutil.net_io_counters(pernic=True)
+            last_net = net_stats.get(iface) or psutil.net_io_counters()
+            last_time = time.time()
+            snapshot, _, _ = collect_snapshot(last_net, last_time)
+            if args.rayfetch:
+                print_rayfetch(snapshot)
+            if args.as_json:
+                print(json.dumps(snapshot, indent=2))
+            if args.payload_preview:
+                print(build_arduino_payload(snapshot), end="")
+        return
+
+    main_sender()
 
 
 if __name__ == "__main__":

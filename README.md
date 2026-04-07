@@ -1,6 +1,8 @@
-# Arduino Universal System Monitor (V10)
+# Arduino Universal System Monitor (v11.0 Beta)
 
 A Fedora-first desktop monitor that sends live PC stats to Arduino touchscreen dashboards, with a GUI Control Center for setup, flashing, and monitor settings.
+
+**Current version:** `v11.0 Beta` (shared via `VERSION`).
 
 - **Current focus:** Linux/Fedora workflow and GUI-first setup.
 - **Primary GUI:** Java Control Center (`./UniversalMonitorControlCenter.sh`).
@@ -24,11 +26,17 @@ It is currently tuned and tested mainly for **Fedora Linux**.
 - Live stats: CPU, RAM, temperatures, network, storage, processes, GPU, and optional qBittorrent data.
 - USB + Wi-Fi monitor transport, with UNO R4 Wi-Fi pairing helpers.
 - Board/page profiles and per-board display options.
+- RayFetch one-shot CLI modes for snapshot debugging:
+  - `--rayfetch`
+  - `--json`
+  - `--payload-preview`
+  - `--arduino-status`
 - Storage target controls, including:
   - `storage_enabled_targets`
   - `storage_disk0_target`
   - `storage_disk1_target`
 - Built-in flashing workflow from the Control Center.
+- Desktop pop-out Gaming Mode framework page with MangoHud-oriented Linux telemetry scaffolding for future FPS/frametime ingestion.
 
 ---
 
@@ -104,6 +112,15 @@ sudo systemctl stop arduino-monitor.service
 python3 UniversalArduinoMonitor.py
 ```
 
+### RayFetch one-shot commands
+
+```bash
+python3 UniversalArduinoMonitor.py --rayfetch
+python3 UniversalArduinoMonitor.py --json
+python3 UniversalArduinoMonitor.py --payload-preview
+python3 UniversalArduinoMonitor.py --arduino-status
+```
+
 ---
 
 ## Notes / limitations
@@ -122,7 +139,7 @@ python3 UniversalArduinoMonitor.py
 - Improve first-run diagnostics/help messaging.
 - **Windows compatibility planned for a future release**.
 
-## Remote actions (advanced / optional in V10)
+## Remote actions (advanced / optional in v11.0 Beta)
 
 The Control Center includes a **Remote / CLI actions panel** with a conservative "predefined actions only" model:
 - update project
@@ -130,4 +147,4 @@ The Control Center includes a **Remote / CLI actions panel** with a conservative
 - monitor service restart/status
 - Wi-Fi discovery debug log action
 
-Actions can run locally or over SSH (saved target profiles supported). This is intended as an advanced helper path, not a required setup path for V10.
+Actions can run locally or over SSH (saved target profiles supported). This is intended as an advanced helper path, not a required setup path for v11.0 Beta.
