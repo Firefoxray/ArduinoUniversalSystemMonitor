@@ -111,6 +111,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JTextArea outputArea = new JTextArea();
     private final JTextArea settingsOutputArea = new JTextArea();
+    private final JTextArea desktopSettingsOutputArea = new JTextArea();
     private JPanel outputPanelTab;
 
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
@@ -288,6 +289,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
     private final JTextField rayfetchCommandInputField = new JTextField(26);
     private final JButton rayfetchRunCommandButton = new JButton("Run RayFetch Command");
+    private final JButton desktopDashboardFullscreenToggleButton = new JButton("Fullscreen");
     private final JLabel gamingTelemetrySourceLabel = new JLabel("Telemetry Source: MangoHud (Linux/Fedora path)");
     private final JLabel gamingTelemetryStateLabel = new JLabel("Source Status: waiting");
     private final JLabel gamingSessionStateLabel = new JLabel("Session: idle");
@@ -305,6 +307,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
+    private Rectangle desktopDashboardWindowedBounds;
+    private boolean desktopDashboardFullscreen;
     private boolean syncingThemeToggles;
 
     private final Color darkBackground = new Color(23, 39, 66);
@@ -454,6 +458,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         rayfetchCommandInputField.setToolTipText("Try: rayfetch, json, payload-preview, arduino-status");
         rayfetchRunCommandButton.setToolTipText("Runs the mapped UniversalArduinoMonitor.py one-shot mode and streams output into logs.");
+        desktopDashboardFullscreenToggleButton.setToolTipText("Toggle the pop-out dashboard window between fullscreen and windowed mode.");
         rayfetchCommandInputField.setText("rayfetch");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
         desktopDashboardLogArea.setEditable(false);
@@ -490,6 +495,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         dashboardSudoPasswordField.setText(new String(sudoPasswordField.getPassword()));
         dashboardRememberPasswordToggle.setSelected(rememberPasswordToggle.isSelected());
         settingsOutputArea.setDocument(outputArea.getDocument());
+        desktopSettingsOutputArea.setDocument(outputArea.getDocument());
         setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
@@ -572,7 +578,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
         tabs.addTab("Monitor", buildMonitorModulesTab());
         tabs.addTab("Storage", buildStorageTab());
-        outputPanelTab = buildOutputPanel();
+        outputPanelTab = buildLogsTab();
         tabs.addTab("Logs", outputPanelTab);
         return tabs;
     }
@@ -1206,6 +1212,27 @@ public class UniversalMonitorControlCenter extends JFrame {
         return buildOutputPanel(outputArea, "Command Output / Logs");
     }
 
+    private JPanel buildLogsTab() {
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.add(buildOutputPanel(), BorderLayout.CENTER);
+
+        JPanel cliFooter = new JPanel();
+        cliFooter.setLayout(new BoxLayout(cliFooter, BoxLayout.Y_AXIS));
+        cliFooter.setBorder(new EmptyBorder(4, 0, 0, 0));
+        JPanel commandRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        commandRow.add(new JLabel("RayFetch CLI:"));
+        commandRow.add(rayfetchCommandInputField);
+        commandRow.add(rayfetchRunCommandButton);
+        cliFooter.add(commandRow);
+
+        JLabel helper = new JLabel("<html>Run a RayFetch alias here and watch output above immediately. "
+                + "Examples: <code>rayfetch</code>, <code>json</code>, <code>payload-preview</code>, <code>arduino-status</code>.</html>");
+        helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
+        cliFooter.add(helper);
+        panel.add(cliFooter, BorderLayout.SOUTH);
+        return panel;
+    }
+
     private JPanel buildPersistentOutputFooter() {
         settingsOutputArea.setRows(7);
         JPanel panel = buildOutputPanel(settingsOutputArea, "Command Output / Logs (Persistent Footer)");
@@ -1263,6 +1290,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         sshStatsSyncFromRemoteButton.addActionListener(e -> syncSshStatsFieldsFromRemoteTarget());
         sshStatsProbeButton.addActionListener(e -> runSshStatsProbe());
         rayfetchRunCommandButton.addActionListener(e -> runRayfetchDashboardCommand());
+        desktopDashboardFullscreenToggleButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
         rayfetchCommandInputField.addActionListener(e -> runRayfetchDashboardCommand());
         desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
@@ -4805,11 +4833,49 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void closeDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
+            if (desktopDashboardWindow != null && desktopDashboardFullscreen) {
+                GraphicsDevice device = desktopDashboardWindow.getGraphicsConfiguration().getDevice();
+                if (device != null && device.getFullScreenWindow() == desktopDashboardWindow) {
+                    device.setFullScreenWindow(null);
+                }
+            }
             if (desktopDashboardWindow != null) {
                 desktopDashboardWindow.dispose();
             }
             desktopDashboardWindow = null;
+            desktopDashboardFullscreen = false;
             updatePreviewButtons();
+        });
+    }
+
+    private void toggleDesktopDashboardFullscreen() {
+        SwingUtilities.invokeLater(() -> {
+            if (desktopDashboardWindow == null || !desktopDashboardWindow.isDisplayable()) {
+                showDesktopDashboardWindow();
+                return;
+            }
+            GraphicsDevice device = desktopDashboardWindow.getGraphicsConfiguration().getDevice();
+            if (!desktopDashboardFullscreen) {
+                desktopDashboardWindowedBounds = desktopDashboardWindow.getBounds();
+                if (device != null) {
+                    device.setFullScreenWindow(desktopDashboardWindow);
+                } else {
+                    desktopDashboardWindow.setExtendedState(Frame.MAXIMIZED_BOTH);
+                }
+                desktopDashboardFullscreen = true;
+            } else {
+                if (device != null && device.getFullScreenWindow() == desktopDashboardWindow) {
+                    device.setFullScreenWindow(null);
+                } else {
+                    desktopDashboardWindow.setExtendedState(Frame.NORMAL);
+                }
+                if (desktopDashboardWindowedBounds != null) {
+                    desktopDashboardWindow.setBounds(desktopDashboardWindowedBounds);
+                }
+                desktopDashboardFullscreen = false;
+            }
+            desktopDashboardWindow.toFront();
+            desktopDashboardWindow.requestFocus();
         });
     }
 
@@ -5021,18 +5087,11 @@ public class UniversalMonitorControlCenter extends JFrame {
             refreshDesktopDashboardLogSnapshot();
             updateDesktopSettingsStatus();
         });
+        desktopDashboardFullscreenToggleButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
         actionRow.add(updateAndRestartButton);
         actionRow.add(refreshNowButton);
+        actionRow.add(desktopDashboardFullscreenToggleButton);
         controls.add(actionRow);
-        JPanel rayfetchRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
-        rayfetchRow.add(new JLabel("RayFetch CLI:"));
-        rayfetchRow.add(rayfetchCommandInputField);
-        rayfetchRow.add(rayfetchRunCommandButton);
-        controls.add(rayfetchRow);
-        JLabel rayfetchHelp = new JLabel("<html>Alias examples: <code>rayfetch</code>, <code>json</code>, <code>payload-preview</code>, <code>arduino-status</code>.<br>"
-                + "Mapped commands call <code>python3 UniversalArduinoMonitor.py &lt;flag&gt;</code> in the repo and stream output to Logs + popout footer.</html>");
-        rayfetchHelp.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
-        controls.add(rayfetchHelp);
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
@@ -5047,7 +5106,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(notes, BorderLayout.CENTER);
 
         desktopSettingsStatusLabel.setBorder(new EmptyBorder(4, 2, 4, 2));
-        panel.add(desktopSettingsStatusLabel, BorderLayout.SOUTH);
+        JPanel footer = new JPanel(new BorderLayout(0, 6));
+        footer.add(desktopSettingsStatusLabel, BorderLayout.NORTH);
+        desktopSettingsOutputArea.setRows(7);
+        footer.add(buildOutputPanel(desktopSettingsOutputArea, "Command Output / Logs"), BorderLayout.CENTER);
+        panel.add(footer, BorderLayout.SOUTH);
         updateDesktopSettingsStatus();
         return panel;
     }
