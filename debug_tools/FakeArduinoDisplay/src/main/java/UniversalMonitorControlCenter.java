@@ -79,6 +79,27 @@ public class UniversalMonitorControlCenter extends JFrame {
             Pattern.compile("^codex/.*"),
             Pattern.compile("^codex-.*")
     );
+    // RayFetch quick-command customization:
+    // - edit RAYFETCH_ASCII_LOGO to change the displayed RayFetch logo
+    // - edit RAYFETCH_COMMAND_ALIASES to change accepted aliases + mapped Python flags
+    private static final String RAYFETCH_ASCII_LOGO = """
+            ██████╗  █████╗ ██╗   ██╗     ██████╗ ██████╗
+            ██╔══██╗██╔══██╗╚██╗ ██╔╝    ██╔════╝██╔═══██╗
+            ██████╔╝███████║ ╚████╔╝     ██║     ██║   ██║
+            ██╔══██╗██╔══██║  ╚██╔╝      ██║     ██║   ██║
+            ██║  ██║██║  ██║   ██║       ╚██████╗╚██████╔╝
+            ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝        ╚═════╝ ╚═════╝
+                    Universal System Monitor
+            """;
+    private static final Map<String, String> RAYFETCH_COMMAND_ALIASES = Map.ofEntries(
+            Map.entry("rayfetch", "--rayfetch"),
+            Map.entry("rf", "--rayfetch"),
+            Map.entry("json", "--json"),
+            Map.entry("payload-preview", "--payload-preview"),
+            Map.entry("payload", "--payload-preview"),
+            Map.entry("arduino-status", "--arduino-status"),
+            Map.entry("status", "--arduino-status")
+    );
 
     private final JTextField repoField = new JTextField(40);
     private final JPasswordField sudoPasswordField = new JPasswordField(18);
@@ -245,6 +266,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel desktopDashboardUptimeSummaryLabel = new JLabel("Uptime: --");
     private final JLabel desktopDashboardNetworkSummaryLabel = new JLabel("Network: Down -- | Up --");
     private final JLabel desktopDashboardStorageSummaryLabel = new JLabel("Storage: Disk0 -- | Disk1 --");
+    private final JLabel desktopDashboardVersionSummaryLabel = new JLabel(APP_VERSION_DISPLAY);
     private final JPanel desktopDashboardSidePanel = new JPanel(new BorderLayout(8, 8));
     private final JPanel desktopDashboardWindowControlsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
     private final JScrollPane desktopDashboardLogScroller = new JScrollPane(desktopDashboardLogArea);
@@ -264,6 +286,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
     private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
     private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
+    private final JTextField rayfetchCommandInputField = new JTextField(26);
+    private final JButton rayfetchRunCommandButton = new JButton("Run RayFetch Command");
     private final JLabel gamingTelemetrySourceLabel = new JLabel("Telemetry Source: MangoHud (Linux/Fedora path)");
     private final JLabel gamingTelemetryStateLabel = new JLabel("Source Status: waiting");
     private final JLabel gamingSessionStateLabel = new JLabel("Session: idle");
@@ -428,6 +452,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
+        rayfetchCommandInputField.setToolTipText("Try: rayfetch, json, payload-preview, arduino-status");
+        rayfetchRunCommandButton.setToolTipText("Runs the mapped UniversalArduinoMonitor.py one-shot mode and streams output into logs.");
+        rayfetchCommandInputField.setText("rayfetch");
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
         desktopDashboardLogArea.setEditable(false);
         desktopDashboardLogArea.setRows(10);
@@ -1235,6 +1262,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         killRunningTaskButton.addActionListener(e -> killActiveCommand());
         sshStatsSyncFromRemoteButton.addActionListener(e -> syncSshStatsFieldsFromRemoteTarget());
         sshStatsProbeButton.addActionListener(e -> runSshStatsProbe());
+        rayfetchRunCommandButton.addActionListener(e -> runRayfetchDashboardCommand());
+        rayfetchCommandInputField.addActionListener(e -> runRayfetchDashboardCommand());
         desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
@@ -4723,7 +4752,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void showDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow == null) {
-                desktopDashboardWindow = new JFrame("Ray Co. Desktop Monitor Dashboard (Pop-Out)");
+                desktopDashboardWindow = new JFrame("Ray Co. Desktop Monitor Dashboard (Pop-Out) - " + APP_VERSION_DISPLAY);
                 desktopDashboardWindow.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
@@ -4860,6 +4889,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Runtime", desktopDashboardUptimeSummaryLabel));
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Network Mini", desktopDashboardNetworkSummaryLabel));
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Storage Mini", desktopDashboardStorageSummaryLabel));
+        desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Project Version", desktopDashboardVersionSummaryLabel));
 
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
@@ -4994,6 +5024,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         actionRow.add(updateAndRestartButton);
         actionRow.add(refreshNowButton);
         controls.add(actionRow);
+        JPanel rayfetchRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        rayfetchRow.add(new JLabel("RayFetch CLI:"));
+        rayfetchRow.add(rayfetchCommandInputField);
+        rayfetchRow.add(rayfetchRunCommandButton);
+        controls.add(rayfetchRow);
+        JLabel rayfetchHelp = new JLabel("<html>Alias examples: <code>rayfetch</code>, <code>json</code>, <code>payload-preview</code>, <code>arduino-status</code>.<br>"
+                + "Mapped commands call <code>python3 UniversalArduinoMonitor.py &lt;flag&gt;</code> in the repo and stream output to Logs + popout footer.</html>");
+        rayfetchHelp.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
+        controls.add(rayfetchHelp);
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
@@ -5482,6 +5521,48 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
         if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
         desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3");
+    }
+
+    private void runRayfetchDashboardCommand() {
+        String raw = rayfetchCommandInputField.getText() == null ? "" : rayfetchCommandInputField.getText().trim().toLowerCase(Locale.ROOT);
+        if (raw.isBlank()) {
+            log("[WARN] RayFetch CLI input is empty. Try: rayfetch, json, payload-preview, arduino-status");
+            return;
+        }
+        String mappedArg = RAYFETCH_COMMAND_ALIASES.get(raw);
+        if (mappedArg == null) {
+            log("[WARN] Unknown RayFetch alias '" + raw + "'. Accepted aliases: " + String.join(", ", RAYFETCH_COMMAND_ALIASES.keySet()));
+            return;
+        }
+        log("[RayFetch] Running alias '" + raw + "' -> " + mappedArg);
+        for (String logoLine : RAYFETCH_ASCII_LOGO.split("\\R")) {
+            if (!logoLine.isBlank()) {
+                log("[RayFetch] " + logoLine);
+            }
+        }
+        Thread runner = new Thread(() -> {
+            try {
+                Process process = new ProcessBuilder("bash", "-lc",
+                        "cd " + escape(repoPath().toString()) + " && python3 UniversalArduinoMonitor.py " + mappedArg)
+                        .directory(repoPath().toFile())
+                        .redirectErrorStream(true)
+                        .start();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        log("[RayFetch] " + line);
+                    }
+                }
+                int code = process.waitFor();
+                log(code == 0
+                        ? "[RayFetch] Command completed successfully."
+                        : "[RayFetch] Command exited with code " + code + ".");
+            } catch (Exception ex) {
+                log("[RayFetch][ERROR] Failed to run command: " + ex.getMessage());
+            }
+        }, "rayfetch-dashboard-cli");
+        runner.setDaemon(true);
+        runner.start();
     }
 
     private void startDashboardPreviewFlow() {

@@ -6,6 +6,8 @@
 - Added a shared snapshot path in the Python monitor (`collect_snapshot`) so sender and one-shot CLI outputs reuse the same Fedora/Linux monitor data source.
 - Upgraded the desktop pop-out **Gaming Mode** tab from placeholder cards to a structured telemetry framework layout (game/app, FPS, frametime, GPU/CPU, RAM/VRAM, session/source state).
 - Added Fedora/Linux MangoHud-oriented telemetry scaffolding in the Control Center so Gaming Mode now has a real backend path for future live FPS/frametime ingestion and later Arduino gaming-page reuse.
+- Added a pop-out dashboard RayFetch CLI launcher box (alias-to-flag mapping + editable ASCII logo defaults) that runs one-shot monitor commands asynchronously and streams output into dashboard logs.
+- Updated pop-out dashboard version visibility so the window title and summary cards clearly show the active project version.
 
 ## v10.5 Beta - 2026-04-06
 - Bumped the shared project version to v10.5 Beta across VERSION and generated Arduino app headers.
