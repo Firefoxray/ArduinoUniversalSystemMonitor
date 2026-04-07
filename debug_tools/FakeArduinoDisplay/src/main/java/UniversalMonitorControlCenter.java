@@ -4,6 +4,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.io.BufferedReader;
 import java.io.File;
@@ -289,6 +290,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
     private final JTextField rayfetchCommandInputField = new JTextField(26);
     private final JButton rayfetchRunCommandButton = new JButton("Run RayFetch Command");
+    private final JButton rayfetchClearLogsButton = new JButton("Clear Logs");
     private final JButton desktopDashboardFullscreenToggleButton = new JButton("Fullscreen");
     private final JLabel gamingTelemetrySourceLabel = new JLabel("Telemetry Source: MangoHud (Linux/Fedora path)");
     private final JLabel gamingTelemetryStateLabel = new JLabel("Source Status: waiting");
@@ -305,6 +307,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final MangoHudTelemetryService mangoHudTelemetryService = new MangoHudTelemetryService();
     private final GamingTelemetryCache gamingTelemetryCache = new GamingTelemetryCache();
     private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
+    private final ArrayDeque<String> rayfetchCommandHistory = new ArrayDeque<>();
+    private int rayfetchHistoryCursor = 0;
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
     private JFrame desktopDashboardWindow;
     private Rectangle desktopDashboardWindowedBounds;
@@ -458,8 +462,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         rayfetchCommandInputField.setToolTipText("Try: rayfetch, json, payload-preview, arduino-status");
         rayfetchRunCommandButton.setToolTipText("Runs the mapped UniversalArduinoMonitor.py one-shot mode and streams output into logs.");
+        rayfetchClearLogsButton.setToolTipText("Clears the shared command/log output used by Logs and settings views.");
         desktopDashboardFullscreenToggleButton.setToolTipText("Toggle the pop-out dashboard window between fullscreen and windowed mode.");
         rayfetchCommandInputField.setText("rayfetch");
+        installRayfetchHistoryInputSupport();
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
         desktopDashboardLogArea.setEditable(false);
         desktopDashboardLogArea.setRows(10);
@@ -1223,6 +1229,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         commandRow.add(new JLabel("RayFetch CLI:"));
         commandRow.add(rayfetchCommandInputField);
         commandRow.add(rayfetchRunCommandButton);
+        commandRow.add(rayfetchClearLogsButton);
         cliFooter.add(commandRow);
 
         JLabel helper = new JLabel("<html>Run a RayFetch alias here and watch output above immediately. "
@@ -1290,6 +1297,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         sshStatsSyncFromRemoteButton.addActionListener(e -> syncSshStatsFieldsFromRemoteTarget());
         sshStatsProbeButton.addActionListener(e -> runSshStatsProbe());
         rayfetchRunCommandButton.addActionListener(e -> runRayfetchDashboardCommand());
+        rayfetchClearLogsButton.addActionListener(e -> clearSharedCommandOutput());
         desktopDashboardFullscreenToggleButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
         rayfetchCommandInputField.addActionListener(e -> runRayfetchDashboardCommand());
         desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
@@ -5586,17 +5594,76 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3");
     }
 
+    private void installRayfetchHistoryInputSupport() {
+        rayfetchCommandInputField.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_UP) {
+                    recallRayfetchHistory(-1);
+                    e.consume();
+                } else if (e.getKeyCode() == KeyEvent.VK_DOWN) {
+                    recallRayfetchHistory(1);
+                    e.consume();
+                }
+            }
+        });
+    }
+
+    private void rememberRayfetchCommand(String command) {
+        String normalized = command == null ? "" : command.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return;
+        }
+        if (!rayfetchCommandHistory.isEmpty() && normalized.equals(rayfetchCommandHistory.peekLast())) {
+            rayfetchHistoryCursor = rayfetchCommandHistory.size();
+            return;
+        }
+        rayfetchCommandHistory.addLast(normalized);
+        while (rayfetchCommandHistory.size() > 15) {
+            rayfetchCommandHistory.removeFirst();
+        }
+        rayfetchHistoryCursor = rayfetchCommandHistory.size();
+    }
+
+    private void recallRayfetchHistory(int delta) {
+        if (rayfetchCommandHistory.isEmpty()) {
+            return;
+        }
+        int size = rayfetchCommandHistory.size();
+        int next = Math.max(0, Math.min(size, rayfetchHistoryCursor + delta));
+        rayfetchHistoryCursor = next;
+        if (next == size) {
+            rayfetchCommandInputField.setText("");
+            return;
+        }
+        List<String> items = new ArrayList<>(rayfetchCommandHistory);
+        rayfetchCommandInputField.setText(items.get(next));
+        rayfetchCommandInputField.setCaretPosition(rayfetchCommandInputField.getText().length());
+    }
+
+    private void clearSharedCommandOutput() {
+        SwingUtilities.invokeLater(() -> {
+            outputArea.setText("");
+            desktopDashboardLogLines.clear();
+            desktopDashboardLogArea.setText("");
+            log("[CLI] Shared command/log output cleared.");
+        });
+    }
+
     private void runRayfetchDashboardCommand() {
         String raw = rayfetchCommandInputField.getText() == null ? "" : rayfetchCommandInputField.getText().trim().toLowerCase(Locale.ROOT);
         if (raw.isBlank()) {
-            log("[WARN] RayFetch CLI input is empty. Try: rayfetch, json, payload-preview, arduino-status");
+            log("[CLI][WARN] RayFetch CLI input is empty. Try: rayfetch, json, payload-preview, arduino-status");
             return;
         }
         String mappedArg = RAYFETCH_COMMAND_ALIASES.get(raw);
         if (mappedArg == null) {
-            log("[WARN] Unknown RayFetch alias '" + raw + "'. Accepted aliases: " + String.join(", ", RAYFETCH_COMMAND_ALIASES.keySet()));
+            log("[CLI][WARN] Unknown RayFetch alias '" + raw + "'. Accepted aliases: " + String.join(", ", RAYFETCH_COMMAND_ALIASES.keySet()));
             return;
         }
+        rememberRayfetchCommand(raw);
+        log("[CLI] Running: " + raw);
+        log("[Command] python3 UniversalArduinoMonitor.py " + mappedArg);
         log("[RayFetch] Running alias '" + raw + "' -> " + mappedArg);
         for (String logoLine : RAYFETCH_ASCII_LOGO.split("\\R")) {
             if (!logoLine.isBlank()) {
@@ -5608,24 +5675,36 @@ public class UniversalMonitorControlCenter extends JFrame {
                 Process process = new ProcessBuilder("bash", "-lc",
                         "cd " + escape(repoPath().toString()) + " && python3 UniversalArduinoMonitor.py " + mappedArg)
                         .directory(repoPath().toFile())
-                        .redirectErrorStream(true)
                         .start();
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        log("[RayFetch] " + line);
-                    }
-                }
+                Thread stdoutReader = new Thread(() -> streamProcessLines(process.getInputStream(), "[CLI][OUT]"), "rayfetch-cli-stdout");
+                Thread stderrReader = new Thread(() -> streamProcessLines(process.getErrorStream(), "[CLI][ERR]"), "rayfetch-cli-stderr");
+                stdoutReader.setDaemon(true);
+                stderrReader.setDaemon(true);
+                stdoutReader.start();
+                stderrReader.start();
                 int code = process.waitFor();
+                stdoutReader.join(300);
+                stderrReader.join(300);
                 log(code == 0
-                        ? "[RayFetch] Command completed successfully."
-                        : "[RayFetch] Command exited with code " + code + ".");
+                        ? "[CLI] Command completed successfully."
+                        : "[CLI][ERR] Command exited with code " + code + ".");
             } catch (Exception ex) {
-                log("[RayFetch][ERROR] Failed to run command: " + ex.getMessage());
+                log("[CLI][ERR] Failed to run command: " + ex.getMessage());
             }
         }, "rayfetch-dashboard-cli");
         runner.setDaemon(true);
         runner.start();
+    }
+
+    private void streamProcessLines(java.io.InputStream stream, String prefix) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                log(prefix + " " + line);
+            }
+        } catch (IOException ex) {
+            log("[CLI][ERR] Failed to read command stream: " + ex.getMessage());
+        }
     }
 
     private void startDashboardPreviewFlow() {
