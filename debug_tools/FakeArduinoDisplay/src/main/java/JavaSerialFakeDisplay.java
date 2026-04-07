@@ -544,7 +544,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int left = outerPad;
             int contentW = Math.max(320, w - outerPad * 2);
             int contentH = Math.max(280, h - outerPad * 2 - 12);
-            int rightColumnW = Math.max(340, (int) (contentW * 0.44));
+            int rightColumnW = Math.max(300, (int) (contentW * 0.38));
             int leftColumnW = contentW - rightColumnW - 12;
             int rowGap = 10;
 
@@ -561,17 +561,14 @@ public class JavaSerialFakeDisplay extends JFrame {
 
             y += summaryH + rowGap;
             int remainingH = contentH - (y - top);
-            int leftTopH = Math.max(64, (int) (remainingH * 0.22));
-            int leftBottomH = Math.max(120, remainingH - leftTopH - rowGap);
-            int rightTopH = Math.max(150, (int) (remainingH * 0.42));
+            int leftTopH = Math.max(58, (int) (remainingH * 0.17));
+            int leftBottomH = Math.max(160, remainingH - leftTopH - rowGap);
+            int rightTopH = Math.max(140, (int) (remainingH * 0.38));
             int rightBottomH = Math.max(120, remainingH - rightTopH - rowGap);
 
             drawCpuThreadsDesktop(g2, left, y, leftColumnW, leftTopH);
-            int processY = y + leftTopH + rowGap;
-            int processH = Math.max(90, (int) (leftBottomH * 0.58));
-            int gpuH = Math.max(86, leftBottomH - processH - rowGap);
-            drawProcessesDesktop(g2, left, processY, leftColumnW, processH);
-            drawDesktopGpuCard(g2, left, processY + processH + rowGap, leftColumnW, gpuH);
+            int gpuY = y + leftTopH + rowGap;
+            drawDesktopGpuCard(g2, left, gpuY, leftColumnW, leftBottomH);
             int rightX = left + leftColumnW + 12;
             drawNetworkStorageDesktop(g2, rightX, y, rightColumnW, rightTopH);
             drawHistoryDesktop(g2, rightX, y + rightTopH + rowGap, rightColumnW, rightBottomH);
@@ -603,68 +600,58 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawCpuThreadsDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "CPU Threads (Mini)", x, y, w, h);
-            int cols = 8;
-            int rows = 2;
-            int cellW = Math.max(52, (w - 24) / cols);
-            int cellH = Math.max(16, (h - 36) / rows);
-            g2.setFont(new Font(MONO, Font.BOLD, 9));
+            drawDesktopCard(g2, "CPU Thread Activity (Compact)", x, y, w, h);
+            int cols = 16;
+            int cellGap = 4;
+            int barW = Math.max(8, (w - 24 - ((cols - 1) * cellGap)) / cols);
+            int barH = Math.max(18, h - 52);
+            int barY = y + 24;
             for (int i = 0; i < 16; i++) {
-                int col = i % cols;
-                int row = i / cols;
-                int cellX = x + 10 + col * cellW;
-                int cellY = y + 26 + row * cellH;
+                int cellX = x + 10 + i * (barW + cellGap);
                 int val = packet.getInt("C" + i, packet.getInt("CPU" + i, 0));
-                g2.setColor(WHITE);
-                g2.drawString("C" + i, cellX, cellY);
+                int fillH = Math.max(1, (int) ((barH - 2) * (Math.max(0, Math.min(100, val)) / 100.0)));
+                int fillY = barY + barH - fillH;
+                g2.setColor(new Color(58, 74, 102));
+                g2.fillRoundRect(cellX, barY, barW, barH, 4, 4);
                 g2.setColor(getHeatColor(val));
-                g2.drawString(val + "%", cellX + 18, cellY + 8);
+                g2.fillRoundRect(cellX + 1, fillY, Math.max(2, barW - 2), fillH, 4, 4);
             }
             int total = packet.getInt("CPU", 0);
-            int barY = y + h - 12;
-            g2.setColor(WHITE);
-            g2.drawString("Total", x + 10, barY);
-            drawBar(g2, x + 46, barY - 8, Math.max(80, w - 122), 7, total, getHeatColor(total));
+            int footerY = y + h - 20;
+            g2.setFont(new Font(MONO, Font.PLAIN, 10));
+            g2.setColor(new Color(190, 210, 234));
+            g2.drawString("Low-priority per-thread view", x + 10, footerY);
             g2.setColor(getHeatColor(total));
-            g2.drawString(total + "%", x + w - 52, barY);
+            g2.drawString("Total " + total + "%", x + w - 82, footerY);
         }
 
         private void drawProcessesDesktop(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "Top Processes", x, y, w, h);
-            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setFont(new Font(MONO, Font.BOLD, 11));
             g2.setColor(WHITE);
-            g2.drawString("Name", x + 12, y + 30);
-            g2.drawString("CPU", x + w - 128, y + 30);
-            g2.drawString("RAM", x + w - 66, y + 30);
-            g2.setFont(new Font(MONO, Font.PLAIN, 11));
-            int rowY = y + 48;
-            int maxRows = Math.max(4, Math.min(6, (h - 122) / 18));
+            g2.drawString("Top Processes", x + 12, y + 16);
+            g2.drawString("CPU", x + w - 128, y + 16);
+            g2.drawString("RAM", x + w - 66, y + 16);
+            g2.setFont(new Font(MONO, Font.PLAIN, 10));
+            int rowY = y + 32;
+            int maxRows = Math.max(3, Math.min(6, (h - 40) / 18));
             for (int i = 1; i <= maxRows; i++) {
                 String name = truncate(packet.get("P" + i, "--"), 30);
                 String cpu = packet.get("P" + i + "CPU", "--");
                 String ram = packet.get("P" + i + "RAM", "--");
-                int rowTop = rowY - 12;
                 g2.setColor(new Color(15, 24, 42, 180));
-                g2.fillRoundRect(x + 10, rowTop, w - 20, 16, 8, 8);
+                g2.fillRoundRect(x + 10, rowY - 11, w - 20, 15, 7, 7);
                 g2.setColor(WHITE);
                 g2.drawString(i + ". " + name, x + 12, rowY);
                 g2.setColor(YELLOW);
                 g2.drawString(cpu, x + w - 128, rowY);
                 g2.setColor(CYAN);
                 g2.drawString(ram, x + w - 66, rowY);
-                rowY += 19;
-                if (rowY > y + h - 86) break;
+                rowY += 17;
             }
-
-            int statsTop = y + h - 60;
-            drawDesktopMiniBar(g2, "CPU", packet.getInt("CPU", 0), x + 12, statsTop, w - 24, LIME);
-            drawDesktopMiniBar(g2, "RAM", packet.getInt("RAM", 0), x + 12, statsTop + 16, w - 24, CYAN);
-            int netBlend = Math.min(100, Math.max(packet.getInt("CPU", 0), packet.getInt("RAM", 0)));
-            drawDesktopMiniBar(g2, "Load", netBlend, x + 12, statsTop + 32, w - 24, ORANGE);
         }
 
         private void drawDesktopGpuCard(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "GPU", x, y, w, h);
+            drawDesktopCard(g2, "GPU + Top Processes", x, y, w, h);
             int gpu = packet.getInt("GPU", 0);
             int vram = packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0));
             int tempPct = parseTemperaturePct(packet.get("GPUTEMP", packet.get("GPU_TEMP", "0")));
@@ -672,9 +659,14 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopMiniBar(g2, "GPU", gpu, x + 12, y + 30, w - 24, ORANGE);
             drawDesktopMiniBar(g2, "VRAM", vram, x + 12, y + 46, w - 24, MAGENTA);
             drawDesktopMiniBar(g2, "TEMP", tempPct, x + 12, y + 62, w - 24, YELLOW);
-            g2.setFont(new Font(MONO, Font.PLAIN, 11));
+            drawDesktopMiniBar(g2, "CPU", packet.getInt("CPU", 0), x + 12, y + 78, w - 24, LIME);
+            drawDesktopMiniBar(g2, "RAM", packet.getInt("RAM", 0), x + 12, y + 94, w - 24, CYAN);
+            drawDesktopMiniBar(g2, "LOAD", Math.max(packet.getInt("CPU", 0), packet.getInt("RAM", 0)), x + 12, y + 110, w - 24, new Color(126, 214, 205));
+            drawDesktopMiniBar(g2, "CPU T", parseTemperaturePct(packet.get("TEMP", packet.get("CPUTEMP", "0"))), x + 12, y + 126, w - 24, new Color(239, 186, 92));
+            g2.setFont(new Font(MONO, Font.PLAIN, 10));
             g2.setColor(CYAN);
-            g2.drawString("Temp: " + gpuTempDisplay + "  Name: " + truncate(packet.get("GPUNAME", "GPU"), 20), x + 12, y + h - 12);
+            g2.drawString("GPU Temp: " + gpuTempDisplay + "  " + truncate(packet.get("GPUNAME", "GPU"), 24), x + 12, y + 152);
+            drawProcessesDesktop(g2, x, y + 162, w, Math.max(56, h - 170));
         }
 
         private void drawNetworkStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {

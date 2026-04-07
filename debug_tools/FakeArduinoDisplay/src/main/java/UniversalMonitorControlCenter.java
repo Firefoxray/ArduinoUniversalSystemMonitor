@@ -3,6 +3,12 @@ import com.fazecast.jSerialComm.SerialPort;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultStyledDocument;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
+import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -39,6 +45,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.Properties;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UniversalMonitorControlCenter extends JFrame {
@@ -110,9 +117,11 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextField fakeInField = new JTextField("/tmp/fakearduino_in", 22);
     private final JTextField fakeOutField = new JTextField("/tmp/fakearduino_out", 22);
 
-    private final JTextArea outputArea = new JTextArea();
-    private final JTextArea settingsOutputArea = new JTextArea();
-    private final JTextArea desktopSettingsOutputArea = new JTextArea();
+    private static final Pattern LOG_PREFIX_PATTERN = Pattern.compile("^(\\[\\d{2}:\\d{2}:\\d{2}\\]\\s*)?(\\[[^\\]]+\\](?:\\[[^\\]]+\\])?)");
+    private static final Pattern LOG_NUMBER_PATTERN = Pattern.compile("(?<![A-Za-z])\\d+(?:\\.\\d+)?(?:%|[kKmMgG]?[bB]|MHz|ms|s)?");
+    private final JTextPane outputArea = new JTextPane();
+    private final JTextPane settingsOutputArea = new JTextPane();
+    private final JTextPane desktopSettingsOutputArea = new JTextPane();
     private JPanel outputPanelTab;
 
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
@@ -256,7 +265,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private final JavaSerialFakeDisplay.FakeDisplayPanel fakeDisplayPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
     private final JavaSerialFakeDisplay.FakeDisplayPanel desktopDashboardPanel = new JavaSerialFakeDisplay.FakeDisplayPanel();
-    private final JTextArea desktopDashboardLogArea = new JTextArea();
+    private final JTextPane desktopDashboardLogArea = new JTextPane();
     private final JLabel desktopDashboardServiceStateLabel = new JLabel("Service Running: --");
     private final JLabel desktopDashboardDebugStateLabel = new JLabel("Debug Mode: --");
     private final JLabel desktopDashboardServiceDotLabel = new JLabel("\u25cf");
@@ -467,11 +476,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         rayfetchCommandInputField.setText("rayfetch");
         installRayfetchHistoryInputSupport();
         desktopDashboardPanel.setRenderMode(JavaSerialFakeDisplay.FakeDisplayPanel.RenderMode.DESKTOP_OVERVIEW);
-        desktopDashboardLogArea.setEditable(false);
-        desktopDashboardLogArea.setRows(10);
-        desktopDashboardLogArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        desktopDashboardLogArea.setLineWrap(false);
-        desktopDashboardLogArea.setWrapStyleWord(false);
+        configureLogPane(desktopDashboardLogArea);
         desktopDashboardServiceStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         desktopDashboardDebugStateLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 12));
         desktopDashboardServiceDotLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
@@ -500,6 +505,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadSavedSudoPassword();
         dashboardSudoPasswordField.setText(new String(sudoPasswordField.getPassword()));
         dashboardRememberPasswordToggle.setSelected(rememberPasswordToggle.isSelected());
+        configureLogPane(outputArea);
         settingsOutputArea.setDocument(outputArea.getDocument());
         desktopSettingsOutputArea.setDocument(outputArea.getDocument());
         setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
@@ -1241,20 +1247,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private JPanel buildPersistentOutputFooter() {
-        settingsOutputArea.setRows(7);
         JPanel panel = buildOutputPanel(settingsOutputArea, "Command Output / Logs (Persistent Footer)");
         panel.setPreferredSize(new Dimension(1200, 180));
         panel.setMinimumSize(new Dimension(400, 140));
         return panel;
     }
 
-    private JPanel buildOutputPanel(JTextArea area, String title) {
+    private JPanel buildOutputPanel(JTextPane area, String title) {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(title));
-        area.setEditable(false);
-        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        area.setLineWrap(false);
-        area.setWrapStyleWord(false);
+        configureLogPane(area);
         installCopyPopup(area);
         JScrollPane scrollPane = new JScrollPane(area);
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
@@ -1262,7 +1264,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         return panel;
     }
 
-    private void installCopyPopup(JTextArea area) {
+    private void installCopyPopup(JTextComponent area) {
         JPopupMenu menu = new JPopupMenu();
         JMenuItem copyItem = new JMenuItem("Copy");
         copyItem.addActionListener(e -> area.copy());
@@ -1274,6 +1276,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         menu.add(selectAllItem);
         menu.add(clearSelectionItem);
         area.setComponentPopupMenu(menu);
+    }
+
+    private void configureLogPane(JTextPane pane) {
+        pane.setEditable(false);
+        pane.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        pane.setDocument(new DefaultStyledDocument());
     }
 
     private void wireActions() {
@@ -5028,7 +5036,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
         top.add(statusRow);
 
-        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.0 scaffold):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.1 Beta):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
                 + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
@@ -5057,7 +5065,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         cards.add(buildDashboardSummaryCard("Telemetry Source Status", gamingTelemetryStateLabel));
         cards.add(buildDashboardSummaryCard("MangoHud Log Path", gamingMangoHudPathLabel));
         panel.add(cards, BorderLayout.CENTER);
-        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.0 Beta):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
+        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.1 Beta):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
                 + "Live parsing hooks are scaffolded now and fields are aligned for later Arduino gaming-page output.</html>");
         footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         panel.add(footer, BorderLayout.SOUTH);
@@ -5103,7 +5111,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
-                "Desktop Monitor Settings page scaffold (v11.0):\n"
+                "Desktop Monitor Settings page scaffold (v11.1 Beta):\n"
                         + "- Theme controls are active and shared with the main popout controls.\n"
                         + "- Checkbox options are framework toggles for future layout/graph behavior.\n"
                         + "- This page is intended to become the central desktop-only settings hub.");
@@ -5116,7 +5124,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopSettingsStatusLabel.setBorder(new EmptyBorder(4, 2, 4, 2));
         JPanel footer = new JPanel(new BorderLayout(0, 6));
         footer.add(desktopSettingsStatusLabel, BorderLayout.NORTH);
-        desktopSettingsOutputArea.setRows(7);
         footer.add(buildOutputPanel(desktopSettingsOutputArea, "Command Output / Logs"), BorderLayout.CENTER);
         panel.add(footer, BorderLayout.SOUTH);
         updateDesktopSettingsStatus();
@@ -5329,8 +5336,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         desktopDashboardLogLines.addLast(text);
         SwingUtilities.invokeLater(() -> {
-            desktopDashboardLogArea.setText(String.join("\n", desktopDashboardLogLines));
-            desktopDashboardLogArea.setCaretPosition(desktopDashboardLogArea.getDocument().getLength());
+            renderStyledLogLines(desktopDashboardLogArea, desktopDashboardLogLines);
         });
     }
 
@@ -5409,6 +5415,63 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardLightModeToggle.setForeground(textColor);
         desktopDashboardBlackModeToggle.setBackground(panelBackground);
         desktopDashboardBlackModeToggle.setForeground(textColor);
+    }
+
+    private void renderStyledLogLines(JTextPane pane, Iterable<String> lines) {
+        pane.setText("");
+        for (String line : lines) {
+            appendStyledLogLine(pane, line);
+        }
+        pane.setCaretPosition(pane.getDocument().getLength());
+    }
+
+    private void appendStyledLogLine(JTextPane pane, String line) {
+        StyledDocument doc = pane.getStyledDocument();
+        String text = line == null ? "" : line;
+        try {
+            int start = doc.getLength();
+            doc.insertString(start, text, styleForColor(pane, themeTextColor()));
+            applyLogHighlighting(pane, text, start);
+            doc.insertString(doc.getLength(), "\n", styleForColor(pane, themeTextColor()));
+        } catch (BadLocationException ignored) {
+        }
+    }
+
+    private void applyLogHighlighting(JTextPane pane, String text, int baseOffset) {
+        Matcher prefixMatcher = LOG_PREFIX_PATTERN.matcher(text);
+        if (prefixMatcher.find() && prefixMatcher.group(2) != null) {
+            int prefixStart = baseOffset + prefixMatcher.start(2);
+            int prefixLength = prefixMatcher.group(2).length();
+            pane.getStyledDocument().setCharacterAttributes(prefixStart, prefixLength, styleForColor(pane, colorForPrefix(prefixMatcher.group(2))), false);
+        }
+        Matcher numberMatcher = LOG_NUMBER_PATTERN.matcher(text);
+        while (numberMatcher.find()) {
+            int start = baseOffset + numberMatcher.start();
+            pane.getStyledDocument().setCharacterAttributes(start, numberMatcher.end() - numberMatcher.start(), styleForColor(pane, new Color(124, 208, 255)), false);
+        }
+    }
+
+    private Style styleForColor(JTextPane pane, Color color) {
+        String key = "log-color-" + color.getRGB();
+        StyledDocument doc = pane.getStyledDocument();
+        Style style = doc.getStyle(key);
+        if (style == null) {
+            style = pane.addStyle(key, null);
+            StyleConstants.setForeground(style, color);
+        }
+        return style;
+    }
+
+    private Color colorForPrefix(String prefix) {
+        String normalized = prefix == null ? "" : prefix.toUpperCase(Locale.ROOT);
+        if (normalized.contains("ERROR") || normalized.contains("FAIL") || normalized.contains("ERR")) return new Color(236, 110, 108);
+        if (normalized.contains("WARN")) return new Color(234, 190, 95);
+        if (normalized.contains("RUN")) return new Color(164, 132, 245);
+        if (normalized.contains("RAYFETCH")) return new Color(120, 209, 223);
+        if (normalized.contains("ARDUINO") || normalized.contains("FLASH")) return new Color(237, 159, 88);
+        if (normalized.contains("PYTHON")) return new Color(112, 207, 156);
+        if (normalized.contains("INFO") || normalized.contains("DONE") || normalized.contains("SERVICE")) return new Color(118, 196, 255);
+        return new Color(173, 191, 223);
     }
 
     private boolean isTransportConnectedState(String text) {
@@ -7511,7 +7574,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void log(String message) {
         SwingUtilities.invokeLater(() -> {
-            outputArea.append(message + "\n");
+            appendStyledLogLine(outputArea, message);
             outputArea.setCaretPosition(outputArea.getDocument().getLength());
         });
         appendDesktopDashboardLogLine(message);

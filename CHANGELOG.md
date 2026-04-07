@@ -1,7 +1,7 @@
 # Changelog
 
-## v11.0 Beta - 2026-04-07
-- Bumped the shared project version to v11.0 Beta across VERSION and generated Arduino app headers.
+## v11.1 Beta - 2026-04-07
+- Bumped the shared project version to v11.1 Beta across VERSION and generated Arduino app headers.
 - Added RayFetch one-shot CLI modes to `UniversalArduinoMonitor.py` without changing the default long-running sender behavior (`--rayfetch`, `--json`, `--payload-preview`, `--arduino-status`).
 - Added a shared snapshot path in the Python monitor (`collect_snapshot`) so sender and one-shot CLI outputs reuse the same Fedora/Linux monitor data source.
 - Upgraded the desktop pop-out **Gaming Mode** tab from placeholder cards to a structured telemetry framework layout (game/app, FPS, frametime, GPU/CPU, RAM/VRAM, session/source state).
