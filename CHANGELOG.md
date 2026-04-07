@@ -1,5 +1,12 @@
 # Changelog
 
+## v11.0 Beta - 2026-04-07
+- Bumped the shared project version to v11.0 Beta across VERSION and generated Arduino app headers.
+- Added RayFetch one-shot CLI modes to `UniversalArduinoMonitor.py` without changing the default long-running sender behavior (`--rayfetch`, `--json`, `--payload-preview`, `--arduino-status`).
+- Added a shared snapshot path in the Python monitor (`collect_snapshot`) so sender and one-shot CLI outputs reuse the same Fedora/Linux monitor data source.
+- Upgraded the desktop pop-out **Gaming Mode** tab from placeholder cards to a structured telemetry framework layout (game/app, FPS, frametime, GPU/CPU, RAM/VRAM, session/source state).
+- Added Fedora/Linux MangoHud-oriented telemetry scaffolding in the Control Center so Gaming Mode now has a real backend path for future live FPS/frametime ingestion and later Arduino gaming-page reuse.
+
 ## v10.5 Beta - 2026-04-06
 - Bumped the shared project version to v10.5 Beta across VERSION and generated Arduino app headers.
 - Fixed Control Center update detection so it compares local/remote branch divergence and reports already-up-to-date states instead of always running update flow.
