@@ -228,7 +228,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel previewPrimaryIpLabel = new JLabel("--");
     private final JLabel previewSecondaryIpLabel = new JLabel("--");
     private final JButton popOutPreviewButton = new JButton("Open Pop Out Desktop Dashboard");
-    private final JButton closePopOutPreviewButton = new JButton("Close Pop-Out");
     private final JPasswordField dashboardSudoPasswordField = new JPasswordField(16);
     private final JCheckBox dashboardRememberPasswordToggle = new JCheckBox("Remember");
     private final JButton scanNetworkButton = new JButton("Start Arduino Scan");
@@ -466,7 +465,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         macroEntriesArea.setWrapStyleWord(true);
         macroTriggerModelSelector.setToolTipText("Staged trigger approach for unreliable touch calibration. Stores macro_trigger_model for future firmware behavior.");
         popOutPreviewButton.setToolTipText("Open the existing monitor preview in a separate resizable desktop window.");
-        closePopOutPreviewButton.setToolTipText("Close the desktop dashboard pop-out window.");
         sshStatsProbeButton.setToolTipText("Framework probe: checks remote monitor service status over SSH and parses key fields.");
         sshStatsSyncFromRemoteButton.setToolTipText("Copies values from the main Remote Actions target fields into this SSH Stats scaffold.");
         rayfetchCommandInputField.setToolTipText("Try: rayfetch, json, payload-preview, arduino-status");
@@ -1178,7 +1176,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
         JPanel popOutActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         popOutActions.add(popOutPreviewButton);
-        popOutActions.add(closePopOutPreviewButton);
         popOutActions.setAlignmentX(Component.LEFT_ALIGNMENT);
         header.add(popOutActions);
         header.add(buildPreviewWifiPanel());
@@ -1334,8 +1331,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         stopFakePortsButton.addActionListener(e -> stopFakePorts());
         connectPreviewButton.addActionListener(e -> connectPreviewPort());
         disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
-        popOutPreviewButton.addActionListener(e -> showDesktopDashboardWindow());
-        closePopOutPreviewButton.addActionListener(e -> closeDesktopDashboardWindow());
+        popOutPreviewButton.addActionListener(e -> openDashboardWindowAndStartStream());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
         saveMonitorSettingsButton.addActionListener(e -> saveMonitorConnectionSettings(true));
@@ -4845,6 +4841,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         });
     }
 
+    private void openDashboardWindowAndStartStream() {
+        showDesktopDashboardWindow();
+        ensureDashboardStreamActive();
+    }
+
     private void closeDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow != null && desktopDashboardFullscreen) {
@@ -5034,7 +5035,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
         top.add(statusRow);
 
-        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.1 Beta):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.2):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
                 + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
@@ -5063,7 +5064,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         cards.add(buildDashboardSummaryCard("Telemetry Source Status", gamingTelemetryStateLabel));
         cards.add(buildDashboardSummaryCard("MangoHud Log Path", gamingMangoHudPathLabel));
         panel.add(cards, BorderLayout.CENTER);
-        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.1 Beta):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
+        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.2):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
                 + "Live parsing hooks are scaffolded now and fields are aligned for later Arduino gaming-page output.</html>");
         footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         panel.add(footer, BorderLayout.SOUTH);
@@ -5109,7 +5110,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
-                "Desktop Monitor Settings page scaffold (v11.1 Beta):\n"
+                "Desktop Monitor Settings page scaffold (v11.2):\n"
                         + "- Theme controls are active and shared with the main popout controls.\n"
                         + "- Checkbox options are framework toggles for future layout/graph behavior.\n"
                         + "- This page is intended to become the central desktop-only settings hub.");
@@ -5769,10 +5770,21 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void startDashboardPreviewFlow() {
-        startFakePorts();
-        Timer delayedConnect = new Timer(900, e -> connectPreviewPort());
-        delayedConnect.setRepeats(false);
-        delayedConnect.start();
+        ensureDashboardStreamActive();
+    }
+
+    private void ensureDashboardStreamActive() {
+        boolean fakePortsRunning = fakePortsProcess != null && fakePortsProcess.isAlive();
+        if (!fakePortsRunning) {
+            startFakePorts();
+            return;
+        }
+        boolean previewConnected = previewPort != null && previewPort.isOpen();
+        if (!previewConnected) {
+            connectPreviewPort();
+        } else {
+            log("[INFO] Dashboard stream already active.");
+        }
     }
 
     private void stopDashboardPreviewFlow() {
@@ -7539,9 +7551,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             boolean connected = previewPort != null && previewPort.isOpen();
             connectPreviewButton.setEnabled(!connected);
             disconnectPreviewButton.setEnabled(connected);
-            boolean popoutOpen = desktopDashboardWindow != null && desktopDashboardWindow.isDisplayable();
-            popOutPreviewButton.setEnabled(!popoutOpen);
-            closePopOutPreviewButton.setEnabled(popoutOpen);
+            popOutPreviewButton.setEnabled(true);
         });
     }
 
