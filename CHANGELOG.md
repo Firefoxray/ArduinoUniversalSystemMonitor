@@ -1,5 +1,11 @@
 # Changelog
 
+## v11.4 - 2026-04-08
+- Bumped the shared project version to v11.4 across VERSION, README, generated Arduino app headers, runtime/version labels, and Control Center/dashboard-visible version text.
+- Reworked the Storage page layout in the Java fake display preview so Storage I/O is now a first-class, highly visible "Storage I/O (Drive Activity)" panel separated from capacity/mount details.
+- Increased Storage I/O visual prominence with larger per-drive cards, clearer Read/Write/Util labels, larger graphs, and explicit drive target labeling (`Drive 1/2/3`) so activity is obvious at a glance.
+- Added always-visible no-data and stream-status messaging so the Storage I/O section remains present even before live SIO packets arrive, including a waiting/debug line and a clear "No storage I/O activity yet" fallback.
+
 ## v11.3 - 2026-04-08
 - Bumped the shared project version to v11.3 across VERSION, README, generated Arduino app headers, runtime/version labels, and dashboard-visible version text.
 - Improved desktop dashboard GPU responsiveness with a short recent-sample smoothing buffer and lightweight weighted averaging so brief zero spikes no longer dominate visible GPU usage.
