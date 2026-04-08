@@ -680,9 +680,6 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopMiniBar(g2, "CPU TEMP", cpuTempPct, normalizeTemperatureText(packet.get("TEMP", packet.get("CPUTEMP", "--"))), barAreaX, barY, barAreaW, new Color(239, 186, 92));
 
             int separatorY = barY + 12;
-            g2.setColor(new Color(110, 140, 176, 165));
-            g2.drawLine(x + 14, separatorY, x + w - 14, separatorY);
-
             barY = separatorY + separatorGap;
             drawDesktopMiniBar(g2, "GPU", gpu, gpu + "%", barAreaX, barY, barAreaW, ORANGE);
             barY += barStep;
