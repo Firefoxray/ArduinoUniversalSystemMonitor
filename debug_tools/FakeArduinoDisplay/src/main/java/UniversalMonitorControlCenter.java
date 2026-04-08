@@ -127,6 +127,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextPane settingsOutputArea = new JTextPane();
     private final JTextPane desktopSettingsOutputArea = new JTextPane();
     private JPanel outputPanelTab;
+    private JTabbedPane mainTabs;
 
     private final JButton startFakePortsButton = new JButton("Start Fake Ports");
     private final JButton stopFakePortsButton = new JButton("Stop Fake Ports");
@@ -212,6 +213,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton saveAndRestartMonitorButton = new JButton("Save & Restart Python Monitor");
     private final JButton refreshStorageTargetsButton = new JButton("Refresh Storage Targets");
     private final JButton saveStorageSettingsButton = new JButton("Save Storage Settings");
+    private final JButton openStorageTabButton = new JButton("Open Storage I/O Tab");
     private final JLabel storageSelectionSummaryLabel = new JLabel("Disk0: Auto (/), Disk1: Auto (secondary)");
     private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
@@ -219,6 +221,10 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JPanel storageTargetsPanel = new JPanel();
     private final JComboBox<String> disk0Selector = new JComboBox<>();
     private final JComboBox<String> disk1Selector = new JComboBox<>();
+    private final StorageActivityPanel controlCenterStorageActivityPanel = new StorageActivityPanel();
+    private final StorageActivityPanel popoutStorageActivityPanel = new StorageActivityPanel();
+    private final JLabel storageCapacitySnapshotLabel = new JLabel("Storage Capacity / Mounts: waiting for monitor packets");
+    private final JLabel popoutStorageCapacityLabel = new JLabel("Storage Capacity / Mounts: waiting for monitor packets");
     private final JComboBox<String> macroTriggerModelSelector = new JComboBox<>(new String[]{
             "Whole-screen tap cycles entries",
             "Large left/right screen halves",
@@ -327,6 +333,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Rectangle desktopDashboardWindowedBounds;
     private boolean desktopDashboardFullscreen;
     private boolean syncingThemeToggles;
+    private JavaSerialFakeDisplay.ParsedPacket latestDashboardPacket;
 
     private final Color darkBackground = new Color(23, 39, 66);
     private final Color darkPanelBackground = new Color(34, 54, 86);
@@ -472,6 +479,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
         saveAndRestartMonitorButton.setToolTipText("Saves machine-local monitor/module/profile settings and restarts the Python monitor service only (no Arduino flashing).");
+        openStorageTabButton.setToolTipText("Jumps directly to the Storage I/O tab in Control Center.");
         flashFromProfilesButton.setToolTipText("Quick flash button near profiles so page/module/profile changes can be applied to hardware immediately.");
         runProfileActionButton.setToolTipText("Runs the selected profile action from the compact menu.");
         profileActionSelector.setToolTipText("Compact profile action menu (new/save as/update/delete/import/export).");
@@ -502,7 +510,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardTabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
         desktopDashboardTabs.setTabPlacement(JTabbedPane.TOP);
 
-        JTabbedPane mainTabs = buildMainTabs();
+        mainTabs = buildMainTabs();
 
         JPanel root = new JPanel(new BorderLayout(10, 10));
         root.add(mainTabs, BorderLayout.CENTER);
@@ -608,12 +616,13 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private JTabbedPane buildMainTabs() {
         JTabbedPane tabs = new JTabbedPane();
+        tabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
         tabs.setTabPlacement(JTabbedPane.TOP);
         tabs.addTab("Dashboard", buildDashboardTab());
         tabs.addTab("Flash", buildFlashTab());
         tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
         tabs.addTab("Monitor", buildMonitorModulesTab());
-        tabs.addTab("Storage", buildStorageTab());
+        tabs.addTab("Storage I/O", buildStorageTab());
         outputPanelTab = buildLogsTab();
         tabs.addTab("Logs", outputPanelTab);
         return tabs;
@@ -758,9 +767,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private JPanel buildStorageTab() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel content = new JPanel(new BorderLayout(10, 10));
+        JPanel setupContent = new JPanel();
+        setupContent.setLayout(new BoxLayout(setupContent, BoxLayout.Y_AXIS));
+        setupContent.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         controls.setBorder(BorderFactory.createTitledBorder("Storage Display Setup"));
@@ -773,24 +783,41 @@ public class UniversalMonitorControlCenter extends JFrame {
         disk1Selector.setPreferredSize(new Dimension(280, disk1Selector.getPreferredSize().height));
         controls.add(disk1Selector);
         controls.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(controls);
+        setupContent.add(controls);
 
         storageTargetsPanel.setLayout(new BoxLayout(storageTargetsPanel, BoxLayout.Y_AXIS));
         storageTargetsPanel.setBorder(new EmptyBorder(6, 6, 6, 6));
         JScrollPane targetsScroll = new JScrollPane(storageTargetsPanel);
         targetsScroll.setBorder(BorderFactory.createTitledBorder("Detected Storage Targets (checked = visible on Storage page)"));
         targetsScroll.setPreferredSize(new Dimension(1160, 480));
-        content.add(targetsScroll);
+        setupContent.add(targetsScroll);
 
         storageSelectionSummaryLabel.setBorder(new EmptyBorder(4, 6, 2, 6));
         storageSelectionSummaryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(storageSelectionSummaryLabel);
+        setupContent.add(storageSelectionSummaryLabel);
 
         JLabel helper = new JLabel("<html>Pick which drives are shown on the Storage page.<br>"
                 + "Disk0 and Disk1 choose the two home-screen disk meters and save to your local config.</html>");
         helper.setBorder(new EmptyBorder(6, 6, 6, 6));
         helper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(helper);
+        setupContent.add(helper);
+
+        JScrollPane setupScroll = new JScrollPane(setupContent);
+        setupScroll.setBorder(BorderFactory.createTitledBorder("Storage Targets / Capacity Setup"));
+        setupScroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel activityPanel = new JPanel(new BorderLayout(8, 8));
+        activityPanel.setBorder(BorderFactory.createTitledBorder("Storage I/O / Drive Activity (Live)"));
+        storageCapacitySnapshotLabel.setBorder(new EmptyBorder(4, 6, 2, 6));
+        activityPanel.add(storageCapacitySnapshotLabel, BorderLayout.NORTH);
+        activityPanel.add(controlCenterStorageActivityPanel, BorderLayout.CENTER);
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, setupScroll, activityPanel);
+        splitPane.setResizeWeight(0.43);
+        splitPane.setContinuousLayout(true);
+        splitPane.setDividerLocation(500);
+        splitPane.setBorder(BorderFactory.createEmptyBorder());
+        content.add(splitPane, BorderLayout.CENTER);
 
         panel.add(content, BorderLayout.CENTER);
         return panel;
@@ -831,6 +858,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         startupRow.add(new JLabel("Startup:"));
         startupRow.add(startupIndicator);
         controlsColumn.add(startupRow);
+
+        JPanel storageNavRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        storageNavRow.add(new JLabel("Storage I/O Setup:"));
+        storageNavRow.add(openStorageTabButton);
+        storageNavRow.add(new JLabel("Path: Control Center → Storage I/O"));
+        controlsColumn.add(storageNavRow);
 
         servicePanel.add(controlsColumn, BorderLayout.CENTER);
         lightModeToggle.setFocusable(false);
@@ -1364,6 +1397,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveAndRestartMonitorButton.addActionListener(e -> saveMonitorConnectionSettings(false));
         refreshStorageTargetsButton.addActionListener(e -> refreshStorageTargetsFromSystem(true));
         saveStorageSettingsButton.addActionListener(e -> saveStorageSelectionsOnly());
+        openStorageTabButton.addActionListener(e -> focusStorageTab());
         disk0Selector.addActionListener(e -> updateStorageSelectionSummaryLabel());
         disk1Selector.addActionListener(e -> updateStorageSelectionSummaryLabel());
         testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
@@ -1387,6 +1421,33 @@ public class UniversalMonitorControlCenter extends JFrame {
         blackModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(blackModeToggle, lightModeToggle));
         desktopDashboardLightModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(desktopDashboardLightModeToggle, desktopDashboardBlackModeToggle));
         desktopDashboardBlackModeToggle.addActionListener(e -> applyThemeSelectionFromToggles(desktopDashboardBlackModeToggle, desktopDashboardLightModeToggle));
+    }
+
+    private void focusStorageTab() {
+        if (mainTabs == null) {
+            return;
+        }
+        int storageTabIndex = mainTabs.indexOfTab("Storage I/O");
+        if (storageTabIndex >= 0) {
+            mainTabs.setSelectedIndex(storageTabIndex);
+        }
+    }
+
+    private String buildStorageCapacitySnapshot(JavaSerialFakeDisplay.ParsedPacket packet) {
+        if (packet == null) {
+            return "Storage Capacity / Mounts: waiting for monitor packets";
+        }
+        List<String> lines = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            String value = packet.get("DRV" + i, "").trim();
+            if (!value.isEmpty() && !"--".equals(value)) {
+                lines.add(value);
+            }
+        }
+        if (lines.isEmpty()) {
+            return "Storage Capacity / Mounts: waiting for monitor packets";
+        }
+        return "Storage Capacity / Mounts: " + String.join("   |   ", lines.subList(0, Math.min(3, lines.size())));
     }
 
 
@@ -2316,8 +2377,14 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void handleDashboardPacket(JavaSerialFakeDisplay.ParsedPacket packet) {
         SwingUtilities.invokeLater(() -> {
+            latestDashboardPacket = packet;
             fakeDisplayPanel.updatePacket(packet);
             desktopDashboardPanel.updatePacket(packet);
+            controlCenterStorageActivityPanel.updateFromPacket(packet);
+            popoutStorageActivityPanel.updateFromPacket(packet);
+            String capacitySnapshot = buildStorageCapacitySnapshot(packet);
+            storageCapacitySnapshotLabel.setText(capacitySnapshot);
+            popoutStorageCapacityLabel.setText(capacitySnapshot);
             refreshDesktopDashboardMiniSummary(packet);
         });
     }
@@ -4668,6 +4735,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardTabs.setTabPlacement(JTabbedPane.TOP);
                 desktopDashboardTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
                 desktopDashboardTabs.addTab("Main Desktop Monitor", buildDesktopMonitorMainTab());
+                desktopDashboardTabs.addTab("Storage", buildDesktopStorageTab());
                 desktopDashboardTabs.addTab("SSH Stats", buildDesktopSshStatsTab());
                 desktopDashboardTabs.addTab("Gaming Mode", buildDesktopGamingModeTab());
                 desktopDashboardTabs.addTab("Desktop Monitor Settings", buildDesktopMonitorSettingsTab());
@@ -4872,6 +4940,27 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel tabPanel = new JPanel(new BorderLayout());
         tabPanel.add(rootSplit, BorderLayout.CENTER);
         return tabPanel;
+    }
+
+    private JPanel buildDesktopStorageTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JLabel header = new JLabel("<html><b>Storage Capacity / Mounts + Storage I/O / Drive Activity</b><br>"
+                + "Read / Write / Utilization with rolling history from live monitor packets.</html>");
+        header.setBorder(new EmptyBorder(0, 0, 8, 0));
+        panel.add(header, BorderLayout.NORTH);
+
+        JPanel center = new JPanel(new BorderLayout(8, 8));
+        center.add(popoutStorageActivityPanel, BorderLayout.CENTER);
+        popoutStorageCapacityLabel.setBorder(new EmptyBorder(4, 2, 2, 2));
+        center.add(popoutStorageCapacityLabel, BorderLayout.SOUTH);
+        panel.add(center, BorderLayout.CENTER);
+
+        if (latestDashboardPacket != null) {
+            popoutStorageActivityPanel.updateFromPacket(latestDashboardPacket);
+        }
+        return panel;
     }
 
     private JPanel buildDesktopSshStatsTab() {
@@ -7609,6 +7698,184 @@ public class UniversalMonitorControlCenter extends JFrame {
                 settings.pageEnabled.put(page.id(), enabledByDefault);
             }
             return settings;
+        }
+    }
+
+    private static class StorageActivityPanel extends JPanel {
+        private static final int DRIVES = 3;
+        private static final int HISTORY = 72;
+        private final int[][] readHistory = new int[DRIVES][HISTORY];
+        private final int[][] writeHistory = new int[DRIVES][HISTORY];
+        private final int[][] utilHistory = new int[DRIVES][HISTORY];
+        private final String[] labels = {"Drive 1", "Drive 2", "Drive 3"};
+        private final String[] readText = {"0 B/s", "0 B/s", "0 B/s"};
+        private final String[] writeText = {"0 B/s", "0 B/s", "0 B/s"};
+        private final String[] utilText = {"--", "--", "--"};
+        private long lastUpdateMs = 0L;
+
+        StorageActivityPanel() {
+            setOpaque(true);
+            setBackground(new Color(17, 24, 40));
+            setBorder(new EmptyBorder(8, 8, 8, 8));
+            setPreferredSize(new Dimension(640, 420));
+        }
+
+        void updateFromPacket(JavaSerialFakeDisplay.ParsedPacket packet) {
+            if (packet == null) {
+                repaint();
+                return;
+            }
+            lastUpdateMs = System.currentTimeMillis();
+            for (int slot = 0; slot < DRIVES; slot++) {
+                int idx = slot + 1;
+                String rawLabel = packet.get("SIO" + idx + "LBL", "").trim();
+                String mount = packet.get("SIO" + idx + "MNT", "").trim();
+                labels[slot] = normalizeLabel(rawLabel, mount, idx);
+                readText[slot] = packet.get("SIO" + idx + "R", "0 B/s");
+                writeText[slot] = packet.get("SIO" + idx + "W", "0 B/s");
+                utilText[slot] = normalizeUtil(packet.get("SIO" + idx + "UTIL", "--"));
+                append(readHistory[slot], rateToKbps(readText[slot]));
+                append(writeHistory[slot], rateToKbps(writeText[slot]));
+                append(utilHistory[slot], parsePercent(utilText[slot]));
+            }
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            g2.setColor(new Color(17, 24, 40));
+            g2.fillRect(0, 0, w, h);
+
+            g2.setColor(new Color(218, 230, 250));
+            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+            g2.drawString("Storage I/O / Drive Activity", 10, 22);
+
+            g2.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            String status = lastUpdateMs == 0L
+                    ? "Waiting for storage I/O data"
+                    : "Last packet: " + Math.max(0, (System.currentTimeMillis() - lastUpdateMs) / 1000) + "s ago";
+            g2.setColor(new Color(143, 197, 255));
+            g2.drawString(status, 10, 40);
+
+            int rowGap = 8;
+            int rowHeight = Math.max(100, (h - 56 - rowGap * (DRIVES - 1)) / DRIVES);
+            int y = 48;
+            for (int slot = 0; slot < DRIVES; slot++) {
+                drawDriveRow(g2, 10, y, w - 20, rowHeight, slot);
+                y += rowHeight + rowGap;
+            }
+            g2.dispose();
+        }
+
+        private void drawDriveRow(Graphics2D g2, int x, int y, int w, int h, int slot) {
+            g2.setColor(new Color(27, 38, 61));
+            g2.fillRoundRect(x, y, w, h, 10, 10);
+            g2.setColor(new Color(80, 107, 148));
+            g2.drawRoundRect(x, y, w, h, 10, 10);
+
+            g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+            g2.setColor(new Color(240, 245, 255));
+            g2.drawString(labels[slot], x + 8, y + 18);
+
+            g2.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            g2.setColor(new Color(170, 210, 255));
+            g2.drawString("Read " + readText[slot] + "   Write " + writeText[slot] + "   Busy " + utilText[slot], x + 8, y + 34);
+
+            int chartX = x + 8;
+            int chartY = y + 42;
+            int chartW = w - 16;
+            int chartH = Math.max(34, h - 52);
+            g2.setColor(new Color(17, 23, 38));
+            g2.fillRoundRect(chartX, chartY, chartW, chartH, 8, 8);
+            g2.setColor(new Color(65, 86, 120));
+            g2.drawRoundRect(chartX, chartY, chartW, chartH, 8, 8);
+
+            drawLine(g2, readHistory[slot], chartX, chartY, chartW, chartH, new Color(90, 210, 255));
+            drawLine(g2, writeHistory[slot], chartX, chartY, chartW, chartH, new Color(255, 182, 72));
+            drawLine(g2, utilHistory[slot], chartX, chartY, chartW, chartH, new Color(140, 255, 168));
+        }
+
+        private void drawLine(Graphics2D g2, int[] history, int x, int y, int w, int h, Color color) {
+            int max = 1;
+            for (int value : history) {
+                max = Math.max(max, value);
+            }
+            g2.setColor(color);
+            for (int i = 1; i < history.length; i++) {
+                int px0 = x + (i - 1) * (w - 1) / (history.length - 1);
+                int px1 = x + i * (w - 1) / (history.length - 1);
+                int py0 = y + h - 1 - (history[i - 1] * (h - 4) / max) - 2;
+                int py1 = y + h - 1 - (history[i] * (h - 4) / max) - 2;
+                g2.drawLine(px0, py0, px1, py1);
+            }
+        }
+
+        private void append(int[] history, int value) {
+            System.arraycopy(history, 1, history, 0, history.length - 1);
+            history[history.length - 1] = Math.max(0, value);
+        }
+
+        private int parsePercent(String text) {
+            if (text == null) {
+                return 0;
+            }
+            String normalized = text.replace("%", "").trim();
+            try {
+                return Integer.parseInt(normalized);
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+
+        private String normalizeUtil(String value) {
+            String raw = value == null ? "" : value.trim();
+            if (raw.isEmpty() || "--".equals(raw)) {
+                return "--";
+            }
+            return raw.endsWith("%") ? raw : raw + "%";
+        }
+
+        private String normalizeLabel(String rawLabel, String mount, int slotIndex) {
+            String base = rawLabel == null ? "" : rawLabel.trim();
+            if (base.isEmpty() || "--".equals(base)) {
+                base = "Drive " + slotIndex;
+            }
+            if (mount != null && !mount.isBlank() && !"--".equals(mount)) {
+                return base + "  (" + mount + ")";
+            }
+            return base;
+        }
+
+        private int rateToKbps(String text) {
+            if (text == null) {
+                return 0;
+            }
+            String normalized = text.trim().toUpperCase(Locale.ROOT).replace(" ", "");
+            Matcher matcher = Pattern.compile("([0-9]+(?:\\.[0-9]+)?)([KMGTP]?B)/S").matcher(normalized);
+            if (!matcher.find()) {
+                return 0;
+            }
+            double value;
+            try {
+                value = Double.parseDouble(matcher.group(1));
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
+            String unit = matcher.group(2);
+            double bytes = switch (unit) {
+                case "KB" -> value * 1024d;
+                case "MB" -> value * 1024d * 1024d;
+                case "GB" -> value * 1024d * 1024d * 1024d;
+                case "TB" -> value * 1024d * 1024d * 1024d * 1024d;
+                default -> value;
+            };
+            return (int) Math.round(bytes / 1024d);
         }
     }
 
