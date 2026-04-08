@@ -364,11 +364,8 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private ThemeMode themeMode;
 
-    private volatile Process fakePortsProcess;
+    private final DashboardStreamController dashboardStreamController;
     private volatile Process activeCommandProcess;
-    private volatile SerialPort previewPort;
-    private volatile boolean previewReading;
-    private Thread previewReaderThread;
     private Boolean lastDebugEnabledState;
     private Boolean lastWifiEnabledState;
     private boolean debugStatusMissingLogged;
@@ -407,6 +404,16 @@ public class UniversalMonitorControlCenter extends JFrame {
     public UniversalMonitorControlCenter(LaunchMode launchMode) {
         super(APP_NAME + " " + APP_VERSION);
         this.launchMode = launchMode == null ? LaunchMode.CONTROL_CENTER : launchMode;
+        this.dashboardStreamController = new DashboardStreamController(
+                this::repoPath,
+                () -> fakeInField.getText(),
+                () -> fakeOutField.getText(),
+                this::ensureSocatInstalled,
+                () -> ensureDebugMirrorConfig(fakeInField.getText().trim()),
+                this::log,
+                this::handleDashboardPacket,
+                this::onDashboardStreamStateChanged
+        );
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(1340, 940);
         setLocationRelativeTo(null);
@@ -1344,12 +1351,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         wifiModeOffButton.addActionListener(e -> setTransportMode(false));
         wifiModeRefreshButton.addActionListener(e -> refreshTransportModeStatus(true));
 
-        startFakePortsButton.addActionListener(e -> startFakePorts());
+        startFakePortsButton.addActionListener(e -> dashboardStreamController.startFakePorts());
         scanNetworkButton.addActionListener(e -> startNetworkScan());
         stopNetworkScanButton.addActionListener(e -> stopNetworkScan());
-        stopFakePortsButton.addActionListener(e -> stopFakePorts());
-        connectPreviewButton.addActionListener(e -> connectPreviewPort());
-        disconnectPreviewButton.addActionListener(e -> disconnectPreviewPort());
+        stopFakePortsButton.addActionListener(e -> dashboardStreamController.stopFakePorts());
+        connectPreviewButton.addActionListener(e -> dashboardStreamController.connectPreviewPort());
+        disconnectPreviewButton.addActionListener(e -> dashboardStreamController.disconnectPreviewPort());
         popOutPreviewButton.addActionListener(e -> openDashboardWindowAndStartStream());
         refreshMonitorPortsButton.addActionListener(e -> refreshMonitorPortChoices(true));
         loadMonitorSettingsButton.addActionListener(e -> refreshMonitorConnectionSettings(true));
@@ -2178,7 +2185,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         runCommand(buildSocatInstallCommand(), repoPath().toFile(), "Install socat", true, true, () -> {
             if (commandExists("socat")) {
-                SwingUtilities.invokeLater(this::startFakePorts);
+                SwingUtilities.invokeLater(() -> dashboardStreamController.startFakePorts());
             } else {
                 log("[ERROR] socat installation completed but the command is still unavailable.");
             }
@@ -2307,60 +2314,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         t.start();
     }
 
-    private void startFakePorts() {
-        if (!ensureSocatInstalled()) {
-            return;
-        }
+    private void handleDashboardPacket(JavaSerialFakeDisplay.ParsedPacket packet) {
+        SwingUtilities.invokeLater(() -> {
+            fakeDisplayPanel.updatePacket(packet);
+            desktopDashboardPanel.updatePacket(packet);
+            refreshDesktopDashboardMiniSummary(packet);
+        });
+    }
 
-        if (fakePortsProcess != null && fakePortsProcess.isAlive()) {
-            log("[INFO] Fake ports already running.");
-            return;
-        }
-
-        String fakeIn = fakeInField.getText().trim();
-        String fakeOut = fakeOutField.getText().trim();
-        if (fakeIn.isEmpty() || fakeOut.isEmpty()) {
-            log("[ERROR] Fake port paths cannot be empty.");
-            return;
-        }
-
-        ensureDebugMirrorConfig(fakeIn);
-
-        String commandText = "socat -d -d pty,raw,echo=0,link=" + escape(fakeIn) + " pty,raw,echo=0,link=" + escape(fakeOut);
-        log("[RUN] " + commandText);
-
-        Thread t = new Thread(() -> {
-            try {
-                ProcessBuilder pb = new ProcessBuilder("bash", "-lc", commandText);
-                pb.directory(repoPath().toFile());
-                pb.redirectErrorStream(true);
-                Process process = pb.start();
-                fakePortsProcess = process;
-                updatePortButtons();
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log("[socat] " + line);
-                }
-            } catch (Exception ex) {
-                log("[ERROR] Failed to start fake ports: " + ex.getMessage());
-            } finally {
-                fakePortsProcess = null;
-                updatePortButtons();
-            }
-        }, "fake-port-thread");
-
-        t.setDaemon(true);
-        t.start();
-
-        Timer delayedConnect = new Timer(900, e -> connectPreviewPort());
-        delayedConnect.setRepeats(false);
-        delayedConnect.start();
-
-        Timer delayedProbe = new Timer(1700, e -> sendPreviewProbePacket(fakeIn));
-        delayedProbe.setRepeats(false);
-        delayedProbe.start();
+    private void onDashboardStreamStateChanged() {
+        updatePortButtons();
+        updatePreviewButtons();
     }
 
     private void setDebugMode(boolean enabled) {
@@ -4692,122 +4656,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private void sendPreviewProbePacket(String fakeInPath) {
-        try {
-            SerialPort probePort = SerialPort.getCommPort(fakeInPath);
-            probePort.setComPortParameters(115200, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
-            probePort.setComPortTimeouts(SerialPort.TIMEOUT_WRITE_BLOCKING, 0, 1000);
-
-            if (!probePort.openPort()) {
-                log("[WARN] Probe packet skipped: could not open fake input port " + fakeInPath);
-                return;
-            }
-
-            try {
-                String probe = "HEADER:Preview Test|CPU:12|RAM:34|DISK0:56|DISK1:12|GPU:8|HOST:debug|OS:linux|IP:127.0.0.1|UPTIME:1m\n";
-                probePort.writeBytes(probe.getBytes(StandardCharsets.UTF_8), probe.length());
-                log("[INFO] Sent preview probe packet to " + fakeInPath + " (confirms fake port wiring).\n"
-                        + "      Python should write to input; preview reads output.");
-            } finally {
-                probePort.closePort();
-            }
-        } catch (Exception ex) {
-            log("[WARN] Failed to send preview probe packet: " + ex.getMessage());
-        }
-    }
-
-    private void stopFakePorts() {
-        Process process = fakePortsProcess;
-        if (process != null && process.isAlive()) {
-            process.destroy();
-            log("[INFO] Sent stop signal to fake ports process.");
-        } else {
-            log("[INFO] Fake ports are not running.");
-        }
-        updatePortButtons();
-    }
-
-    private void connectPreviewPort() {
-        if (previewPort != null && previewPort.isOpen()) {
-            log("[INFO] Preview port already connected.");
-            return;
-        }
-
-        String portPath = fakeOutField.getText().trim();
-        if (portPath.isEmpty()) {
-            log("[ERROR] Output port path is empty.");
-            return;
-        }
-
-        SerialPort port = SerialPort.getCommPort(portPath);
-        port.setComPortParameters(115200, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
-        port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 200, 0);
-
-        if (!port.openPort()) {
-            log("[ERROR] Failed to open preview port: " + portPath);
-            return;
-        }
-
-        previewPort = port;
-        previewReading = true;
-        updatePreviewButtons();
-        log("[INFO] Connected preview stream to " + portPath);
-
-        previewReaderThread = new Thread(() -> readPreviewLoop(port), "preview-reader-thread");
-        previewReaderThread.setDaemon(true);
-        previewReaderThread.start();
-    }
-
-    private void disconnectPreviewPort() {
-        previewReading = false;
-        SerialPort port = previewPort;
-        previewPort = null;
-
-        if (port != null && port.isOpen()) {
-            port.closePort();
-        }
-
-        updatePreviewButtons();
-        log("[INFO] Preview stream disconnected.");
-    }
-
-    private void readPreviewLoop(SerialPort port) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(port.getInputStream(), StandardCharsets.UTF_8))) {
-            while (previewReading && port.isOpen()) {
-                String line;
-                try {
-                    line = reader.readLine();
-                } catch (Exception ex) {
-                    String msg = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
-                    if (msg.contains("timed out")) {
-                        continue;
-                    }
-                    log("[ERROR] Preview read error: " + ex.getMessage());
-                    break;
-                }
-
-                if (line == null) {
-                    continue;
-                }
-                String trimmed = line.trim();
-                if (trimmed.isEmpty()) {
-                    continue;
-                }
-
-                JavaSerialFakeDisplay.ParsedPacket packet = JavaSerialFakeDisplay.ParsedPacket.parse(trimmed);
-                SwingUtilities.invokeLater(() -> {
-                    fakeDisplayPanel.updatePacket(packet);
-                    desktopDashboardPanel.updatePacket(packet);
-                    refreshDesktopDashboardMiniSummary(packet);
-                });
-            }
-        } catch (Exception ex) {
-            log("[ERROR] Preview stream failure: " + ex.getMessage());
-        }
-
-        SwingUtilities.invokeLater(this::disconnectPreviewPort);
-    }
-
     private void showDesktopDashboardWindow() {
         SwingUtilities.invokeLater(() -> {
             if (desktopDashboardWindow == null) {
@@ -4862,7 +4710,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void openDashboardWindowAndStartStream() {
         showDesktopDashboardWindow();
-        ensureDashboardStreamActive();
+        dashboardStreamController.ensureDashboardStreamActive();
     }
 
     private void closeDesktopDashboardWindow() {
@@ -5789,26 +5637,11 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void startDashboardPreviewFlow() {
-        ensureDashboardStreamActive();
-    }
-
-    private void ensureDashboardStreamActive() {
-        boolean fakePortsRunning = fakePortsProcess != null && fakePortsProcess.isAlive();
-        if (!fakePortsRunning) {
-            startFakePorts();
-            return;
-        }
-        boolean previewConnected = previewPort != null && previewPort.isOpen();
-        if (!previewConnected) {
-            connectPreviewPort();
-        } else {
-            log("[INFO] Dashboard stream already active.");
-        }
+        dashboardStreamController.startDashboardPreviewFlow();
     }
 
     private void stopDashboardPreviewFlow() {
-        disconnectPreviewPort();
-        stopFakePorts();
+        dashboardStreamController.stopDashboardPreviewFlow();
     }
 
     private boolean isLightTheme() {
@@ -7469,10 +7302,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             wifiCredentialsButton.setEnabled(enabled);
             clearSavedPasswordButton.setEnabled(enabled);
             rememberPasswordToggle.setEnabled(enabled);
-            startFakePortsButton.setEnabled(enabled && (fakePortsProcess == null || !fakePortsProcess.isAlive()));
-            stopFakePortsButton.setEnabled(enabled && fakePortsProcess != null && fakePortsProcess.isAlive());
-            connectPreviewButton.setEnabled(enabled && previewPort == null);
-            disconnectPreviewButton.setEnabled(enabled && previewPort != null);
+            startFakePortsButton.setEnabled(enabled && !dashboardStreamController.isFakePortsRunning());
+            stopFakePortsButton.setEnabled(enabled && dashboardStreamController.isFakePortsRunning());
+            connectPreviewButton.setEnabled(enabled && !dashboardStreamController.isPreviewConnected());
+            disconnectPreviewButton.setEnabled(enabled && dashboardStreamController.isPreviewConnected());
             serviceOnButton.setEnabled(enabled);
             serviceOffButton.setEnabled(enabled);
             serviceRestartButton.setEnabled(enabled);
@@ -7547,7 +7380,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void updatePortButtons() {
         SwingUtilities.invokeLater(() -> {
-            boolean running = fakePortsProcess != null && fakePortsProcess.isAlive();
+            boolean running = dashboardStreamController.isFakePortsRunning();
             startFakePortsButton.setEnabled(!running);
             stopFakePortsButton.setEnabled(running);
         });
@@ -7567,7 +7400,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void updatePreviewButtons() {
         SwingUtilities.invokeLater(() -> {
-            boolean connected = previewPort != null && previewPort.isOpen();
+            boolean connected = dashboardStreamController.isPreviewConnected();
             connectPreviewButton.setEnabled(!connected);
             disconnectPreviewButton.setEnabled(connected);
             popOutPreviewButton.setEnabled(true);
