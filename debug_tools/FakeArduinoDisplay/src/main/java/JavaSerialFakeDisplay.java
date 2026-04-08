@@ -386,6 +386,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private static final int SCREEN_W = 480;
         private static final int SCREEN_H = 320;
         private static final int GRAPH_POINTS = 62;
+        private static final int STORAGE_IO_SLOTS = 3;
         private static final Color BG = new Color(8, 12, 26);
         private static final Color CYAN = new Color(60, 240, 255);
         private static final Color WHITE = new Color(235, 240, 255);
@@ -409,6 +410,9 @@ public class JavaSerialFakeDisplay extends JFrame {
         private final int[] vramHistory = new int[GRAPH_POINTS];
         private final int[] netDownHistory = new int[GRAPH_POINTS];
         private final int[] netUpHistory = new int[GRAPH_POINTS];
+        private final int[][] storageReadHistory = new int[STORAGE_IO_SLOTS][GRAPH_POINTS];
+        private final int[][] storageWriteHistory = new int[STORAGE_IO_SLOTS][GRAPH_POINTS];
+        private final int[][] storageUtilHistory = new int[STORAGE_IO_SLOTS][GRAPH_POINTS];
         private boolean previewWifiEnabled;
         private String previewWifiHostname = "unknown-host";
         private String previewWifiIp = "No IPv4 address";
@@ -464,6 +468,12 @@ public class JavaSerialFakeDisplay extends JFrame {
             shiftAppendPercent(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
             shiftAppendRaw(netDownHistory, parseRateKbps(packet.get("DOWN", packet.get("NETDOWN", "0"))));
             shiftAppendRaw(netUpHistory, parseRateKbps(packet.get("UPNET", packet.get("NETUP", "0"))));
+            for (int slot = 0; slot < STORAGE_IO_SLOTS; slot++) {
+                int idx = slot + 1;
+                shiftAppendRaw(storageReadHistory[slot], parseRateKbps(packet.get("SIO" + idx + "R", "0 B/s")));
+                shiftAppendRaw(storageWriteHistory[slot], parseRateKbps(packet.get("SIO" + idx + "W", "0 B/s")));
+                shiftAppendPercent(storageUtilHistory[slot], packet.getInt("SIO" + idx + "UTIL", 0));
+            }
         }
 
         private void updateSmoothedGpuSample(int rawSample) {
@@ -1412,9 +1422,48 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawLine(dividerX, headerBottom + 12, dividerX, h - 12);
             g2.setFont(new Font(MONO, Font.BOLD, 14));
             g2.setColor(YELLOW);
-            g2.drawString("Battery / Devices", panelX, headerBottom + 20);
+            g2.drawString("Storage I/O", panelX, headerBottom + 20);
 
-            int lineY = headerBottom + 42;
+            int ioY = headerBottom + 30;
+            int ioPanelWidth = 206;
+            int ioPanelHeight = 44;
+            for (int slot = 0; slot < STORAGE_IO_SLOTS; slot++) {
+                int idx = slot + 1;
+                String label = packet.get("SIO" + idx + "LBL", "--");
+                if ("--".equals(label)) {
+                    continue;
+                }
+                int panelTop = ioY + slot * 52;
+                int graphTop = panelTop + 16;
+                int scaleMax = Math.max(
+                        64,
+                        Math.max(maxValue(storageReadHistory[slot]), maxValue(storageWriteHistory[slot]))
+                );
+                g2.setColor(GRID);
+                g2.drawRect(panelX, graphTop, ioPanelWidth, ioPanelHeight);
+                g2.setColor(new Color(52, 72, 98));
+                int utilHeight = Math.max(0, Math.min(ioPanelHeight - 2, storageUtilHistory[slot][GRAPH_POINTS - 1] * (ioPanelHeight - 2) / 100));
+                g2.fillRect(panelX + 1, graphTop + ioPanelHeight - 1 - utilHeight, ioPanelWidth - 1, utilHeight);
+                drawDesktopHistoryLineScaled(g2, storageReadHistory[slot], panelX + 1, graphTop + 1, ioPanelWidth - 1, ioPanelHeight - 1, scaleMax, LIME);
+                drawDesktopHistoryLineScaled(g2, storageWriteHistory[slot], panelX + 1, graphTop + 1, ioPanelWidth - 1, ioPanelHeight - 1, scaleMax, YELLOW);
+
+                g2.setFont(new Font(MONO, Font.BOLD, 9));
+                g2.setColor(WHITE);
+                g2.drawString(truncate(label, 10), panelX, panelTop + 10);
+                g2.setFont(new Font(MONO, Font.PLAIN, 8));
+                g2.setColor(LIME);
+                g2.drawString("R " + packet.get("SIO" + idx + "R", "0 B/s"), panelX + 56, panelTop + 10);
+                g2.setColor(YELLOW);
+                g2.drawString("W " + packet.get("SIO" + idx + "W", "0 B/s"), panelX + 128, panelTop + 10);
+                g2.setColor(CYAN);
+                g2.drawString("Busy " + packet.get("SIO" + idx + "UTIL", "--"), panelX + 56, panelTop + 20);
+            }
+
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(YELLOW);
+            g2.drawString("Battery / Devices", panelX, headerBottom + 194);
+
+            int lineY = headerBottom + 212;
             String batteryMode = packet.get("BATTMODE", "DESKTOP");
             String batteryPct = packet.get("BATTPCT", "N/A");
             String batteryState = packet.get("BATTSTATE", "DESKTOP");

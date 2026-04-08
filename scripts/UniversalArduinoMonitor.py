@@ -279,6 +279,7 @@ STORAGE_DISK0_TARGET = str(CONFIG.get("storage_disk0_target") or "").strip()
 STORAGE_DISK1_TARGET = str(CONFIG.get("storage_disk1_target") or "").strip()
 STORAGE_DEBUG = to_bool(os.environ.get("ARDUINO_MONITOR_STORAGE_DEBUG", CONFIG.get("storage_debug")), False)
 STORAGE_LINES = 8
+STORAGE_IO_SLOTS = 3
 PROCESS_ROWS = 6
 CPU_THREADS_TO_SEND = 16
 ARDUINO_PAYLOAD_FIELD_COUNT = 73
@@ -401,6 +402,8 @@ _proc_cache = {"ts": 0.0, "data": None}
 _static_cache = {"ts": 0.0, "data": None}
 _temp_cache = {"ts": 0.0, "data": None}
 _storage_cache = {"ts": 0.0, "data": None}
+_storage_io_cache = {"ts": 0.0, "data": None}
+_storage_io_prev_samples: Dict[str, Dict[str, float]] = {}
 _battery_cache = {"ts": 0.0, "data": None}
 _qbt_cache = {"ts": 0.0, "data": None}
 
@@ -1216,6 +1219,7 @@ def collect_storage_targets() -> List[Dict[str, Any]]:
                 "id": storage_target_id(mountpoint, raw_path, label),
                 "label": label,
                 "mountpoint": mountpoint,
+                "device_name": clean_field(cleaned_name(node), 24),
                 "size": size,
                 "percent": percent,
                 "score": score,
@@ -1262,6 +1266,68 @@ def get_cached_storage_lines() -> List[str]:
         _storage_cache["data"] = build_storage_lines(STORAGE_LINES)
         _storage_cache["ts"] = now
     return _storage_cache["data"]
+
+
+def collect_storage_io_entries(targets: List[Dict[str, Any]], now_time: float) -> List[Dict[str, object]]:
+    entries: List[Dict[str, object]] = []
+    io_by_disk = psutil.disk_io_counters(perdisk=True, nowrap=True) or {}
+    seen_devices: Set[str] = set()
+
+    for target in targets:
+        mountpoint = str(target.get("mountpoint") or "").strip()
+        if not mountpoint:
+            continue
+        device_name = str(target.get("device_name") or "").strip()
+        if not device_name or device_name in seen_devices:
+            continue
+        counters = io_by_disk.get(device_name)
+        if counters is None:
+            continue
+
+        prev = _storage_io_prev_samples.get(device_name)
+        read_bps = 0.0
+        write_bps = 0.0
+        busy_pct: Optional[int] = None
+        if prev:
+            elapsed = max(now_time - float(prev.get("ts", now_time)), 0.001)
+            read_delta = max(float(counters.read_bytes) - float(prev.get("read_bytes", counters.read_bytes)), 0.0)
+            write_delta = max(float(counters.write_bytes) - float(prev.get("write_bytes", counters.write_bytes)), 0.0)
+            read_bps = read_delta / elapsed
+            write_bps = write_delta / elapsed
+            if hasattr(counters, "busy_time") and prev.get("busy_time") is not None:
+                busy_delta = max(float(counters.busy_time) - float(prev.get("busy_time", counters.busy_time)), 0.0)
+                busy_pct = max(0, min(100, int(round((busy_delta / (elapsed * 1000.0)) * 100.0))))
+
+        _storage_io_prev_samples[device_name] = {
+            "ts": now_time,
+            "read_bytes": float(counters.read_bytes),
+            "write_bytes": float(counters.write_bytes),
+            "busy_time": float(counters.busy_time) if hasattr(counters, "busy_time") else None,
+        }
+
+        seen_devices.add(device_name)
+        entries.append({
+            "label": clean_field(target.get("label") or mountpoint, 16),
+            "mountpoint": mountpoint,
+            "device_name": device_name,
+            "read_bps": read_bps,
+            "write_bps": write_bps,
+            "total_bps": read_bps + write_bps,
+            "util_pct": busy_pct,
+        })
+        if len(entries) >= STORAGE_IO_SLOTS:
+            break
+    return entries
+
+
+def get_cached_storage_io_entries(targets: List[Dict[str, Any]], now_time: float) -> List[Dict[str, object]]:
+    if _storage_io_cache["data"] is None:
+        _storage_io_cache["data"] = collect_storage_io_entries(targets, now_time)
+        _storage_io_cache["ts"] = now_time
+    else:
+        _storage_io_cache["data"] = collect_storage_io_entries(targets, now_time)
+        _storage_io_cache["ts"] = now_time
+    return _storage_io_cache["data"]
 
 
 def get_battery_status() -> Tuple[str, str, str, List[Dict[str, str]]]:
@@ -1886,8 +1952,10 @@ def build_snapshot(last_net, last_time):
 
     if PAGE_STORAGE_ENABLED:
         storage_lines = get_cached_storage_lines()
+        storage_io = get_cached_storage_io_entries(enabled_storage_targets, now_time)
     else:
         storage_lines = ["Storage page disabled"]
+        storage_io = []
     battery_pct, battery_state, battery_mode, extra_batteries = get_cached_battery_status()
     qbittorrent = get_cached_qbittorrent_status()
 
@@ -1917,6 +1985,7 @@ def build_snapshot(last_net, last_time):
         "gpu_name": clean_field(gpu_name, 32),
         "procs": procs,
         "storage_lines": [clean_field(x, 30) for x in storage_lines],
+        "storage_io": storage_io,
         "iface": clean_field(iface, 18),
         "secondary_mount": clean_field(static["secondary_mount"], 24),
         "battery_pct": clean_field(battery_pct, 6),
@@ -2042,6 +2111,24 @@ def build_debug_payload(snapshot) -> str:
 
     for idx, line in enumerate(snapshot["storage_lines"], start=1):
         add(f"DRV{idx}", line, 40)
+    storage_io_entries = snapshot.get("storage_io") or []
+    for idx in range(STORAGE_IO_SLOTS):
+        if idx < len(storage_io_entries):
+            entry = storage_io_entries[idx]
+            add(f"SIO{idx + 1}LBL", entry.get("label", "--"), 16)
+            add(f"SIO{idx + 1}MNT", entry.get("mountpoint", "--"), 20)
+            add(f"SIO{idx + 1}R", format_speed(entry.get("read_bps", 0.0)), 18)
+            add(f"SIO{idx + 1}W", format_speed(entry.get("write_bps", 0.0)), 18)
+            add(f"SIO{idx + 1}TOT", format_speed(entry.get("total_bps", 0.0)), 18)
+            util_pct = entry.get("util_pct")
+            add(f"SIO{idx + 1}UTIL", f"{util_pct}%" if isinstance(util_pct, int) else "--", 8)
+        else:
+            add(f"SIO{idx + 1}LBL", "--")
+            add(f"SIO{idx + 1}MNT", "--")
+            add(f"SIO{idx + 1}R", "0 B/s")
+            add(f"SIO{idx + 1}W", "0 B/s")
+            add(f"SIO{idx + 1}TOT", "0 B/s")
+            add(f"SIO{idx + 1}UTIL", "--")
     add("BATTPCT", snapshot["battery_pct"])
     add("BATTSTATE", snapshot["battery_state"])
     add("BATTMODE", snapshot["battery_mode"])
