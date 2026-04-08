@@ -49,6 +49,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UniversalMonitorControlCenter extends JFrame {
+    private enum LaunchMode {
+        CONTROL_CENTER,
+        DASHBOARD_ONLY
+    }
 
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String UPDATE_SOURCE_FILE = ".last_update_source";
@@ -318,6 +322,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final ArrayDeque<String> rayfetchCommandHistory = new ArrayDeque<>();
     private int rayfetchHistoryCursor = 0;
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private final LaunchMode launchMode;
     private JFrame desktopDashboardWindow;
     private Rectangle desktopDashboardWindowedBounds;
     private boolean desktopDashboardFullscreen;
@@ -396,7 +401,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     public UniversalMonitorControlCenter() {
+        this(LaunchMode.CONTROL_CENTER);
+    }
+
+    public UniversalMonitorControlCenter(LaunchMode launchMode) {
         super(APP_NAME + " " + APP_VERSION);
+        this.launchMode = launchMode == null ? LaunchMode.CONTROL_CENTER : launchMode;
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setSize(1340, 940);
         setLocationRelativeTo(null);
@@ -532,6 +542,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshDebugStatus(false);
         refreshTransportModeStatus(false);
         refreshGamingModeTelemetryCards();
+        if (this.launchMode == LaunchMode.DASHBOARD_ONLY) {
+            launchStandaloneDashboardMode();
+        }
+    }
+
+    private void launchStandaloneDashboardMode() {
+        setVisible(false);
+        openDashboardWindowAndStartStream();
+        log("[INFO] Dashboard-only mode enabled. Control Center window remains hidden.");
     }
 
     private JPanel buildRepoPanel() {
@@ -5035,7 +5054,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
         top.add(statusRow);
 
-        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.2):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.3):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
                 + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
@@ -5064,7 +5083,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         cards.add(buildDashboardSummaryCard("Telemetry Source Status", gamingTelemetryStateLabel));
         cards.add(buildDashboardSummaryCard("MangoHud Log Path", gamingMangoHudPathLabel));
         panel.add(cards, BorderLayout.CENTER);
-        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.2):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
+        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.3):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
                 + "Live parsing hooks are scaffolded now and fields are aligned for later Arduino gaming-page output.</html>");
         footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         panel.add(footer, BorderLayout.SOUTH);
@@ -5110,7 +5129,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
-                "Desktop Monitor Settings page scaffold (v11.2):\n"
+                "Desktop Monitor Settings page scaffold (v11.3):\n"
                         + "- Theme controls are active and shared with the main popout controls.\n"
                         + "- Checkbox options are framework toggles for future layout/graph behavior.\n"
                         + "- This page is intended to become the central desktop-only settings hub.");
@@ -7643,7 +7662,17 @@ public class UniversalMonitorControlCenter extends JFrame {
             System.exit(1);
         }
 
-        SwingUtilities.invokeLater(() -> new UniversalMonitorControlCenter().setVisible(true));
+        boolean dashboardOnly = Arrays.stream(args)
+                .anyMatch(arg -> "--dashboard-only".equalsIgnoreCase(arg) || "--popout-only".equalsIgnoreCase(arg));
+
+        SwingUtilities.invokeLater(() -> {
+            UniversalMonitorControlCenter app = new UniversalMonitorControlCenter(
+                    dashboardOnly ? LaunchMode.DASHBOARD_ONLY : LaunchMode.CONTROL_CENTER
+            );
+            if (!dashboardOnly) {
+                app.setVisible(true);
+            }
+        });
     }
 
 
