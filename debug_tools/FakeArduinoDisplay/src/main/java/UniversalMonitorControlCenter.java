@@ -165,7 +165,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton debugOnButton = new JButton("Enable Debug Mode");
     private final JButton debugOffButton = new JButton("Disable Debug Mode");
     private final JButton debugRefreshButton = new JButton("Refresh Debug Status");
-    private final JButton debugCodexUpdateButton = new JButton("Update from Latest Codex Branch (Debug)");
     private final JButton wifiModeOnButton = new JButton("Enable Wi-Fi Mode");
     private final JButton wifiModeOffButton = new JButton("Use USB Only");
     private final JButton wifiModeRefreshButton = new JButton("Refresh Transport");
@@ -213,7 +212,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JButton saveAndRestartMonitorButton = new JButton("Save & Restart Python Monitor");
     private final JButton refreshStorageTargetsButton = new JButton("Refresh Storage Targets");
     private final JButton saveStorageSettingsButton = new JButton("Save Storage Settings");
-    private final JButton openStorageTabButton = new JButton("Open Storage I/O Tab");
     private final JLabel storageSelectionSummaryLabel = new JLabel("Disk0: Auto (/), Disk1: Auto (secondary)");
     private final JButton testQbittorrentConnectionButton = new JButton("Test qBittorrent Connection");
     private final JButton resetWifiPairingButton = new JButton("Reset Wi-Fi Pairing");
@@ -223,6 +221,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JComboBox<String> disk1Selector = new JComboBox<>();
     private final StorageActivityPanel controlCenterStorageActivityPanel = new StorageActivityPanel();
     private final StorageActivityPanel popoutStorageActivityPanel = new StorageActivityPanel();
+    private final JScrollPane controlCenterStorageActivityScroll = new JScrollPane(controlCenterStorageActivityPanel);
+    private final JScrollPane popoutStorageActivityScroll = new JScrollPane(popoutStorageActivityPanel);
     private final JLabel storageCapacitySnapshotLabel = new JLabel("Storage Capacity / Mounts: waiting for monitor packets");
     private final JLabel popoutStorageCapacityLabel = new JLabel("Storage Capacity / Mounts: waiting for monitor packets");
     private final JComboBox<String> macroTriggerModelSelector = new JComboBox<>(new String[]{
@@ -441,7 +441,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         killRunningTaskButton.setToolTipText("Force-stops the currently running flash/task command if it gets stuck, then refreshes the UI.");
         killRunningTaskButton.setEnabled(false);
         debugRefreshButton.setToolTipText("Re-checks whether the Python debug mirror mode is currently enabled.");
-        debugCodexUpdateButton.setToolTipText("Advanced Debug action: fetches/prunes, selects the latest local codex/* or codex-* branch, and confirms before checkout/pull.");
         wifiModeRefreshButton.setToolTipText("Re-checks whether the monitor is currently using Wi-Fi mode or USB-only mode.");
         serviceStartupEnableButton.setToolTipText("Runs systemctl enable and start for the Arduino monitor service so it starts at boot and now.");
         serviceStartupDisableButton.setToolTipText("Runs systemctl disable and stop for the Arduino monitor service so it does not start at boot.");
@@ -479,7 +478,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         loadMonitorSettingsButton.setToolTipText("Reloads the saved settings from the config files on this computer. Use it to bring back what you last saved locally before you flash again.");
         saveMonitorSettingsButton.setToolTipText("Saves machine-local serial/TCP/connection-mode settings, mirrors the Wi-Fi port/pairing values into wifi_config.local.h, stops the monitor service, flashes every detected R4 WiFi board with that same local header, and starts the service again.");
         saveAndRestartMonitorButton.setToolTipText("Saves machine-local monitor/module/profile settings and restarts the Python monitor service only (no Arduino flashing).");
-        openStorageTabButton.setToolTipText("Jumps directly to the Storage I/O tab in Control Center.");
         flashFromProfilesButton.setToolTipText("Quick flash button near profiles so page/module/profile changes can be applied to hardware immediately.");
         runProfileActionButton.setToolTipText("Runs the selected profile action from the compact menu.");
         profileActionSelector.setToolTipText("Compact profile action menu (new/save as/update/delete/import/export).");
@@ -772,16 +770,29 @@ public class UniversalMonitorControlCenter extends JFrame {
         setupContent.setLayout(new BoxLayout(setupContent, BoxLayout.Y_AXIS));
         setupContent.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel controls = new JPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
         controls.setBorder(BorderFactory.createTitledBorder("Storage Display Setup"));
-        controls.add(refreshStorageTargetsButton);
-        controls.add(saveStorageSettingsButton);
-        controls.add(new JLabel("Home Disk0:"));
+
+        JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 4));
+        buttonRow.add(refreshStorageTargetsButton);
+        controls.add(buttonRow);
+
+        JPanel saveRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 4));
+        saveRow.add(saveStorageSettingsButton);
+        controls.add(saveRow);
+
+        JPanel disk0Row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 4));
+        disk0Row.add(new JLabel("Home Disk0:"));
         disk0Selector.setPreferredSize(new Dimension(280, disk0Selector.getPreferredSize().height));
-        controls.add(disk0Selector);
-        controls.add(new JLabel("Home Disk1:"));
+        disk0Row.add(disk0Selector);
+        controls.add(disk0Row);
+
+        JPanel disk1Row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 4));
+        disk1Row.add(new JLabel("Home Disk1:"));
         disk1Selector.setPreferredSize(new Dimension(280, disk1Selector.getPreferredSize().height));
-        controls.add(disk1Selector);
+        disk1Row.add(disk1Selector);
+        controls.add(disk1Row);
         controls.setAlignmentX(Component.LEFT_ALIGNMENT);
         setupContent.add(controls);
 
@@ -789,7 +800,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         storageTargetsPanel.setBorder(new EmptyBorder(6, 6, 6, 6));
         JScrollPane targetsScroll = new JScrollPane(storageTargetsPanel);
         targetsScroll.setBorder(BorderFactory.createTitledBorder("Detected Storage Targets (checked = visible on Storage page)"));
-        targetsScroll.setPreferredSize(new Dimension(1160, 480));
+        targetsScroll.setPreferredSize(new Dimension(480, 420));
         setupContent.add(targetsScroll);
 
         storageSelectionSummaryLabel.setBorder(new EmptyBorder(4, 6, 2, 6));
@@ -810,12 +821,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         activityPanel.setBorder(BorderFactory.createTitledBorder("Storage I/O / Drive Activity (Live)"));
         storageCapacitySnapshotLabel.setBorder(new EmptyBorder(4, 6, 2, 6));
         activityPanel.add(storageCapacitySnapshotLabel, BorderLayout.NORTH);
-        activityPanel.add(controlCenterStorageActivityPanel, BorderLayout.CENTER);
+        controlCenterStorageActivityScroll.setBorder(BorderFactory.createEmptyBorder());
+        controlCenterStorageActivityScroll.getVerticalScrollBar().setUnitIncrement(16);
+        activityPanel.add(controlCenterStorageActivityScroll, BorderLayout.CENTER);
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, setupScroll, activityPanel);
-        splitPane.setResizeWeight(0.43);
+        splitPane.setResizeWeight(0.36);
         splitPane.setContinuousLayout(true);
-        splitPane.setDividerLocation(500);
+        splitPane.setDividerLocation(470);
         splitPane.setBorder(BorderFactory.createEmptyBorder());
         content.add(splitPane, BorderLayout.CENTER);
 
@@ -859,12 +872,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         startupRow.add(startupIndicator);
         controlsColumn.add(startupRow);
 
-        JPanel storageNavRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        storageNavRow.add(new JLabel("Storage I/O Setup:"));
-        storageNavRow.add(openStorageTabButton);
-        storageNavRow.add(new JLabel("Path: Control Center → Storage I/O"));
-        controlsColumn.add(storageNavRow);
-
         servicePanel.add(controlsColumn, BorderLayout.CENTER);
         lightModeToggle.setFocusable(false);
         JPanel rightPanel = new JPanel();
@@ -891,9 +898,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugPanel.add(debugOnButton);
         debugPanel.add(debugOffButton);
         debugPanel.add(debugRefreshButton);
-        debugCodexUpdateButton.setVisible(false);
-        debugCodexUpdateButton.setEnabled(false);
-        debugPanel.add(debugCodexUpdateButton);
         debugPanel.add(new JLabel("Indicator:"));
         debugPanel.add(debugIndicator);
         debugPanel.add(Box.createHorizontalGlue());
@@ -1379,7 +1383,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         debugOnButton.addActionListener(e -> setDebugMode(true));
         debugOffButton.addActionListener(e -> setDebugMode(false));
         debugRefreshButton.addActionListener(e -> refreshDebugStatus(true));
-        debugCodexUpdateButton.addActionListener(e -> runCodexDebugUpdateWorkflow());
         wifiModeOnButton.addActionListener(e -> setTransportMode(true));
         wifiModeOffButton.addActionListener(e -> setTransportMode(false));
         wifiModeRefreshButton.addActionListener(e -> refreshTransportModeStatus(true));
@@ -1397,7 +1400,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         saveAndRestartMonitorButton.addActionListener(e -> saveMonitorConnectionSettings(false));
         refreshStorageTargetsButton.addActionListener(e -> refreshStorageTargetsFromSystem(true));
         saveStorageSettingsButton.addActionListener(e -> saveStorageSelectionsOnly());
-        openStorageTabButton.addActionListener(e -> focusStorageTab());
         disk0Selector.addActionListener(e -> updateStorageSelectionSummaryLabel());
         disk1Selector.addActionListener(e -> updateStorageSelectionSummaryLabel());
         testQbittorrentConnectionButton.addActionListener(e -> testQbittorrentConnection());
@@ -2442,11 +2444,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void updateDebugAdvancedButtonState(boolean debugEnabled) {
-        SwingUtilities.invokeLater(() -> {
-            debugCodexUpdateButton.setVisible(debugEnabled);
-            boolean actionsEnabled = activeCommandProcess == null || !activeCommandProcess.isAlive();
-            debugCodexUpdateButton.setEnabled(debugEnabled && actionsEnabled);
-        });
+        // Debug-only advanced button was removed from the dashboard UI.
     }
 
     private void runCodexDebugUpdateWorkflow() {
@@ -2991,6 +2989,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         storageTargetsById.clear();
         storageTargetCheckboxes.clear();
         storageTargetsPanel.removeAll();
+        List<String> targetLabels = new ArrayList<>();
         for (StorageTarget target : detected) {
             storageTargetsById.put(target.id(), target);
             JCheckBox checkbox = new JCheckBox(target.displayLabel());
@@ -2999,10 +2998,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             storageTargetCheckboxes.put(target.id(), checkbox);
             storageTargetsPanel.add(checkbox);
             storageTargetsPanel.add(Box.createVerticalStrut(4));
+            targetLabels.add(target.displayLabel());
         }
         rebuildStorageTargetSelectors();
+        controlCenterStorageActivityPanel.setConfiguredTargets(targetLabels);
+        popoutStorageActivityPanel.setConfiguredTargets(targetLabels);
         storageTargetsPanel.revalidate();
         storageTargetsPanel.repaint();
+        applyTheme();
         if (verbose) {
             log("[INFO] Refreshed storage target list (" + detected.size() + " targets).");
         }
@@ -4952,7 +4955,9 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(header, BorderLayout.NORTH);
 
         JPanel center = new JPanel(new BorderLayout(8, 8));
-        center.add(popoutStorageActivityPanel, BorderLayout.CENTER);
+        popoutStorageActivityScroll.setBorder(BorderFactory.createEmptyBorder());
+        popoutStorageActivityScroll.getVerticalScrollBar().setUnitIncrement(16);
+        center.add(popoutStorageActivityScroll, BorderLayout.CENTER);
         popoutStorageCapacityLabel.setBorder(new EmptyBorder(4, 2, 2, 2));
         center.add(popoutStorageCapacityLabel, BorderLayout.SOUTH);
         panel.add(center, BorderLayout.CENTER);
@@ -4991,7 +4996,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
         top.add(statusRow);
 
-        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.4):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.5 Beta):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
                 + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
@@ -5020,7 +5025,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         cards.add(buildDashboardSummaryCard("Telemetry Source Status", gamingTelemetryStateLabel));
         cards.add(buildDashboardSummaryCard("MangoHud Log Path", gamingMangoHudPathLabel));
         panel.add(cards, BorderLayout.CENTER);
-        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.4):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
+        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.5 Beta):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
                 + "Live parsing hooks are scaffolded now and fields are aligned for later Arduino gaming-page output.</html>");
         footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         panel.add(footer, BorderLayout.SOUTH);
@@ -5066,7 +5071,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
-                "Desktop Monitor Settings page scaffold (v11.4):\n"
+                "Desktop Monitor Settings page scaffold (v11.5 Beta):\n"
                         + "- Theme controls are active and shared with the main popout controls.\n"
                         + "- Checkbox options are framework toggles for future layout/graph behavior.\n"
                         + "- This page is intended to become the central desktop-only settings hub.");
@@ -5757,6 +5762,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         return isLightTheme() ? lightAccent : (isBlackTheme() ? blackAccent : darkAccent);
     }
 
+    private Color themeBorderColor() {
+        return isLightTheme() ? Color.BLACK : themeAccent();
+    }
+
     private Color themeFieldBackground() {
         return isLightTheme() ? lightFieldBackground : (isBlackTheme() ? blackFieldBackground : darkFieldBackground);
     }
@@ -5784,6 +5793,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             Color panelBackground = themePanelBackground();
             Color textColor = themeTextColor();
             Color accent = themeAccent();
+            Color borderColor = themeBorderColor();
             Color fieldBackground = themeFieldBackground();
             Color buttonBackground = themeButtonBackground();
             Color criticalButtonBackground = themeCriticalButtonBackground();
@@ -5791,58 +5801,63 @@ public class UniversalMonitorControlCenter extends JFrame {
             Color positiveButtonBackground = themePositiveButtonBackground();
 
             getContentPane().setBackground(background);
-            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
+            styleComponentTree(getContentPane(), background, panelBackground, textColor, accent, borderColor, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
             if (desktopDashboardWindow != null) {
                 desktopDashboardWindow.getContentPane().setBackground(background);
-                styleComponentTree(desktopDashboardWindow.getContentPane(), background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
+                styleComponentTree(desktopDashboardWindow.getContentPane(), background, panelBackground, textColor, accent, borderColor, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
             }
             outputArea.setCaretColor(textColor);
             desktopDashboardLogArea.setCaretColor(textColor);
+            renderStyledLogLines(outputArea, Arrays.asList(outputArea.getText().split("\\R")));
+            renderStyledLogLines(desktopDashboardLogArea, desktopDashboardLogLines);
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
             lightModeToggle.setBackground(panelBackground);
             blackModeToggle.setForeground(textColor);
             blackModeToggle.setBackground(panelBackground);
             updateCustomSketchIndicatorAppearance(accent, textColor);
-            fakeDisplayPanel.setBorder(new LineBorder(accent, 1, true));
-            desktopDashboardPanel.setBorder(new LineBorder(accent, 1, true));
+            fakeDisplayPanel.setBorder(new LineBorder(borderColor, 1, true));
+            desktopDashboardPanel.setBorder(new LineBorder(borderColor, 1, true));
+            controlCenterStorageActivityPanel.applyTheme(panelBackground, textColor, borderColor, fieldBackground);
+            popoutStorageActivityPanel.applyTheme(panelBackground, textColor, borderColor, fieldBackground);
             enforceDashboardThemeStability();
 
             repaint();
         });
     }
 
-    private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent,
+    private void styleComponentTree(Component component, Color background, Color panelBackground, Color textColor, Color accent, Color borderColor,
                                     Color fieldBackground, Color buttonBackground, Color criticalButtonBackground, Color restartButtonBackground, Color positiveButtonBackground) {
         if (component instanceof JPanel panel) {
             panel.setOpaque(true);
             panel.setBackground(panelBackground);
             if (panel.getBorder() instanceof javax.swing.border.TitledBorder titledBorder) {
                 titledBorder.setTitleColor(textColor);
+                titledBorder.setBorder(BorderFactory.createLineBorder(borderColor));
             } else if (Boolean.TRUE.equals(panel.getClientProperty("uasmSettingsPanel"))) {
                 panel.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(accent, 1, true),
+                        BorderFactory.createLineBorder(borderColor, 1, true),
                         BorderFactory.createEmptyBorder(6, 6, 6, 6)
                 ));
             } else if (Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardStatus"))
                     || Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardControls"))
                     || Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardSummary"))) {
                 panel.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(accent, 1, true),
+                        BorderFactory.createLineBorder(borderColor, 1, true),
                         BorderFactory.createEmptyBorder(6, 8, 6, 8)
                 ));
             } else if (Boolean.TRUE.equals(panel.getClientProperty("uasmDashboardSummaryCard"))) {
                 panel.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(accent.darker(), 1, true),
+                        BorderFactory.createLineBorder(borderColor, 1, true),
                         BorderFactory.createEmptyBorder(6, 8, 6, 8)
                 ));
             }
         } else if (component instanceof JSplitPane splitPane) {
             splitPane.setBackground(background);
             if (Boolean.TRUE.equals(splitPane.getClientProperty("uasmDashboardSplit"))) {
-                splitPane.setBorder(BorderFactory.createLineBorder(accent, 1, true));
+                splitPane.setBorder(BorderFactory.createLineBorder(borderColor, 1, true));
             } else {
-                splitPane.setBorder(BorderFactory.createLineBorder(accent));
+                splitPane.setBorder(BorderFactory.createLineBorder(borderColor));
             }
         } else if (component instanceof JTabbedPane tabbedPane) {
             tabbedPane.setBackground(panelBackground);
@@ -5854,7 +5869,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                     && scrollPane.getBorder() instanceof javax.swing.border.TitledBorder titledBorder) {
                 titledBorder.setTitleColor(textColor);
             } else {
-                scrollPane.setBorder(BorderFactory.createLineBorder(accent));
+                scrollPane.setBorder(BorderFactory.createLineBorder(borderColor));
             }
             scrollPane.setBackground(panelBackground);
         } else if (component instanceof JTextArea area) {
@@ -5868,7 +5883,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             field.setForeground(textColor);
             field.setCaretColor(textColor);
             field.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(accent),
+                    BorderFactory.createLineBorder(borderColor),
                     BorderFactory.createEmptyBorder(4, 6, 4, 6)
             ));
         } else if (component instanceof JTextField field) {
@@ -5876,7 +5891,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             field.setForeground(textColor);
             field.setCaretColor(textColor);
             field.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(accent),
+                    BorderFactory.createLineBorder(borderColor),
                     BorderFactory.createEmptyBorder(4, 6, 4, 6)
             ));
         } else if (component instanceof JCheckBox checkBox) {
@@ -5896,7 +5911,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         } else if (component instanceof AbstractButton button) {
             boolean isCriticalFlashButton = button == flashButton || button == saveMonitorSettingsButton || button == flashFromProfilesButton;
             boolean isRestartButton = button == saveAndRestartMonitorButton;
-            boolean isPositiveUpdateButton = button == updateButton || button == debugCodexUpdateButton;
+            boolean isPositiveUpdateButton = button == updateButton;
             boolean isDashboardCompactButton = Boolean.TRUE.equals(button.getClientProperty("uasmDashboardCompactButton"));
             Color resolvedButtonBackground = isCriticalFlashButton
                     ? criticalButtonBackground
@@ -5906,7 +5921,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             button.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(
                             (isCriticalFlashButton || isRestartButton || isPositiveUpdateButton)
-                                    ? resolvedButtonBackground.darker() : accent
+                                    ? resolvedButtonBackground.darker() : borderColor
                     ),
                     BorderFactory.createEmptyBorder(isDashboardCompactButton ? 4 : 6, isDashboardCompactButton ? 8 : 10, isDashboardCompactButton ? 4 : 6, isDashboardCompactButton ? 8 : 10)
             ));
@@ -5923,7 +5938,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 label.setOpaque(true);
                 label.setBackground(fieldBackground);
                 label.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(accent, 1, true),
+                    BorderFactory.createLineBorder(borderColor, 1, true),
                         BorderFactory.createEmptyBorder(6, 8, 6, 8)
                 ));
                 String html = (String) label.getClientProperty("uasmHtmlSource");
@@ -5960,7 +5975,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) {
-                styleComponentTree(child, background, panelBackground, textColor, accent, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
+                styleComponentTree(child, background, panelBackground, textColor, accent, borderColor, fieldBackground, buttonBackground, criticalButtonBackground, restartButtonBackground, positiveButtonBackground);
             }
         }
     }
@@ -7405,7 +7420,6 @@ public class UniversalMonitorControlCenter extends JFrame {
             debugOnButton.setEnabled(enabled);
             debugOffButton.setEnabled(enabled);
             debugRefreshButton.setEnabled(enabled);
-            debugCodexUpdateButton.setEnabled(enabled && Boolean.TRUE.equals(lastDebugEnabledState));
             wifiModeOnButton.setEnabled(enabled);
             wifiModeOffButton.setEnabled(enabled);
             wifiModeRefreshButton.setEnabled(enabled);
@@ -7702,22 +7716,54 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private static class StorageActivityPanel extends JPanel {
-        private static final int DRIVES = 3;
+        private static final int MIN_DRIVES = 3;
         private static final int HISTORY = 72;
-        private final int[][] readHistory = new int[DRIVES][HISTORY];
-        private final int[][] writeHistory = new int[DRIVES][HISTORY];
-        private final int[][] utilHistory = new int[DRIVES][HISTORY];
-        private final String[] labels = {"Drive 1", "Drive 2", "Drive 3"};
-        private final String[] readText = {"0 B/s", "0 B/s", "0 B/s"};
-        private final String[] writeText = {"0 B/s", "0 B/s", "0 B/s"};
-        private final String[] utilText = {"--", "--", "--"};
+        private final List<int[]> readHistory = new ArrayList<>();
+        private final List<int[]> writeHistory = new ArrayList<>();
+        private final List<int[]> utilHistory = new ArrayList<>();
+        private final List<String> labels = new ArrayList<>();
+        private final List<String> readText = new ArrayList<>();
+        private final List<String> writeText = new ArrayList<>();
+        private final List<String> utilText = new ArrayList<>();
+        private List<String> configuredTargets = new ArrayList<>();
         private long lastUpdateMs = 0L;
+        private Color baseBackground = new Color(17, 24, 40);
+        private Color cardBackground = new Color(27, 38, 61);
+        private Color borderColor = new Color(80, 107, 148);
+        private Color textColor = new Color(240, 245, 255);
+        private Color statusColor = new Color(143, 197, 255);
+        private Color chartBackground = new Color(17, 23, 38);
 
         StorageActivityPanel() {
             setOpaque(true);
-            setBackground(new Color(17, 24, 40));
+            setBackground(baseBackground);
             setBorder(new EmptyBorder(8, 8, 8, 8));
-            setPreferredSize(new Dimension(640, 420));
+            ensureDriveCount(MIN_DRIVES);
+            updatePreferredHeight();
+        }
+
+        void applyTheme(Color panelBackground, Color textColor, Color borderColor, Color fieldBackground) {
+            this.baseBackground = fieldBackground;
+            this.cardBackground = panelBackground;
+            this.borderColor = borderColor;
+            this.textColor = textColor;
+            this.statusColor = textColor;
+            this.chartBackground = fieldBackground;
+            setBackground(baseBackground);
+            repaint();
+        }
+
+        void setConfiguredTargets(List<String> targets) {
+            configuredTargets = targets == null ? new ArrayList<>() : new ArrayList<>(targets);
+            ensureDriveCount(Math.max(MIN_DRIVES, configuredTargets.size()));
+            for (int i = 0; i < labels.size(); i++) {
+                if (i >= MIN_DRIVES && i < configuredTargets.size()) {
+                    labels.set(i, configuredTargets.get(i));
+                }
+            }
+            updatePreferredHeight();
+            revalidate();
+            repaint();
         }
 
         void updateFromPacket(JavaSerialFakeDisplay.ParsedPacket packet) {
@@ -7726,18 +7772,29 @@ public class UniversalMonitorControlCenter extends JFrame {
                 return;
             }
             lastUpdateMs = System.currentTimeMillis();
-            for (int slot = 0; slot < DRIVES; slot++) {
+            int driveCount = Math.max(MIN_DRIVES, configuredTargets.size());
+            ensureDriveCount(driveCount);
+            for (int slot = 0; slot < driveCount; slot++) {
                 int idx = slot + 1;
-                String rawLabel = packet.get("SIO" + idx + "LBL", "").trim();
-                String mount = packet.get("SIO" + idx + "MNT", "").trim();
-                labels[slot] = normalizeLabel(rawLabel, mount, idx);
-                readText[slot] = packet.get("SIO" + idx + "R", "0 B/s");
-                writeText[slot] = packet.get("SIO" + idx + "W", "0 B/s");
-                utilText[slot] = normalizeUtil(packet.get("SIO" + idx + "UTIL", "--"));
-                append(readHistory[slot], rateToKbps(readText[slot]));
-                append(writeHistory[slot], rateToKbps(writeText[slot]));
-                append(utilHistory[slot], parsePercent(utilText[slot]));
+                if (slot < MIN_DRIVES) {
+                    String rawLabel = packet.get("SIO" + idx + "LBL", "").trim();
+                    String mount = packet.get("SIO" + idx + "MNT", "").trim();
+                    String fallback = slot < configuredTargets.size() ? configuredTargets.get(slot) : "";
+                    labels.set(slot, normalizeLabel(rawLabel, mount, idx, fallback));
+                    readText.set(slot, packet.get("SIO" + idx + "R", "0 B/s"));
+                    writeText.set(slot, packet.get("SIO" + idx + "W", "0 B/s"));
+                    utilText.set(slot, normalizeUtil(packet.get("SIO" + idx + "UTIL", "--")));
+                    append(readHistory.get(slot), rateToKbps(readText.get(slot)));
+                    append(writeHistory.get(slot), rateToKbps(writeText.get(slot)));
+                    append(utilHistory.get(slot), parsePercent(utilText.get(slot)));
+                } else {
+                    labels.set(slot, configuredTargets.get(slot));
+                    readText.set(slot, "--");
+                    writeText.set(slot, "--");
+                    utilText.set(slot, "--");
+                }
             }
+            updatePreferredHeight();
             repaint();
         }
 
@@ -7749,10 +7806,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
             int w = getWidth();
             int h = getHeight();
-            g2.setColor(new Color(17, 24, 40));
+            g2.setColor(baseBackground);
             g2.fillRect(0, 0, w, h);
 
-            g2.setColor(new Color(218, 230, 250));
+            g2.setColor(textColor);
             g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
             g2.drawString("Storage I/O / Drive Activity", 10, 22);
 
@@ -7760,13 +7817,14 @@ public class UniversalMonitorControlCenter extends JFrame {
             String status = lastUpdateMs == 0L
                     ? "Waiting for storage I/O data"
                     : "Last packet: " + Math.max(0, (System.currentTimeMillis() - lastUpdateMs) / 1000) + "s ago";
-            g2.setColor(new Color(143, 197, 255));
+            g2.setColor(statusColor);
             g2.drawString(status, 10, 40);
 
+            int drives = labels.size();
             int rowGap = 8;
-            int rowHeight = Math.max(100, (h - 56 - rowGap * (DRIVES - 1)) / DRIVES);
+            int rowHeight = Math.max(120, (h - 56 - rowGap * Math.max(0, drives - 1)) / Math.max(1, drives));
             int y = 48;
-            for (int slot = 0; slot < DRIVES; slot++) {
+            for (int slot = 0; slot < drives; slot++) {
                 drawDriveRow(g2, 10, y, w - 20, rowHeight, slot);
                 y += rowHeight + rowGap;
             }
@@ -7774,31 +7832,31 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
 
         private void drawDriveRow(Graphics2D g2, int x, int y, int w, int h, int slot) {
-            g2.setColor(new Color(27, 38, 61));
+            g2.setColor(cardBackground);
             g2.fillRoundRect(x, y, w, h, 10, 10);
-            g2.setColor(new Color(80, 107, 148));
+            g2.setColor(borderColor);
             g2.drawRoundRect(x, y, w, h, 10, 10);
 
             g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
-            g2.setColor(new Color(240, 245, 255));
-            g2.drawString(labels[slot], x + 8, y + 18);
+            g2.setColor(textColor);
+            g2.drawString(labels.get(slot), x + 8, y + 18);
 
             g2.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-            g2.setColor(new Color(170, 210, 255));
-            g2.drawString("Read " + readText[slot] + "   Write " + writeText[slot] + "   Busy " + utilText[slot], x + 8, y + 34);
+            g2.setColor(statusColor);
+            g2.drawString("Read " + readText.get(slot) + "   Write " + writeText.get(slot) + "   Busy " + utilText.get(slot), x + 8, y + 34);
 
             int chartX = x + 8;
             int chartY = y + 42;
             int chartW = w - 16;
             int chartH = Math.max(34, h - 52);
-            g2.setColor(new Color(17, 23, 38));
+            g2.setColor(chartBackground);
             g2.fillRoundRect(chartX, chartY, chartW, chartH, 8, 8);
-            g2.setColor(new Color(65, 86, 120));
+            g2.setColor(borderColor);
             g2.drawRoundRect(chartX, chartY, chartW, chartH, 8, 8);
 
-            drawLine(g2, readHistory[slot], chartX, chartY, chartW, chartH, new Color(90, 210, 255));
-            drawLine(g2, writeHistory[slot], chartX, chartY, chartW, chartH, new Color(255, 182, 72));
-            drawLine(g2, utilHistory[slot], chartX, chartY, chartW, chartH, new Color(140, 255, 168));
+            drawLine(g2, readHistory.get(slot), chartX, chartY, chartW, chartH, new Color(90, 210, 255));
+            drawLine(g2, writeHistory.get(slot), chartX, chartY, chartW, chartH, new Color(255, 182, 72));
+            drawLine(g2, utilHistory.get(slot), chartX, chartY, chartW, chartH, new Color(140, 255, 168));
         }
 
         private void drawLine(Graphics2D g2, int[] history, int x, int y, int w, int h, Color color) {
@@ -7841,15 +7899,34 @@ public class UniversalMonitorControlCenter extends JFrame {
             return raw.endsWith("%") ? raw : raw + "%";
         }
 
-        private String normalizeLabel(String rawLabel, String mount, int slotIndex) {
+        private String normalizeLabel(String rawLabel, String mount, int slotIndex, String fallback) {
             String base = rawLabel == null ? "" : rawLabel.trim();
             if (base.isEmpty() || "--".equals(base)) {
-                base = "Drive " + slotIndex;
+                base = fallback == null || fallback.isBlank() ? "Drive " + slotIndex : fallback;
             }
             if (mount != null && !mount.isBlank() && !"--".equals(mount)) {
                 return base + "  (" + mount + ")";
             }
             return base;
+        }
+
+        private void ensureDriveCount(int drives) {
+            while (labels.size() < drives) {
+                int next = labels.size() + 1;
+                labels.add("Drive " + next);
+                readText.add("0 B/s");
+                writeText.add("0 B/s");
+                utilText.add("--");
+                readHistory.add(new int[HISTORY]);
+                writeHistory.add(new int[HISTORY]);
+                utilHistory.add(new int[HISTORY]);
+            }
+        }
+
+        private void updatePreferredHeight() {
+            int rows = Math.max(MIN_DRIVES, labels.size());
+            int height = 56 + rows * 128 + Math.max(0, rows - 1) * 8;
+            setPreferredSize(new Dimension(760, Math.max(420, height)));
         }
 
         private int rateToKbps(String text) {

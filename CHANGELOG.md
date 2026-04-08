@@ -1,3 +1,10 @@
+## v11.5 Beta - 2026-04-08
+- Bumped the shared project version to v11.5 Beta across VERSION, README, generated Arduino app headers, runtime/version labels, and Control Center/dashboard/pop-out visible version text.
+- Removed obsolete dashboard controls (Open Storage I/O Tab guidance/button and Update from Latest Codex Branch debug button) and reflowed the service/debug sections for a cleaner dashboard layout.
+- Reworked Control Center Storage I/O layout so Home Disk selectors and storage action buttons are vertically stacked with no overlap while keeping the drive activity area wide.
+- Fixed refresh/theme regressions for storage target checkboxes and related controls so light/dark switching remains reversible without white-on-white artifacts.
+- Added scrollable Storage I/O graph containers in both Control Center and pop-out Storage tabs, and expanded storage activity rendering to scale with all detected targets instead of feeling capped to three visible rows.
+
 # Changelog
 
 ## v11.4 - 2026-04-08
