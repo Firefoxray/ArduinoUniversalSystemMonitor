@@ -413,6 +413,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private final int[][] storageReadHistory = new int[STORAGE_IO_SLOTS][GRAPH_POINTS];
         private final int[][] storageWriteHistory = new int[STORAGE_IO_SLOTS][GRAPH_POINTS];
         private final int[][] storageUtilHistory = new int[STORAGE_IO_SLOTS][GRAPH_POINTS];
+        private long lastStorageIoPacketAtMs = 0L;
         private boolean previewWifiEnabled;
         private String previewWifiHostname = "unknown-host";
         private String previewWifiIp = "No IPv4 address";
@@ -470,6 +471,10 @@ public class JavaSerialFakeDisplay extends JFrame {
             shiftAppendRaw(netUpHistory, parseRateKbps(packet.get("UPNET", packet.get("NETUP", "0"))));
             for (int slot = 0; slot < STORAGE_IO_SLOTS; slot++) {
                 int idx = slot + 1;
+                String label = packet.get("SIO" + idx + "LBL", "").trim();
+                if (!label.isBlank() && !"--".equals(label)) {
+                    lastStorageIoPacketAtMs = System.currentTimeMillis();
+                }
                 shiftAppendRaw(storageReadHistory[slot], parseRateKbps(packet.get("SIO" + idx + "R", "0 B/s")));
                 shiftAppendRaw(storageWriteHistory[slot], parseRateKbps(packet.get("SIO" + idx + "W", "0 B/s")));
                 shiftAppendPercent(storageUtilHistory[slot], packet.getInt("SIO" + idx + "UTIL", 0));
@@ -1395,12 +1400,21 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawStorage(Graphics2D g2, int w, int h, int m) {
-            int headerBottom = drawHeader(g2, "Extra Statistics", w, m);
-            g2.setFont(new Font(MONO, Font.BOLD, 9));
-            g2.setColor(CYAN);
-            g2.drawString("Storage", 12, headerBottom + 12);
-            g2.setColor(WHITE);
+            int headerBottom = drawHeader(g2, "Storage + Drive Activity", w, m);
+            int contentTop = headerBottom + 8;
 
+            int usageX = 10;
+            int usageY = contentTop;
+            int usageW = 212;
+            int usageH = h - usageY - 16;
+            g2.setColor(new Color(18, 24, 42));
+            g2.fillRoundRect(usageX, usageY, usageW, usageH, 10, 10);
+            g2.setColor(PANEL_LINE);
+            g2.drawRoundRect(usageX, usageY, usageW, usageH, 10, 10);
+            g2.setFont(new Font(MONO, Font.BOLD, 12));
+            g2.setColor(CYAN);
+            g2.drawString("Storage Capacity / Mounts", usageX + 8, usageY + 16);
+            g2.setColor(WHITE);
             String[] lines = {
                     packet.get("DRV1", "fedora 42% root"),
                     packet.get("DRV2", "linux_storage 15% home"),
@@ -1411,59 +1425,83 @@ public class JavaSerialFakeDisplay extends JFrame {
                     packet.get("DRV7", "scratch 14% data"),
                     packet.get("DRV8", "Storage: --")
             };
-
+            g2.setFont(new Font(MONO, Font.PLAIN, 10));
             for (int i = 0; i < lines.length; i++) {
-                g2.drawString(truncate(lines[i], 31), 12, headerBottom + 30 + i * 20);
+                g2.drawString(truncate(lines[i], 32), usageX + 8, usageY + 38 + i * 28);
             }
 
-            int dividerX = 244;
-            int panelX = 258;
-            g2.setColor(PANEL_LINE);
-            g2.drawLine(dividerX, headerBottom + 12, dividerX, h - 12);
-            g2.setFont(new Font(MONO, Font.BOLD, 14));
-            g2.setColor(YELLOW);
-            g2.drawString("Storage I/O", panelX, headerBottom + 20);
+            int ioX = 230;
+            int ioY = contentTop;
+            int ioW = w - ioX - 10;
+            int ioH = 238;
+            g2.setColor(new Color(22, 30, 52));
+            g2.fillRoundRect(ioX, ioY, ioW, ioH, 10, 10);
+            g2.setColor(new Color(255, 210, 70));
+            g2.drawRoundRect(ioX, ioY, ioW, ioH, 10, 10);
+            g2.setFont(new Font(MONO, Font.BOLD, 15));
+            g2.drawString("Storage I/O  (Drive Activity)", ioX + 10, ioY + 20);
 
-            int ioY = headerBottom + 30;
-            int ioPanelWidth = 206;
-            int ioPanelHeight = 44;
+            g2.setFont(new Font(MONO, Font.PLAIN, 9));
+            g2.setColor(CYAN);
+            long ageMs = lastStorageIoPacketAtMs > 0 ? Math.max(0, System.currentTimeMillis() - lastStorageIoPacketAtMs) : -1;
+            String debugText = ageMs < 0
+                    ? "SIO stream: waiting for storage I/O data"
+                    : "SIO stream: active (" + (ageMs / 1000) + "s since last label update)";
+            g2.drawString(truncate(debugText, 46), ioX + 10, ioY + 33);
+
+            int slotH = 62;
+            int graphW = ioW - 20;
+            int graphH = 30;
+            boolean anyDriveLabel = false;
             for (int slot = 0; slot < STORAGE_IO_SLOTS; slot++) {
                 int idx = slot + 1;
-                String label = packet.get("SIO" + idx + "LBL", "--");
-                if ("--".equals(label)) {
-                    continue;
+                int panelTop = ioY + 40 + slot * slotH;
+                String rawLabel = packet.get("SIO" + idx + "LBL", "").trim();
+                String label = normalizeStorageIoLabel(rawLabel, idx);
+                if (!rawLabel.isBlank() && !"--".equals(rawLabel)) {
+                    anyDriveLabel = true;
                 }
-                int panelTop = ioY + slot * 52;
-                int graphTop = panelTop + 16;
-                int scaleMax = Math.max(
-                        64,
-                        Math.max(maxValue(storageReadHistory[slot]), maxValue(storageWriteHistory[slot]))
-                );
-                g2.setColor(GRID);
-                g2.drawRect(panelX, graphTop, ioPanelWidth, ioPanelHeight);
-                g2.setColor(new Color(52, 72, 98));
-                int utilHeight = Math.max(0, Math.min(ioPanelHeight - 2, storageUtilHistory[slot][GRAPH_POINTS - 1] * (ioPanelHeight - 2) / 100));
-                g2.fillRect(panelX + 1, graphTop + ioPanelHeight - 1 - utilHeight, ioPanelWidth - 1, utilHeight);
-                drawDesktopHistoryLineScaled(g2, storageReadHistory[slot], panelX + 1, graphTop + 1, ioPanelWidth - 1, ioPanelHeight - 1, scaleMax, LIME);
-                drawDesktopHistoryLineScaled(g2, storageWriteHistory[slot], panelX + 1, graphTop + 1, ioPanelWidth - 1, ioPanelHeight - 1, scaleMax, YELLOW);
+                int scaleMax = Math.max(64, Math.max(maxValue(storageReadHistory[slot]), maxValue(storageWriteHistory[slot])));
 
-                g2.setFont(new Font(MONO, Font.BOLD, 9));
+                g2.setColor(new Color(42, 60, 86));
+                g2.fillRoundRect(ioX + 8, panelTop, ioW - 16, slotH - 4, 8, 8);
+                g2.setColor(PANEL_LINE);
+                g2.drawRoundRect(ioX + 8, panelTop, ioW - 16, slotH - 4, 8, 8);
+
+                g2.setFont(new Font(MONO, Font.BOLD, 10));
                 g2.setColor(WHITE);
-                g2.drawString(truncate(label, 10), panelX, panelTop + 10);
-                g2.setFont(new Font(MONO, Font.PLAIN, 8));
+                g2.drawString("Drive " + idx + ": " + truncate(label, 20), ioX + 14, panelTop + 12);
+                g2.setFont(new Font(MONO, Font.PLAIN, 10));
                 g2.setColor(LIME);
-                g2.drawString("R " + packet.get("SIO" + idx + "R", "0 B/s"), panelX + 56, panelTop + 10);
+                g2.drawString("Read: " + packet.get("SIO" + idx + "R", "0 B/s"), ioX + 14, panelTop + 24);
                 g2.setColor(YELLOW);
-                g2.drawString("W " + packet.get("SIO" + idx + "W", "0 B/s"), panelX + 128, panelTop + 10);
+                g2.drawString("Write: " + packet.get("SIO" + idx + "W", "0 B/s"), ioX + 138, panelTop + 24);
                 g2.setColor(CYAN);
-                g2.drawString("Busy " + packet.get("SIO" + idx + "UTIL", "--"), panelX + 56, panelTop + 20);
+                g2.drawString("Util: " + normalizeUtilText(packet.get("SIO" + idx + "UTIL", "--")), ioX + 14, panelTop + 36);
+
+                int graphX = ioX + 14;
+                int graphY = panelTop + 40;
+                g2.setColor(GRID);
+                g2.drawRect(graphX, graphY, graphW - 8, graphH);
+                g2.setColor(new Color(52, 72, 98));
+                int utilHeight = Math.max(0, Math.min(graphH - 2, storageUtilHistory[slot][GRAPH_POINTS - 1] * (graphH - 2) / 100));
+                g2.fillRect(graphX + 1, graphY + graphH - 1 - utilHeight, graphW - 9, utilHeight);
+                drawDesktopHistoryLineScaled(g2, storageReadHistory[slot], graphX + 1, graphY + 1, graphW - 9, graphH - 1, scaleMax, LIME);
+                drawDesktopHistoryLineScaled(g2, storageWriteHistory[slot], graphX + 1, graphY + 1, graphW - 9, graphH - 1, scaleMax, YELLOW);
+            }
+
+            if (!anyDriveLabel) {
+                g2.setFont(new Font(MONO, Font.BOLD, 11));
+                g2.setColor(ORANGE);
+                g2.drawString("No storage I/O activity yet - waiting for SIO packets.", ioX + 12, ioY + ioH - 12);
             }
 
             g2.setFont(new Font(MONO, Font.BOLD, 12));
             g2.setColor(YELLOW);
-            g2.drawString("Battery / Devices", panelX, headerBottom + 194);
+            int panelX = 230;
+            g2.drawString("Battery / Devices", panelX, headerBottom + 260);
 
-            int lineY = headerBottom + 212;
+            int lineY = headerBottom + 278;
             String batteryMode = packet.get("BATTMODE", "DESKTOP");
             String batteryPct = packet.get("BATTPCT", "N/A");
             String batteryState = packet.get("BATTSTATE", "DESKTOP");
@@ -1499,6 +1537,21 @@ public class JavaSerialFakeDisplay extends JFrame {
                     g2.drawString(truncate(extraBatteryState, 24), panelX, lineY);
                 }
             }
+        }
+
+        private String normalizeStorageIoLabel(String rawLabel, int slotIndex) {
+            if (rawLabel == null || rawLabel.isBlank() || "--".equals(rawLabel)) {
+                return "Auto target " + slotIndex + " (waiting)";
+            }
+            return rawLabel;
+        }
+
+        private String normalizeUtilText(String rawValue) {
+            if (rawValue == null || rawValue.isBlank() || "--".equals(rawValue)) {
+                return "--";
+            }
+            String trimmed = rawValue.trim();
+            return trimmed.endsWith("%") ? trimmed : trimmed + "%";
         }
 
         private void drawGraph(Graphics2D g2, int w, int h, int m) {
