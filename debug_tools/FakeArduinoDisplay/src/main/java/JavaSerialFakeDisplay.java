@@ -699,13 +699,13 @@ public class JavaSerialFakeDisplay extends JFrame {
             String upText = packet.get("UPNET", packet.get("NETUP", "--"));
             String downTotalText = packet.get("DNTOT", packet.get("DOWNTOTAL", "--"));
             String upTotalText = packet.get("UPTOT", packet.get("UPTOTAL", "--"));
-            drawDesktopThroughputRow(g2, "Down", downText, parseRatePercent(downText), x + 10, rowY, w - 20);
+            drawDesktopNetworkTextRow(g2, "Down", downText, x + 10, rowY, LIME);
             rowY += 18;
-            drawDesktopThroughputRow(g2, "Up", upText, parseRatePercent(upText), x + 10, rowY, w - 20);
+            drawDesktopNetworkTextRow(g2, "Up", upText, x + 10, rowY, YELLOW);
             rowY += 18;
-            drawDesktopThroughputRow(g2, "DnTot", downTotalText, parseTotalPercent(downTotalText), x + 10, rowY, w - 20);
+            drawDesktopNetworkTextRow(g2, "DnTot", downTotalText, x + 10, rowY, CYAN);
             rowY += 18;
-            drawDesktopThroughputRow(g2, "UpTot", upTotalText, parseTotalPercent(upTotalText), x + 10, rowY, w - 20);
+            drawDesktopNetworkTextRow(g2, "UpTot", upTotalText, x + 10, rowY, ORANGE);
             rowY += 22;
 
             int rootPct = packet.getInt("DISK0", packet.getInt("D0", 0));
@@ -837,20 +837,11 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(truncate(value, 22), x + 66, y);
         }
 
-        private void drawDesktopThroughputRow(Graphics2D g2, String label, String value, int percent, int x, int y, int width) {
-            int clamped = Math.max(0, Math.min(100, percent));
-            Color severity = getSeverityColor(clamped);
+        private void drawDesktopNetworkTextRow(Graphics2D g2, String label, String value, int x, int y, Color valueColor) {
             g2.setColor(WHITE);
             g2.drawString(label + ":", x, y);
-            int barX = x + 58;
-            int barW = Math.max(56, width - 126);
-            drawBar(g2, barX, y - 9, barW, 8, clamped, severity);
-            g2.setColor(severity);
-            g2.drawString(truncate(value, 16), x + width - 112, y);
-            g2.setColor(new Color(175, 196, 224));
-            g2.setFont(new Font(MONO, Font.PLAIN, 9));
-            g2.drawString(clamped + "%", x + width - 40, y + 1);
-            g2.setFont(new Font(MONO, Font.PLAIN, 12));
+            g2.setColor(valueColor);
+            g2.drawString(truncate(value, 18), x + 58, y);
         }
 
         private void drawStorageUsageRow(Graphics2D g2, String label, int percent, String detail, int x, int y, int width) {
@@ -889,41 +880,6 @@ public class JavaSerialFakeDisplay extends JFrame {
                     ? ((value - 32.0) * 5.0 / 9.0)
                     : value;
             int pct = (int) Math.round(((celsius - 20.0) / 80.0) * 100.0);
-            return Math.max(0, Math.min(100, pct));
-        }
-
-        private int parseRatePercent(String rateText) {
-            int kbps = parseRateKbps(rateText);
-            int pct = (int) Math.round((Math.min(kbps, 102400.0) / 102400.0) * 100.0);
-            return Math.max(0, Math.min(100, pct));
-        }
-
-        private int parseTotalPercent(String totalText) {
-            if (totalText == null || totalText.isBlank()) {
-                return 0;
-            }
-            String normalized = totalText.trim().toUpperCase();
-            String digits = normalized.replaceAll("[^0-9.]", "");
-            if (digits.isBlank()) {
-                return 0;
-            }
-            double value;
-            try {
-                value = Double.parseDouble(digits);
-            } catch (NumberFormatException ex) {
-                return 0;
-            }
-            double gbValue;
-            if (normalized.contains("TB")) {
-                gbValue = value * 1024.0;
-            } else if (normalized.contains("MB")) {
-                gbValue = value / 1024.0;
-            } else if (normalized.contains("KB")) {
-                gbValue = value / (1024.0 * 1024.0);
-            } else {
-                gbValue = value;
-            }
-            int pct = (int) Math.round((Math.min(gbValue, 1024.0) / 1024.0) * 100.0);
             return Math.max(0, Math.min(100, pct));
         }
 
