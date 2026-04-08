@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -412,6 +413,8 @@ public class JavaSerialFakeDisplay extends JFrame {
         private String previewWifiHostname = "unknown-host";
         private String previewWifiIp = "No IPv4 address";
         private int previewWifiPort = 5000;
+        private final ArrayDeque<Integer> gpuRecentSamples = new ArrayDeque<>();
+        private int smoothedGpuPercent = 0;
         private final String[] pageNames = {
                 "Home", "CPU", "Processes", "Network", "GPU", "Storage", "Graph"
         };
@@ -429,6 +432,9 @@ public class JavaSerialFakeDisplay extends JFrame {
                     repaint();
                 }
             });
+            Timer repaintTimer = new Timer(180, e -> repaint());
+            repaintTimer.setRepeats(true);
+            repaintTimer.start();
         }
 
         void setRenderMode(RenderMode mode) {
@@ -438,6 +444,7 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         void updatePacket(ParsedPacket packet) {
             this.packet = packet;
+            updateSmoothedGpuSample(packet.getInt("GPU", 0));
             pushHistory(packet);
             repaint();
         }
@@ -453,10 +460,59 @@ public class JavaSerialFakeDisplay extends JFrame {
         private void pushHistory(ParsedPacket packet) {
             shiftAppendPercent(cpuHistory, packet.getInt("CPU", 0));
             shiftAppendPercent(ramHistory, packet.getInt("RAM", 0));
-            shiftAppendPercent(gpuHistory, packet.getInt("GPU", 0));
+            shiftAppendPercent(gpuHistory, smoothedGpuPercent);
             shiftAppendPercent(vramHistory, packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0)));
             shiftAppendRaw(netDownHistory, parseRateKbps(packet.get("DOWN", packet.get("NETDOWN", "0"))));
             shiftAppendRaw(netUpHistory, parseRateKbps(packet.get("UPNET", packet.get("NETUP", "0"))));
+        }
+
+        private void updateSmoothedGpuSample(int rawSample) {
+            int clamped = Math.max(0, Math.min(100, rawSample));
+            int adjusted = clamped;
+            if (clamped == 0 && !gpuRecentSamples.isEmpty()) {
+                int recentAvg = averageRecentSamples(3);
+                if (recentAvg >= 18) {
+                    adjusted = Math.max(4, Math.round(recentAvg * 0.35f));
+                }
+            }
+            gpuRecentSamples.addLast(adjusted);
+            while (gpuRecentSamples.size() > 8) {
+                gpuRecentSamples.removeFirst();
+            }
+            smoothedGpuPercent = weightedAverage(gpuRecentSamples, adjusted);
+        }
+
+        private int averageRecentSamples(int maxSamples) {
+            if (gpuRecentSamples.isEmpty()) {
+                return 0;
+            }
+            List<Integer> samples = new ArrayList<>(gpuRecentSamples);
+            int start = Math.max(0, samples.size() - maxSamples);
+            int sum = 0;
+            int count = 0;
+            for (int i = start; i < samples.size(); i++) {
+                sum += samples.get(i);
+                count++;
+            }
+            return count == 0 ? 0 : Math.round((float) sum / count);
+        }
+
+        private int weightedAverage(ArrayDeque<Integer> samples, int fallback) {
+            if (samples.isEmpty()) {
+                return Math.max(0, Math.min(100, fallback));
+            }
+            int idx = 1;
+            int weightedSum = 0;
+            int totalWeight = 0;
+            for (int value : samples) {
+                weightedSum += value * idx;
+                totalWeight += idx;
+                idx++;
+            }
+            if (totalWeight <= 0) {
+                return Math.max(0, Math.min(100, fallback));
+            }
+            return Math.max(0, Math.min(100, Math.round((float) weightedSum / totalWeight)));
         }
 
         private void shiftAppendPercent(int[] history, int value) {
@@ -585,7 +641,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setColor(WHITE);
             g2.drawString("CPU " + packet.get("CPU", "0") + "%", innerX, innerY);
             g2.drawString("RAM " + packet.get("RAM", "0") + "%", innerX + colW + colGap, innerY);
-            g2.drawString("GPU " + packet.get("GPU", "0") + "%", innerX + (colW + colGap) * 2, innerY);
+            g2.drawString("GPU " + smoothedGpuPercent + "%", innerX + (colW + colGap) * 2, innerY);
 
             g2.setFont(new Font(MONO, Font.PLAIN, 12));
             g2.setColor(CYAN);
@@ -659,7 +715,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int ram = packet.getInt("RAM", 0);
             int load = Math.max(cpu, ram);
             int cpuTempPct = parseTemperaturePct(packet.get("TEMP", packet.get("CPUTEMP", "0")));
-            int gpu = packet.getInt("GPU", 0);
+            int gpu = smoothedGpuPercent;
             int vram = packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0));
             String gpuTempText = normalizeTemperatureText(packet.get("GPUTEMP", packet.get("GPU_TEMP", packet.get("TEMP", "--"))));
             int gpuTempPct = parseTemperaturePct(gpuTempText);
@@ -1283,7 +1339,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setColor(YELLOW);
             g2.drawString("GPU", 270, h - 46);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("GPU", "0") + "%", 312, h - 46);
+            g2.drawString(smoothedGpuPercent + "%", 312, h - 46);
             drawFooter(g2, w, h);
         }
 
@@ -1309,7 +1365,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setFont(new Font(MONO, Font.BOLD, 15));
             g2.setColor(WHITE);
             g2.drawString("GPU", 15, gaugeBaselineY);
-            int gpu = packet.getInt("GPU", 0);
+            int gpu = smoothedGpuPercent;
             drawBar(g2, 102, gaugeBaselineY - 12, 270, 10, gpu, getHeatColor(gpu));
             g2.drawString(gpu + "%", 386, gaugeBaselineY);
 
@@ -1322,7 +1378,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setColor(CYAN);
             g2.drawString(gpuName, 102, y);
             drawLabelValue(g2, "Temp", normalizeTemperatureText(packet.get("GPUTEMP", packet.get("TEMP", "56.0C"))), 15, y + row, CYAN);
-            drawLabelValue(g2, "Usage", packet.get("GPU", "0") + "%", 15, y + row * 2, LIME);
+            drawLabelValue(g2, "Usage", smoothedGpuPercent + "%", 15, y + row * 2, LIME);
             drawLabelValue(g2, "VRAM", packet.get("VRAMUSED", packet.get("VRAM", "1936/8176M")), 15, y + row * 3, YELLOW);
             drawLabelValue(g2, "CLK Speed", packet.get("GPUCLK", packet.get("CLK", "0MHz")), 15, y + row * 4, ORANGE);
             drawFooter(g2, w, h);
@@ -1438,7 +1494,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setColor(YELLOW);
             g2.drawString("GPU", 240, legendY);
             g2.setColor(WHITE);
-            g2.drawString(packet.get("GPU", "0") + "%", 302, legendY);
+            g2.drawString(smoothedGpuPercent + "%", 302, legendY);
             g2.setColor(CYAN);
             g2.drawString("RAM", 20, legendY + 22);
             g2.setColor(WHITE);

@@ -28,6 +28,7 @@ import urllib.request
 import http.cookiejar
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple
+from collections import deque
 
 import psutil
 import serial
@@ -247,7 +248,9 @@ if PREFERRED_PORT and PREFERRED_PORT not in EXPLICIT_ARDUINO_PORTS:
 CPU_SAMPLE_INTERVAL = 0.20
 SEND_INTERVAL = max(0.2, to_float(CONFIG.get("send_interval"), 1.0))
 IDLE_LOOP_SLEEP = 0.03
-GPU_CACHE_TTL = 0.75
+GPU_CACHE_TTL = 0.20
+GPU_SMOOTHING_WINDOW = 6
+GPU_ZERO_FLOOR_RATIO = 0.35
 PROC_CACHE_TTL = 1.0
 STATIC_CACHE_TTL = 30.0
 TEMP_CACHE_TTL = 1.0
@@ -393,6 +396,7 @@ QBITTORRENT_TIMEOUT = max(
 
 
 _gpu_cache = {"ts": 0.0, "data": None}
+_gpu_util_history = deque(maxlen=GPU_SMOOTHING_WINDOW)
 _proc_cache = {"ts": 0.0, "data": None}
 _static_cache = {"ts": 0.0, "data": None}
 _temp_cache = {"ts": 0.0, "data": None}
@@ -1777,10 +1781,35 @@ def get_cached_temp() -> str:
     return _temp_cache["data"]
 
 
+def smooth_gpu_utilization(raw_value: object) -> str:
+    try:
+        util = int(round(float(raw_value)))
+    except Exception:
+        util = 0
+    util = max(0, min(100, util))
+
+    if util == 0 and _gpu_util_history:
+        recent_avg = sum(_gpu_util_history) / len(_gpu_util_history)
+        if recent_avg >= 18:
+            util = max(4, int(round(recent_avg * GPU_ZERO_FLOOR_RATIO)))
+
+    _gpu_util_history.append(util)
+    weighted_total = 0.0
+    weight_sum = 0.0
+    for idx, value in enumerate(_gpu_util_history, start=1):
+        weighted_total += idx * value
+        weight_sum += idx
+    smoothed = int(round(weighted_total / weight_sum)) if weight_sum > 0 else util
+    return str(max(0, min(100, smoothed)))
+
+
 def get_cached_gpu_stats() -> Tuple[str, str, str, str, str, str, str]:
     now = time.time()
     if _gpu_cache["data"] is None or (now - _gpu_cache["ts"]) >= GPU_CACHE_TTL:
-        _gpu_cache["data"] = get_gpu_stats()
+        stats = list(get_gpu_stats())
+        if stats:
+            stats[0] = smooth_gpu_utilization(stats[0])
+        _gpu_cache["data"] = tuple(stats)
         _gpu_cache["ts"] = now
     return _gpu_cache["data"]
 

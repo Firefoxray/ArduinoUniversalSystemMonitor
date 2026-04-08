@@ -1,8 +1,8 @@
-# Arduino Universal System Monitor (v11.2)
+# Arduino Universal System Monitor (v11.3)
 
 A Fedora-first desktop monitor that sends live PC stats to Arduino touchscreen dashboards, with a GUI Control Center for setup, flashing, and monitor settings.
 
-**Current version:** `v11.2` (shared via `VERSION`).
+**Current version:** `v11.3` (shared via `VERSION`).
 
 - **Current focus:** Linux/Fedora workflow and GUI-first setup.
 - **Primary GUI:** Java Control Center (`./UniversalMonitorControlCenter.sh`).
@@ -94,6 +94,14 @@ If you prefer the generic path, run `./install.sh` directly.
 
 From the GUI, review/save monitor settings, choose storage targets, and run flash actions.
 
+### 5) Launch desktop pop-out dashboard only (standalone scaffold)
+
+```bash
+./UniversalMonitorDashboard.sh
+```
+
+This runs the Java app in `--dashboard-only` mode so the pop-out dashboard opens directly without showing the full Control Center window.
+
 ---
 
 ## Run instructions
@@ -139,7 +147,7 @@ python3 UniversalArduinoMonitor.py --arduino-status
 - Improve first-run diagnostics/help messaging.
 - **Windows compatibility planned for a future release**.
 
-## Remote actions (advanced / optional in v11.2)
+## Remote actions (advanced / optional in v11.3)
 
 The Control Center includes a **Remote / CLI actions panel** with a conservative "predefined actions only" model:
 - update project
@@ -147,4 +155,4 @@ The Control Center includes a **Remote / CLI actions panel** with a conservative
 - monitor service restart/status
 - Wi-Fi discovery debug log action
 
-Actions can run locally or over SSH (saved target profiles supported). This is intended as an advanced helper path, not a required setup path for v11.2.
+Actions can run locally or over SSH (saved target profiles supported). This is intended as an advanced helper path, not a required setup path for v11.3.

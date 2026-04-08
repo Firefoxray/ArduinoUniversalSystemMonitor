@@ -1,5 +1,11 @@
 # Changelog
 
+## v11.3 - 2026-04-08
+- Bumped the shared project version to v11.3 across VERSION, README, generated Arduino app headers, runtime/version labels, and dashboard-visible version text.
+- Improved desktop dashboard GPU responsiveness with a short recent-sample smoothing buffer and lightweight weighted averaging so brief zero spikes no longer dominate visible GPU usage.
+- Kept Arduino monitor refresh cadence unchanged; desktop pop-out rendering now uses its own UI repaint timer so dashboard responsiveness is decoupled from Arduino transport send interval.
+- Added standalone dashboard groundwork by introducing a dashboard-only launch mode (`--dashboard-only`) and dedicated launch scripts so the pop-out workflow can run without displaying the full Control Center window.
+
 ## v11.2 - 2026-04-08
 - Bumped the shared project version to v11.2 across VERSION, generated Arduino app headers, dashboard version labels, and README references.
 - Removed the **Close Pop-Out** button from the Arduino preview panel and kept the panel layout clean with the remaining dashboard-launch action.
