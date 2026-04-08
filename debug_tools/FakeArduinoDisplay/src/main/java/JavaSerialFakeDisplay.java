@@ -669,23 +669,23 @@ public class JavaSerialFakeDisplay extends JFrame {
             int barY = y + 30;
             int barStep = 24;
             int separatorGap = 10;
-            int extraHeaderGap = 16;
+            int extraHeaderGap = 30;
 
-            drawDesktopMiniBar(g2, "CPU", cpu, cpu + "%", barAreaX, barY, barAreaW, LIME);
+            drawDesktopMiniBar(g2, "CPU", cpu, cpu + "%", barAreaX, barY, barAreaW);
             barY += barStep;
-            drawDesktopMiniBar(g2, "RAM", ram, ram + "%", barAreaX, barY, barAreaW, CYAN);
+            drawDesktopMiniBar(g2, "RAM", ram, ram + "%", barAreaX, barY, barAreaW);
             barY += barStep;
-            drawDesktopMiniBar(g2, "LOAD", load, load + "%", barAreaX, barY, barAreaW, new Color(126, 214, 205));
+            drawDesktopMiniBar(g2, "LOAD", load, load + "%", barAreaX, barY, barAreaW);
             barY += barStep;
-            drawDesktopMiniBar(g2, "CPU TEMP", cpuTempPct, normalizeTemperatureText(packet.get("TEMP", packet.get("CPUTEMP", "--"))), barAreaX, barY, barAreaW, new Color(239, 186, 92));
+            drawDesktopMiniBar(g2, "CPU TEMP", cpuTempPct, normalizeTemperatureText(packet.get("TEMP", packet.get("CPUTEMP", "--"))), barAreaX, barY, barAreaW);
 
             int separatorY = barY + 12;
             barY = separatorY + separatorGap;
-            drawDesktopMiniBar(g2, "GPU", gpu, gpu + "%", barAreaX, barY, barAreaW, ORANGE);
+            drawDesktopMiniBar(g2, "GPU", gpu, gpu + "%", barAreaX, barY, barAreaW);
             barY += barStep;
-            drawDesktopMiniBar(g2, "VRAM", vram, vram + "%", barAreaX, barY, barAreaW, MAGENTA);
+            drawDesktopMiniBar(g2, "VRAM", vram, vram + "%", barAreaX, barY, barAreaW);
             barY += barStep;
-            drawDesktopMiniBar(g2, "GPU TEMP", gpuTempPct, gpuTempText, barAreaX, barY, barAreaW, getTemperatureColor(gpuTempPct));
+            drawDesktopMiniBar(g2, "GPU TEMP", gpuTempPct, gpuTempText, barAreaX, barY, barAreaW);
 
             int processY = barY + extraHeaderGap;
             drawProcessesDesktop(g2, x, processY, w, Math.max(64, h - (processY - y) - 10));
@@ -695,20 +695,24 @@ public class JavaSerialFakeDisplay extends JFrame {
             drawDesktopCard(g2, "Network / Storage", x, y, w, h);
             g2.setFont(new Font(MONO, Font.PLAIN, 12));
             int rowY = y + 30;
-            drawDesktopField(g2, "Down", packet.get("DOWN", packet.get("NETDOWN", "--")), x + 10, rowY, LIME);
+            String downText = packet.get("DOWN", packet.get("NETDOWN", "--"));
+            String upText = packet.get("UPNET", packet.get("NETUP", "--"));
+            String downTotalText = packet.get("DNTOT", packet.get("DOWNTOTAL", "--"));
+            String upTotalText = packet.get("UPTOT", packet.get("UPTOTAL", "--"));
+            drawDesktopThroughputRow(g2, "Down", downText, parseRatePercent(downText), x + 10, rowY, w - 20);
             rowY += 18;
-            drawDesktopField(g2, "Up", packet.get("UPNET", packet.get("NETUP", "--")), x + 10, rowY, YELLOW);
+            drawDesktopThroughputRow(g2, "Up", upText, parseRatePercent(upText), x + 10, rowY, w - 20);
             rowY += 18;
-            drawDesktopField(g2, "DnTot", packet.get("DNTOT", packet.get("DOWNTOTAL", "--")), x + 10, rowY, CYAN);
+            drawDesktopThroughputRow(g2, "DnTot", downTotalText, parseTotalPercent(downTotalText), x + 10, rowY, w - 20);
             rowY += 18;
-            drawDesktopField(g2, "UpTot", packet.get("UPTOT", packet.get("UPTOTAL", "--")), x + 10, rowY, WHITE);
+            drawDesktopThroughputRow(g2, "UpTot", upTotalText, parseTotalPercent(upTotalText), x + 10, rowY, w - 20);
             rowY += 22;
 
             int rootPct = packet.getInt("DISK0", packet.getInt("D0", 0));
             int srvPct = packet.getInt("DISK1", packet.getInt("D1", 0));
-            drawStorageUsageRow(g2, "root", rootPct, "system", x + 10, rowY, w - 20, CYAN);
+            drawStorageUsageRow(g2, "root", rootPct, "system", x + 10, rowY, w - 20);
             rowY += 20;
-            drawStorageUsageRow(g2, "srv", srvPct, "secondary", x + 10, rowY, w - 20, YELLOW);
+            drawStorageUsageRow(g2, "srv", srvPct, "secondary", x + 10, rowY, w - 20);
 
             List<StorageMountEntry> mounts = collectStorageMounts();
             int extraY = rowY + 22;
@@ -728,8 +732,7 @@ public class JavaSerialFakeDisplay extends JFrame {
                         mount.displayText,
                         x + 10,
                         extraY,
-                        w - 20,
-                        ORANGE
+                        w - 20
                 );
                 extraY += 19;
                 shown++;
@@ -774,7 +777,8 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("VRAM", x + 146, legendY);
         }
 
-        private void drawDesktopMiniBar(Graphics2D g2, String label, int value, String displayValue, int x, int y, int w, Color color) {
+        private void drawDesktopMiniBar(Graphics2D g2, String label, int value, String displayValue, int x, int y, int w) {
+            Color color = getSeverityColor(value);
             g2.setFont(new Font(MONO, Font.BOLD, 11));
             g2.setColor(WHITE);
             g2.drawString(label, x, y + 12);
@@ -785,14 +789,20 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(displayValue, x + w - 68, y + 12);
         }
 
-        private Color getTemperatureColor(int tempPct) {
-            if (tempPct >= 80) {
-                return new Color(255, 96, 96);
+        private Color getSeverityColor(int percent) {
+            int clamped = Math.max(0, Math.min(100, percent));
+            if (clamped <= 50) {
+                return blend(new Color(95, 212, 118), new Color(255, 206, 88), clamped / 50.0);
             }
-            if (tempPct >= 60) {
-                return new Color(255, 190, 82);
-            }
-            return new Color(113, 236, 126);
+            return blend(new Color(255, 206, 88), new Color(236, 98, 98), (clamped - 50) / 50.0);
+        }
+
+        private Color blend(Color from, Color to, double ratio) {
+            double clamped = Math.max(0.0, Math.min(1.0, ratio));
+            int r = (int) Math.round(from.getRed() + ((to.getRed() - from.getRed()) * clamped));
+            int g = (int) Math.round(from.getGreen() + ((to.getGreen() - from.getGreen()) * clamped));
+            int b = (int) Math.round(from.getBlue() + ((to.getBlue() - from.getBlue()) * clamped));
+            return new Color(r, g, b);
         }
 
         private void drawDesktopHistoryLine(Graphics2D g2, int[] history, int x, int y, int w, int h, Color color) {
@@ -827,8 +837,25 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString(truncate(value, 22), x + 66, y);
         }
 
-        private void drawStorageUsageRow(Graphics2D g2, String label, int percent, String detail, int x, int y, int width, Color color) {
+        private void drawDesktopThroughputRow(Graphics2D g2, String label, String value, int percent, int x, int y, int width) {
             int clamped = Math.max(0, Math.min(100, percent));
+            Color severity = getSeverityColor(clamped);
+            g2.setColor(WHITE);
+            g2.drawString(label + ":", x, y);
+            int barX = x + 58;
+            int barW = Math.max(56, width - 126);
+            drawBar(g2, barX, y - 9, barW, 8, clamped, severity);
+            g2.setColor(severity);
+            g2.drawString(truncate(value, 16), x + width - 112, y);
+            g2.setColor(new Color(175, 196, 224));
+            g2.setFont(new Font(MONO, Font.PLAIN, 9));
+            g2.drawString(clamped + "%", x + width - 40, y + 1);
+            g2.setFont(new Font(MONO, Font.PLAIN, 12));
+        }
+
+        private void drawStorageUsageRow(Graphics2D g2, String label, int percent, String detail, int x, int y, int width) {
+            int clamped = Math.max(0, Math.min(100, percent));
+            Color color = getSeverityColor(clamped);
             g2.setFont(new Font(MONO, Font.BOLD, 11));
             g2.setColor(WHITE);
             g2.drawString(label + ":", x, y);
@@ -862,6 +889,41 @@ public class JavaSerialFakeDisplay extends JFrame {
                     ? ((value - 32.0) * 5.0 / 9.0)
                     : value;
             int pct = (int) Math.round(((celsius - 20.0) / 80.0) * 100.0);
+            return Math.max(0, Math.min(100, pct));
+        }
+
+        private int parseRatePercent(String rateText) {
+            int kbps = parseRateKbps(rateText);
+            int pct = (int) Math.round((Math.min(kbps, 102400.0) / 102400.0) * 100.0);
+            return Math.max(0, Math.min(100, pct));
+        }
+
+        private int parseTotalPercent(String totalText) {
+            if (totalText == null || totalText.isBlank()) {
+                return 0;
+            }
+            String normalized = totalText.trim().toUpperCase();
+            String digits = normalized.replaceAll("[^0-9.]", "");
+            if (digits.isBlank()) {
+                return 0;
+            }
+            double value;
+            try {
+                value = Double.parseDouble(digits);
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
+            double gbValue;
+            if (normalized.contains("TB")) {
+                gbValue = value * 1024.0;
+            } else if (normalized.contains("MB")) {
+                gbValue = value / 1024.0;
+            } else if (normalized.contains("KB")) {
+                gbValue = value / (1024.0 * 1024.0);
+            } else {
+                gbValue = value;
+            }
+            int pct = (int) Math.round((Math.min(gbValue, 1024.0) / 1024.0) * 100.0);
             return Math.max(0, Math.min(100, pct));
         }
 
@@ -1444,9 +1506,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private Color getHeatColor(int percent) {
-            if (percent < 50) return LIME;
-            if (percent < 80) return YELLOW;
-            return new Color(255, 110, 110);
+            return getSeverityColor(percent);
         }
 
         private String truncate(String value, int maxLen) {

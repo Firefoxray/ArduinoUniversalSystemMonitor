@@ -1,5 +1,12 @@
 # Changelog
 
+## v11.2 - 2026-04-08
+- Bumped the shared project version to v11.2 across VERSION, generated Arduino app headers, dashboard version labels, and README references.
+- Removed the **Close Pop-Out** button from the Arduino preview panel and kept the panel layout clean with the remaining dashboard-launch action.
+- Updated **Open Pop Out Desktop Dashboard** so opening the pop-out now also ensures the dashboard stream is started automatically (with guards to avoid duplicate starts when already active).
+- Increased the visual separation between the final Statistics bar and the **Top Processes** section in the pop-out dashboard for clearer section boundaries.
+- Unified pop-out bar styling so Statistics, Network, Storage, and CPU Thread Activity bars all use the same severity-based green→amber→red intensity color behavior.
+
 ## v11.1 Beta - 2026-04-07
 - Bumped the shared project version to v11.1 Beta across VERSION and generated Arduino app headers.
 - Added RayFetch one-shot CLI modes to `UniversalArduinoMonitor.py` without changing the default long-running sender behavior (`--rayfetch`, `--json`, `--payload-preview`, `--arduino-status`).
@@ -8,6 +15,9 @@
 - Added Fedora/Linux MangoHud-oriented telemetry scaffolding in the Control Center so Gaming Mode now has a real backend path for future live FPS/frametime ingestion and later Arduino gaming-page reuse.
 - Added a pop-out dashboard RayFetch CLI launcher box (alias-to-flag mapping + editable ASCII logo defaults) that runs one-shot monitor commands asynchronously and streams output into dashboard logs.
 - Updated pop-out dashboard version visibility so the window title and summary cards clearly show the active project version.
+
+## v11.0 - 2026-04-07
+- Restored the 11.0 changelog milestone entry so the documented 11.x release chain is preserved alongside 11.1 and 11.2.
 
 ## v10.5 Beta - 2026-04-06
 - Bumped the shared project version to v10.5 Beta across VERSION and generated Arduino app headers.
