@@ -576,33 +576,34 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         private void drawDesktopSummary(Graphics2D g2, int x, int y, int w, int h) {
             drawDesktopCard(g2, "System Summary", x, y, w, h);
-            int innerX = x + 12;
-            int innerY = y + 38;
-            int colW = (w - 28) / 3;
+            int innerX = x + 18;
+            int innerY = y + 36;
+            int colGap = 18;
+            int colW = (w - 36 - (colGap * 2)) / 3;
 
             g2.setFont(new Font(MONO, Font.BOLD, 14));
             g2.setColor(WHITE);
             g2.drawString("CPU " + packet.get("CPU", "0") + "%", innerX, innerY);
-            g2.drawString("RAM " + packet.get("RAM", "0") + "%", innerX + colW, innerY);
-            g2.drawString("GPU " + packet.get("GPU", "0") + "%", innerX + colW * 2, innerY);
+            g2.drawString("RAM " + packet.get("RAM", "0") + "%", innerX + colW + colGap, innerY);
+            g2.drawString("GPU " + packet.get("GPU", "0") + "%", innerX + (colW + colGap) * 2, innerY);
 
             g2.setFont(new Font(MONO, Font.PLAIN, 12));
             g2.setColor(CYAN);
             g2.drawString("Host: " + truncate(resolvePreviewHostname(), 26), innerX, innerY + 24);
-            g2.drawString("OS: " + truncate(packet.get("OS", "Linux"), 26), innerX + colW, innerY + 24);
-            g2.drawString("Up: " + packet.get("UPTIME", packet.get("UP", "--")), innerX + colW * 2, innerY + 24);
+            g2.drawString("OS: " + truncate(packet.get("OS", "Linux"), 26), innerX + colW + colGap, innerY + 24);
+            g2.drawString("Up: " + packet.get("UPTIME", packet.get("UP", "--")), innerX + (colW + colGap) * 2, innerY + 24);
 
             g2.setColor(previewWifiEnabled ? LIME : ORANGE);
             g2.drawString(previewWifiEnabled ? "Wi-Fi Connected" : "Wi-Fi Disabled", innerX, innerY + 40);
             g2.setColor(WHITE);
-            g2.drawString("IP: " + truncate(resolvePreviewIpDisplay(), 24), innerX + colW, innerY + 40);
-            g2.drawString("Version: " + APP_VERSION, innerX + colW * 2, innerY + 40);
+            g2.drawString("IP: " + truncate(resolvePreviewIpDisplay(), 24), innerX + colW + colGap, innerY + 40);
+            g2.drawString("Version: " + APP_VERSION, innerX + (colW + colGap) * 2, innerY + 40);
         }
 
         private void drawCpuThreadsDesktop(Graphics2D g2, int x, int y, int w, int h) {
             drawDesktopCard(g2, "CPU Thread Activity (Compact)", x, y, w, h);
             int cols = 16;
-            int cellGap = 4;
+            int cellGap = 6;
             int barW = Math.max(8, (w - 24 - ((cols - 1) * cellGap)) / cols);
             int barH = Math.max(18, h - 52);
             int barY = y + 24;
@@ -626,16 +627,18 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawProcessesDesktop(Graphics2D g2, int x, int y, int w, int h) {
+            int cpuColX = x + w - 118;
+            int ramColX = x + w - 50;
             g2.setFont(new Font(MONO, Font.BOLD, 11));
             g2.setColor(WHITE);
             g2.drawString("Top Processes", x + 12, y + 16);
-            g2.drawString("CPU", x + w - 128, y + 16);
-            g2.drawString("RAM", x + w - 66, y + 16);
+            g2.drawString("CPU", cpuColX, y + 16);
+            g2.drawString("RAM", ramColX, y + 16);
             g2.setFont(new Font(MONO, Font.PLAIN, 10));
             int rowY = y + 32;
             int maxRows = Math.max(3, Math.min(6, (h - 40) / 18));
             for (int i = 1; i <= maxRows; i++) {
-                String name = truncate(packet.get("P" + i, "--"), 30);
+                String name = truncate(packet.get("P" + i, "--"), 36);
                 String cpu = packet.get("P" + i + "CPU", "--");
                 String ram = packet.get("P" + i + "RAM", "--");
                 g2.setColor(new Color(15, 24, 42, 180));
@@ -643,9 +646,9 @@ public class JavaSerialFakeDisplay extends JFrame {
                 g2.setColor(WHITE);
                 g2.drawString(i + ". " + name, x + 12, rowY);
                 g2.setColor(YELLOW);
-                g2.drawString(cpu, x + w - 128, rowY);
+                g2.drawString(cpu, cpuColX, rowY);
                 g2.setColor(CYAN);
-                g2.drawString(ram, x + w - 66, rowY);
+                g2.drawString(ram, ramColX, rowY);
                 rowY += 17;
             }
         }
@@ -664,7 +667,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             int barAreaX = x + 12;
             int barAreaW = w - 24;
             int barY = y + 30;
-            int barStep = 22;
+            int barStep = 24;
             int separatorGap = 10;
             int extraHeaderGap = 16;
 
@@ -764,7 +767,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setStroke(oldStroke);
             g2.setFont(new Font(MONO, Font.PLAIN, 11));
             int legendY = y + h - 16;
-            g2.setColor(WHITE);
+            g2.setColor(LIME);
             g2.drawString("CPU", x + 12, legendY);
             g2.setColor(CYAN);
             g2.drawString("RAM", x + 56, legendY);
@@ -778,11 +781,11 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.setFont(new Font(MONO, Font.BOLD, 11));
             g2.setColor(WHITE);
             g2.drawString(label, x, y + 12);
-            int barX = x + 72;
-            int barW = Math.max(48, w - 160);
+            int barX = x + 76;
+            int barW = Math.max(56, w - 148);
             drawBar(g2, barX, y, barW, 12, value, color);
             g2.setColor(color);
-            g2.drawString(displayValue, x + w - 80, y + 12);
+            g2.drawString(displayValue, x + w - 68, y + 12);
         }
 
         private Color getTemperatureColor(int tempPct) {
