@@ -4801,15 +4801,13 @@ public class UniversalMonitorControlCenter extends JFrame {
                 desktopDashboardWindow.setLayout(new BorderLayout());
                 desktopDashboardWindow.setMinimumSize(new Dimension(1180, 760));
                 desktopDashboardWindow.setSize(1600, 960);
-                desktopDashboardWindowControlsPanel.removeAll();
-                desktopDashboardWindowControlsPanel.setBorder(new EmptyBorder(4, 8, 4, 8));
                 desktopDashboardTabs.removeAll();
                 desktopDashboardTabs.setTabPlacement(JTabbedPane.TOP);
+                desktopDashboardTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
                 desktopDashboardTabs.addTab("Main Desktop Monitor", buildDesktopMonitorMainTab());
                 desktopDashboardTabs.addTab("SSH Stats", buildDesktopSshStatsTab());
                 desktopDashboardTabs.addTab("Gaming Mode", buildDesktopGamingModeTab());
                 desktopDashboardTabs.addTab("Desktop Monitor Settings", buildDesktopMonitorSettingsTab());
-                desktopDashboardWindow.add(desktopDashboardWindowControlsPanel, BorderLayout.NORTH);
                 desktopDashboardWindow.add(desktopDashboardTabs, BorderLayout.CENTER);
                 desktopDashboardWindow.addComponentListener(new java.awt.event.ComponentAdapter() {
                     @Override

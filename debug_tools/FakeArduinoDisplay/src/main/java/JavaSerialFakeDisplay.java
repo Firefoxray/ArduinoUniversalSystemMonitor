@@ -651,22 +651,44 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawDesktopGpuCard(Graphics2D g2, int x, int y, int w, int h) {
-            drawDesktopCard(g2, "GPU + Top Processes", x, y, w, h);
+            drawDesktopCard(g2, "Statistics", x, y, w, h);
+            int cpu = packet.getInt("CPU", 0);
+            int ram = packet.getInt("RAM", 0);
+            int load = Math.max(cpu, ram);
+            int cpuTempPct = parseTemperaturePct(packet.get("TEMP", packet.get("CPUTEMP", "0")));
             int gpu = packet.getInt("GPU", 0);
             int vram = packet.getInt("VRAMPCT", packet.getInt("VRAM_PERCENT", 0));
-            int tempPct = parseTemperaturePct(packet.get("GPUTEMP", packet.get("GPU_TEMP", "0")));
-            String gpuTempDisplay = normalizeTemperatureText(packet.get("GPUTEMP", packet.get("GPU_TEMP", packet.get("TEMP", "--"))));
-            drawDesktopMiniBar(g2, "GPU", gpu, x + 12, y + 30, w - 24, ORANGE);
-            drawDesktopMiniBar(g2, "VRAM", vram, x + 12, y + 46, w - 24, MAGENTA);
-            drawDesktopMiniBar(g2, "TEMP", tempPct, x + 12, y + 62, w - 24, YELLOW);
-            drawDesktopMiniBar(g2, "CPU", packet.getInt("CPU", 0), x + 12, y + 78, w - 24, LIME);
-            drawDesktopMiniBar(g2, "RAM", packet.getInt("RAM", 0), x + 12, y + 94, w - 24, CYAN);
-            drawDesktopMiniBar(g2, "LOAD", Math.max(packet.getInt("CPU", 0), packet.getInt("RAM", 0)), x + 12, y + 110, w - 24, new Color(126, 214, 205));
-            drawDesktopMiniBar(g2, "CPU T", parseTemperaturePct(packet.get("TEMP", packet.get("CPUTEMP", "0"))), x + 12, y + 126, w - 24, new Color(239, 186, 92));
-            g2.setFont(new Font(MONO, Font.PLAIN, 10));
-            g2.setColor(CYAN);
-            g2.drawString("GPU Temp: " + gpuTempDisplay + "  " + truncate(packet.get("GPUNAME", "GPU"), 24), x + 12, y + 152);
-            drawProcessesDesktop(g2, x, y + 162, w, Math.max(56, h - 170));
+            String gpuTempText = normalizeTemperatureText(packet.get("GPUTEMP", packet.get("GPU_TEMP", packet.get("TEMP", "--"))));
+            int gpuTempPct = parseTemperaturePct(gpuTempText);
+
+            int barAreaX = x + 12;
+            int barAreaW = w - 24;
+            int barY = y + 30;
+            int barStep = 22;
+            int separatorGap = 10;
+            int extraHeaderGap = 16;
+
+            drawDesktopMiniBar(g2, "CPU", cpu, cpu + "%", barAreaX, barY, barAreaW, LIME);
+            barY += barStep;
+            drawDesktopMiniBar(g2, "RAM", ram, ram + "%", barAreaX, barY, barAreaW, CYAN);
+            barY += barStep;
+            drawDesktopMiniBar(g2, "LOAD", load, load + "%", barAreaX, barY, barAreaW, new Color(126, 214, 205));
+            barY += barStep;
+            drawDesktopMiniBar(g2, "CPU TEMP", cpuTempPct, normalizeTemperatureText(packet.get("TEMP", packet.get("CPUTEMP", "--"))), barAreaX, barY, barAreaW, new Color(239, 186, 92));
+
+            int separatorY = barY + 12;
+            g2.setColor(new Color(110, 140, 176, 165));
+            g2.drawLine(x + 14, separatorY, x + w - 14, separatorY);
+
+            barY = separatorY + separatorGap;
+            drawDesktopMiniBar(g2, "GPU", gpu, gpu + "%", barAreaX, barY, barAreaW, ORANGE);
+            barY += barStep;
+            drawDesktopMiniBar(g2, "VRAM", vram, vram + "%", barAreaX, barY, barAreaW, MAGENTA);
+            barY += barStep;
+            drawDesktopMiniBar(g2, "GPU TEMP", gpuTempPct, gpuTempText, barAreaX, barY, barAreaW, getTemperatureColor(gpuTempPct));
+
+            int processY = barY + extraHeaderGap;
+            drawProcessesDesktop(g2, x, processY, w, Math.max(64, h - (processY - y) - 10));
         }
 
         private void drawNetworkStorageDesktop(Graphics2D g2, int x, int y, int w, int h) {
@@ -752,15 +774,25 @@ public class JavaSerialFakeDisplay extends JFrame {
             g2.drawString("VRAM", x + 146, legendY);
         }
 
-        private void drawDesktopMiniBar(Graphics2D g2, String label, int value, int x, int y, int w, Color color) {
-            g2.setFont(new Font(MONO, Font.BOLD, 10));
+        private void drawDesktopMiniBar(Graphics2D g2, String label, int value, String displayValue, int x, int y, int w, Color color) {
+            g2.setFont(new Font(MONO, Font.BOLD, 11));
             g2.setColor(WHITE);
-            g2.drawString(label, x, y + 8);
-            int barX = x + 36;
-            int barW = Math.max(40, w - 82);
-            drawBar(g2, barX, y + 1, barW, 8, value, color);
+            g2.drawString(label, x, y + 12);
+            int barX = x + 72;
+            int barW = Math.max(48, w - 160);
+            drawBar(g2, barX, y, barW, 12, value, color);
             g2.setColor(color);
-            g2.drawString(value + "%", x + w - 34, y + 8);
+            g2.drawString(displayValue, x + w - 80, y + 12);
+        }
+
+        private Color getTemperatureColor(int tempPct) {
+            if (tempPct >= 80) {
+                return new Color(255, 96, 96);
+            }
+            if (tempPct >= 60) {
+                return new Color(255, 190, 82);
+            }
+            return new Color(113, 236, 126);
         }
 
         private void drawDesktopHistoryLine(Graphics2D g2, int[] history, int x, int y, int w, int h, Color color) {
@@ -838,14 +870,23 @@ public class JavaSerialFakeDisplay extends JFrame {
                 return "--";
             }
             String trimmed = text.trim();
-            if (trimmed.endsWith("C") || trimmed.endsWith("°C") || trimmed.endsWith("F") || trimmed.endsWith("°F")) {
+            if (trimmed.endsWith("°C")) {
                 return trimmed;
+            }
+            if (trimmed.endsWith("C")) {
+                return trimmed.substring(0, trimmed.length() - 1) + "°C";
+            }
+            if (trimmed.endsWith("°F")) {
+                return trimmed;
+            }
+            if (trimmed.endsWith("F")) {
+                return trimmed.substring(0, trimmed.length() - 1) + "°F";
             }
             String digits = trimmed.replaceAll("[^0-9.\\-]", "");
             if (digits.isBlank()) {
                 return trimmed;
             }
-            return digits + "C";
+            return digits + "°C";
         }
 
         private int parseRateKbps(String rateText) {
