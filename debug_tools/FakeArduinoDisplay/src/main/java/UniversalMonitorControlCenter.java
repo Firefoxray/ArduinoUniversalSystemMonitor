@@ -56,7 +56,6 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private enum LogChannel {
         OPTIONAL_APP,
-        PERF_DEBUG,
         ESSENTIAL,
         COMMAND_OUTPUT
     }
@@ -92,8 +91,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final int BACKGROUND_STATUS_REFRESH_MS = 7000;
     private static final int BACKGROUND_NETWORK_REFRESH_MS = 30000;
     private static final int GAMING_REFRESH_MS = 1800;
-    private static final int PERF_LOG_INTERVAL_MS = 30000;
-    private static final int PERF_DEBUG_LOG_INTERVAL_MS = 10000;
     private static final String DEFAULT_PAGE_PROFILE_NAME = "Desktop Default";
     private static final List<String> REQUIRED_ARDUINO_CORE_PACKAGES = List.of(
             "arduino:avr",
@@ -322,7 +319,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextArea sshStatsOutputArea = new JTextArea();
     private final JCheckBox desktopSettingsAutoRefreshToggle = new JCheckBox("Auto-refresh summary cards");
     private final JCheckBox efficiencyModeToggle = new JCheckBox("Efficiency mode (lighter effects, same refresh cadence)");
-    private final JCheckBox perfDebugModeToggle = new JCheckBox("Perf debug logs");
     private final JCheckBox loggingEnabledToggle = new JCheckBox("Enable optional logs");
     private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
     private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
@@ -364,7 +360,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private long lastChartRefreshAtMs = 0L;
     private long lastBackgroundRefreshAtMs = 0L;
     private long lastGamingRefreshAtMs = 0L;
-    private long lastPerfLogAtMs = 0L;
     private long lastDashboardUiApplyAtMs = 0L;
     private long lastDashboardUiRepaintAtMs = 0L;
     private long sharedLogVersion = 0L;
@@ -375,8 +370,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private boolean popoutLogNeedsFullRender = false;
     private String lastStorageCapacitySnapshot = "";
     private String lastPopoutStorageCapacitySnapshot = "";
-    private final Map<String, PerfStage> perfStages = new LinkedHashMap<>();
-    private final UiPerfDebugStats uiPerfDebugStats = new UiPerfDebugStats();
 
     private final Color darkBackground = new Color(23, 39, 66);
     private final Color darkPanelBackground = new Color(34, 54, 86);
@@ -587,14 +580,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
         updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
-        perfDebugModeToggle.setToolTipText("Verbose performance counters for UI tick/update rates and skipped redraw reasons.");
-        perfDebugModeToggle.setFocusable(false);
-        perfDebugModeToggle.setSelected(Boolean.parseBoolean(System.getenv().getOrDefault("ARDUINO_MONITOR_PERF_DEBUG", "false")));
-        runtimeSettings.setPerfDebugEnabled(perfDebugModeToggle.isSelected());
-        perfDebugModeToggle.addActionListener(e -> {
-            onPerfDebugModeChanged();
-            log("[INFO] Perf debug mode " + (perfDebugModeToggle.isSelected() ? "enabled." : "disabled."));
-        });
         loggingEnabledToggle.setFocusable(false);
         loggingEnabledToggle.setSelected(true);
         runtimeSettings.setLoggingEnabled(true);
@@ -638,38 +623,13 @@ public class UniversalMonitorControlCenter extends JFrame {
                 + "ms, charts " + CHART_REFRESH_MS + "ms (effects only).");
     }
 
-    private void onPerfDebugModeChanged() {
-        runtimeSettings.setPerfDebugEnabled(perfDebugModeToggle.isSelected());
-        if (perfDebugModeToggle.isSelected()) {
-            long now = System.currentTimeMillis();
-            uiPerfDebugStats.resetWindow(now);
-            uiPerfDebugStats.lastPerfDebugLogAtMs = now;
-        } else {
-            uiPerfDebugStats.windowStartMs = 0L;
-        }
-    }
-
     private void runUiUpdateTick() {
         long now = System.currentTimeMillis();
-        uiPerfDebugStats.totalUiTicks++;
-        if (perfDebugModeToggle.isSelected() && uiPerfDebugStats.windowStartMs == 0L) {
-            uiPerfDebugStats.resetWindow(now);
-            uiPerfDebugStats.lastPerfDebugLogAtMs = now;
-        }
         boolean labelsDue = (now - lastLabelRefreshAtMs) >= LABEL_REFRESH_MS;
         boolean metersDue = (now - lastMeterRefreshAtMs) >= METER_REFRESH_MS;
         boolean chartsDue = (now - lastChartRefreshAtMs) >= CHART_REFRESH_MS;
         boolean backgroundDue = (now - lastBackgroundRefreshAtMs) >= BACKGROUND_STATUS_REFRESH_MS;
         boolean gamingDue = (now - lastGamingRefreshAtMs) >= GAMING_REFRESH_MS;
-        if (labelsDue) {
-            uiPerfDebugStats.labelTicks++;
-        }
-        if (metersDue) {
-            uiPerfDebugStats.meterTicks++;
-        }
-        if (chartsDue) {
-            uiPerfDebugStats.chartDueTicks++;
-        }
         if (labelsDue) {
             lastLabelRefreshAtMs = now;
         }
@@ -681,37 +641,23 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         if (backgroundDue) {
             lastBackgroundRefreshAtMs = now;
-            profileStage("background_status", () -> refreshBackgroundStatus(now));
+            refreshBackgroundStatus(now);
         }
         if (gamingDue && isAnyGamingSurfaceVisible()) {
             lastGamingRefreshAtMs = now;
-            profileStage("gaming_update", this::refreshGamingModeTelemetryCards);
+            refreshGamingModeTelemetryCards();
         }
         final JavaSerialFakeDisplay.ParsedPacket packet = latestDashboardPacket;
-        profileStage("stat_collection", () -> {
-            if (packet == null) {
-                uiPerfDebugStats.skippedNoPacket++;
-                return;
-            }
+        if (packet != null) {
             if (labelsDue) {
                 updateDashboardLabels(packet);
             }
             if (metersDue || chartsDue) {
                 updateDashboardVisualPanels(chartsDue);
-            }
-            if (metersDue || chartsDue) {
                 updateStoragePanels(packet, chartsDue);
             }
-        });
-        if ((now - lastPerfLogAtMs) >= PERF_LOG_INTERVAL_MS && runtimeSettings.isOptionalLogsEnabled()) {
-            lastPerfLogAtMs = now;
-            logPerfSummary();
         }
-        if (perfDebugModeToggle.isSelected() && (now - uiPerfDebugStats.lastPerfDebugLogAtMs) >= PERF_DEBUG_LOG_INTERVAL_MS) {
-            uiPerfDebugStats.lastPerfDebugLogAtMs = now;
-            logPerfDebugSummary(now);
-        }
-        profileStage("log_rendering", this::flushVisibleLogViews);
+        flushVisibleLogViews();
     }
 
     private void refreshBackgroundStatus(long nowMs) {
@@ -746,129 +692,49 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void updateDashboardLabels(JavaSerialFakeDisplay.ParsedPacket packet) {
-        profileStage("control_center_update", () -> {
-            if (mainTabs != null && mainTabs.getSelectedIndex() >= 0 && "Dashboard".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()))) {
-                refreshDesktopDashboardMiniSummary(packet);
-            }
-            String capacitySnapshot = buildStorageCapacitySnapshot(packet);
-            if (!capacitySnapshot.equals(lastStorageCapacitySnapshot)) {
-                storageCapacitySnapshotLabel.setText(capacitySnapshot);
-                lastStorageCapacitySnapshot = capacitySnapshot;
-            }
-            if (!capacitySnapshot.equals(lastPopoutStorageCapacitySnapshot)) {
-                popoutStorageCapacityLabel.setText(capacitySnapshot);
-                lastPopoutStorageCapacitySnapshot = capacitySnapshot;
-            }
-        });
+        if (mainTabs != null && mainTabs.getSelectedIndex() >= 0 && "Dashboard".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()))) {
+            refreshDesktopDashboardMiniSummary(packet);
+        }
+        String capacitySnapshot = buildStorageCapacitySnapshot(packet);
+        if (!capacitySnapshot.equals(lastStorageCapacitySnapshot)) {
+            storageCapacitySnapshotLabel.setText(capacitySnapshot);
+            lastStorageCapacitySnapshot = capacitySnapshot;
+        }
+        if (!capacitySnapshot.equals(lastPopoutStorageCapacitySnapshot)) {
+            popoutStorageCapacityLabel.setText(capacitySnapshot);
+            lastPopoutStorageCapacitySnapshot = capacitySnapshot;
+        }
     }
 
     private void updateDashboardVisualPanels(boolean chartsDue) {
-        profileStage("chart_update", () -> {
-            boolean dashboardTabVisible = mainTabs != null
-                    && mainTabs.getSelectedIndex() >= 0
-                    && "Dashboard".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
-            if (dashboardTabVisible) {
-                uiPerfDebugStats.controlCenterUpdates++;
-                fakeDisplayPanel.flushLatest(chartsDue);
-            } else {
-                uiPerfDebugStats.skippedControlCenterHidden++;
-            }
-            if (desktopDashboardWindow == null || !desktopDashboardWindow.isVisible()) {
-                uiPerfDebugStats.skippedPopoutHidden++;
-                return;
-            }
-            if (isDashboardWindowMinimized()) {
-                uiPerfDebugStats.skippedPopoutMinimized++;
-                return;
-            }
-            uiPerfDebugStats.popoutUpdates++;
-            profileStage("popout_update", () -> {
-                desktopDashboardPanel.flushLatest(chartsDue);
-                lastDashboardUiRepaintAtMs = System.currentTimeMillis();
-            });
-        });
+        boolean dashboardTabVisible = mainTabs != null
+                && mainTabs.getSelectedIndex() >= 0
+                && "Dashboard".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
+        if (dashboardTabVisible) {
+            fakeDisplayPanel.flushLatest(chartsDue);
+        }
+        if (desktopDashboardWindow == null || !desktopDashboardWindow.isVisible() || isDashboardWindowMinimized()) {
+            return;
+        }
+        desktopDashboardPanel.flushLatest(chartsDue);
+        lastDashboardUiRepaintAtMs = System.currentTimeMillis();
     }
 
     private void updateStoragePanels(JavaSerialFakeDisplay.ParsedPacket packet, boolean chartsDue) {
-        profileStage("storage_page_update", () -> {
-            if (chartsDue) {
-                uiPerfDebugStats.storageHistoryUpdates++;
-            }
-            boolean storageTabVisible = mainTabs != null
-                    && mainTabs.getSelectedIndex() >= 0
-                    && "Storage I/O".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
-            if (storageTabVisible) {
-                controlCenterStorageActivityPanel.updateFromPacket(packet, chartsDue);
-            }
-            boolean popoutStorageVisible = desktopDashboardWindow != null
-                    && desktopDashboardWindow.isVisible()
-                    && !isDashboardWindowMinimized()
-                    && desktopDashboardTabs.getSelectedIndex() >= 0
-                    && "Storage".equals(desktopDashboardTabs.getTitleAt(desktopDashboardTabs.getSelectedIndex()));
-            if (popoutStorageVisible) {
-                popoutStorageActivityPanel.updateFromPacket(packet, chartsDue);
-            }
-        });
-    }
-
-    private void profileStage(String stage, Runnable action) {
-        long start = System.nanoTime();
-        action.run();
-        long elapsed = System.nanoTime() - start;
-        PerfStage perf = perfStages.computeIfAbsent(stage, key -> new PerfStage());
-        perf.totalNs += elapsed;
-        perf.maxNs = Math.max(perf.maxNs, elapsed);
-        perf.calls++;
-    }
-
-    private void logPerfSummary() {
-        if (perfStages.isEmpty()) {
-            return;
+        boolean storageTabVisible = mainTabs != null
+                && mainTabs.getSelectedIndex() >= 0
+                && "Storage I/O".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
+        if (storageTabVisible) {
+            controlCenterStorageActivityPanel.updateFromPacket(packet, chartsDue);
         }
-        List<Map.Entry<String, PerfStage>> rows = new ArrayList<>(perfStages.entrySet());
-        rows.sort((a, b) -> Long.compare(b.getValue().avgNs(), a.getValue().avgNs()));
-        StringBuilder line = new StringBuilder("[PERF] UI update offenders: ");
-        int max = Math.min(6, rows.size());
-        for (int i = 0; i < max; i++) {
-            Map.Entry<String, PerfStage> entry = rows.get(i);
-            PerfStage perf = entry.getValue();
-            if (i > 0) {
-                line.append(" | ");
-            }
-            line.append(entry.getKey())
-                    .append(" avg=")
-                    .append(String.format(Locale.ROOT, "%.2f", perf.avgMs()))
-                    .append("ms max=")
-                    .append(String.format(Locale.ROOT, "%.2f", perf.maxMs()))
-                    .append("ms calls=")
-                    .append(perf.calls);
+        boolean popoutStorageVisible = desktopDashboardWindow != null
+                && desktopDashboardWindow.isVisible()
+                && !isDashboardWindowMinimized()
+                && desktopDashboardTabs.getSelectedIndex() >= 0
+                && "Storage".equals(desktopDashboardTabs.getTitleAt(desktopDashboardTabs.getSelectedIndex()));
+        if (popoutStorageVisible) {
+            popoutStorageActivityPanel.updateFromPacket(packet, chartsDue);
         }
-        log(line.toString());
-    }
-
-    private void logPerfDebugSummary(long nowMs) {
-        if (uiPerfDebugStats.windowStartMs == 0L) {
-            return;
-        }
-        double elapsedSec = (nowMs - uiPerfDebugStats.windowStartMs) / 1000.0;
-        if (elapsedSec < 1.0) {
-            return;
-        }
-        String message = String.format(Locale.ROOT,
-                "[PERF-DEBUG] window=%.1fs ui_tick=%.2fHz popout=%.2fHz control_center=%.2fHz chart_due=%.2fHz storage_history=%.2fHz skipped{nopacket=%d,cc_hidden=%d,popout_hidden=%d,popout_min=%d,popout_inactive=%d}",
-                elapsedSec,
-                uiPerfDebugStats.totalUiTicks / elapsedSec,
-                uiPerfDebugStats.popoutUpdates / elapsedSec,
-                uiPerfDebugStats.controlCenterUpdates / elapsedSec,
-                uiPerfDebugStats.chartDueTicks / elapsedSec,
-                uiPerfDebugStats.storageHistoryUpdates / elapsedSec,
-                uiPerfDebugStats.skippedNoPacket,
-                uiPerfDebugStats.skippedControlCenterHidden,
-                uiPerfDebugStats.skippedPopoutHidden,
-                uiPerfDebugStats.skippedPopoutMinimized,
-                uiPerfDebugStats.skippedPopoutInactive);
-        log(message);
-        uiPerfDebugStats.resetWindow(nowMs);
     }
 
     private JPanel buildRepoPanel() {
@@ -1160,7 +1026,6 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         modeRow.add(efficiencyModeToggle);
-        modeRow.add(perfDebugModeToggle);
         modeRow.add(loggingEnabledToggle);
         controls.add(modeRow);
 
@@ -1701,7 +1566,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
-        perfDebugModeToggle.addActionListener(e -> updateDesktopSettingsStatus());
         loggingEnabledToggle.addActionListener(e -> updateDesktopSettingsStatus());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
@@ -2728,7 +2592,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             latestDashboardPacket = packet;
             fakeDisplayPanel.updatePacket(packet);
             desktopDashboardPanel.updatePacket(packet);
+            fakeDisplayPanel.flushLatest(true);
+            desktopDashboardPanel.flushLatest(true);
             lastDashboardUiApplyAtMs = System.currentTimeMillis();
+            lastDashboardUiRepaintAtMs = lastDashboardUiApplyAtMs;
         });
     }
 
@@ -5453,7 +5320,6 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel optionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         optionRow.add(efficiencyModeToggle);
-        optionRow.add(perfDebugModeToggle);
         optionRow.add(loggingEnabledToggle);
         optionRow.add(desktopSettingsAutoRefreshToggle);
         optionRow.add(desktopSettingsShowHistoryLegendToggle);
@@ -5725,7 +5591,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private boolean shouldEmitChannel(LogChannel channel) {
         return switch (channel) {
-            case OPTIONAL_APP, PERF_DEBUG -> runtimeSettings.isOptionalLogsEnabled();
+            case OPTIONAL_APP -> runtimeSettings.isOptionalLogsEnabled();
             case ESSENTIAL, COMMAND_OUTPUT -> true;
         };
     }
@@ -5801,9 +5667,6 @@ public class UniversalMonitorControlCenter extends JFrame {
                 || upper.startsWith("[RUN]") || upper.startsWith("[DONE]") || upper.startsWith("[FAIL]")
                 || upper.contains("[CLI][OUT]") || upper.contains("[CLI][ERR]") || upper.startsWith("[ARDUINO-CLI INSTALL]")) {
             return LogChannel.COMMAND_OUTPUT;
-        }
-        if (upper.startsWith("[PERF]")) {
-            return LogChannel.PERF_DEBUG;
         }
         if (upper.startsWith("[ERROR]") || upper.startsWith("[WARN]") || upper.startsWith("[FATAL]")
                 || upper.contains("[ERR]") || upper.startsWith("[SERVICE]") || upper.startsWith("[STREAM]")
@@ -6128,7 +5991,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
         if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
         desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3"
-                + " | Perf debug: " + (perfDebugModeToggle.isSelected() ? "ON" : "OFF")
                 + " | Optional logs: " + (runtimeSettings.isOptionalLogsEnabled() ? "ON" : "OFF"));
     }
 
@@ -8270,36 +8132,13 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private static class PerfStage {
-        long totalNs;
-        long maxNs;
-        long calls;
-
-        long avgNs() {
-            return calls <= 0 ? 0L : totalNs / calls;
-        }
-
-        double avgMs() {
-            return avgNs() / 1_000_000.0;
-        }
-
-        double maxMs() {
-            return maxNs / 1_000_000.0;
-        }
-    }
-
     private static class SharedRuntimeSettings {
         private volatile boolean loggingEnabled = true;
-        private volatile boolean perfDebugEnabled = false;
         private volatile boolean dashboardStreamActive = false;
         private volatile boolean lowRefreshMode = true;
 
         void setLoggingEnabled(boolean enabled) {
             this.loggingEnabled = enabled;
-        }
-
-        void setPerfDebugEnabled(boolean enabled) {
-            this.perfDebugEnabled = enabled;
         }
 
         boolean isOptionalLogsEnabled() {
@@ -8312,39 +8151,6 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         void setLowRefreshMode(boolean enabled) {
             this.lowRefreshMode = enabled;
-        }
-    }
-
-    private static class UiPerfDebugStats {
-        long windowStartMs;
-        long lastPerfDebugLogAtMs;
-        long totalUiTicks;
-        long labelTicks;
-        long meterTicks;
-        long chartDueTicks;
-        long controlCenterUpdates;
-        long popoutUpdates;
-        long storageHistoryUpdates;
-        long skippedNoPacket;
-        long skippedControlCenterHidden;
-        long skippedPopoutHidden;
-        long skippedPopoutMinimized;
-        long skippedPopoutInactive;
-
-        void resetWindow(long nowMs) {
-            windowStartMs = nowMs;
-            totalUiTicks = 0L;
-            labelTicks = 0L;
-            meterTicks = 0L;
-            chartDueTicks = 0L;
-            controlCenterUpdates = 0L;
-            popoutUpdates = 0L;
-            storageHistoryUpdates = 0L;
-            skippedNoPacket = 0L;
-            skippedControlCenterHidden = 0L;
-            skippedPopoutHidden = 0L;
-            skippedPopoutMinimized = 0L;
-            skippedPopoutInactive = 0L;
         }
     }
 
