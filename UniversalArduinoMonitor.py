@@ -2272,10 +2272,17 @@ def build_debug_payload(snapshot) -> str:
     return "|".join(pairs) + "\n"
 
 
+def wait_for_single_instance_lock(retry_delay: float = 2.0) -> None:
+    notified = False
+    while not acquire_single_instance_lock():
+        if not notified:
+            print("Another monitor instance is active; waiting for lock release...")
+            notified = True
+        time.sleep(max(0.2, retry_delay))
+
+
 def main_sender() -> None:
-    if not acquire_single_instance_lock():
-        print("Another instance is already running.")
-        return
+    wait_for_single_instance_lock()
 
     static = get_cached_static()
     storage_targets = collect_storage_targets()

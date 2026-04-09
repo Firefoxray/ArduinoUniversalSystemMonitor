@@ -112,6 +112,8 @@ This runs the Java app in `--dashboard-only` mode so the pop-out dashboard opens
 sudo systemctl status arduino-monitor.service
 sudo systemctl restart arduino-monitor.service
 sudo systemctl stop arduino-monitor.service
+# if you see start-limit-hit after repeated failures:
+sudo systemctl reset-failed arduino-monitor.service
 ```
 
 ### Manual monitor run (debug/testing)
