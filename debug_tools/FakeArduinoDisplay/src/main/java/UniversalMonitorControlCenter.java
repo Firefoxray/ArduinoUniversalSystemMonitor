@@ -366,8 +366,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     private long logSequence = 0L;
     private long outputLogRenderedVersion = 0L;
     private long popoutLogRenderedVersion = 0L;
+    private long settingsLogRenderedVersion = 0L;
+    private long desktopSettingsLogRenderedVersion = 0L;
     private boolean outputLogNeedsFullRender = false;
     private boolean popoutLogNeedsFullRender = false;
+    private boolean settingsLogNeedsFullRender = false;
+    private boolean desktopSettingsLogNeedsFullRender = false;
     private String lastStorageCapacitySnapshot = "";
     private String lastPopoutStorageCapacitySnapshot = "";
 
@@ -5586,6 +5590,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (trimmed) {
             outputLogNeedsFullRender = true;
             popoutLogNeedsFullRender = true;
+            settingsLogNeedsFullRender = true;
+            desktopSettingsLogNeedsFullRender = true;
         }
     }
 
@@ -5599,6 +5605,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private void refreshDesktopDashboardLogSnapshot() {
         outputLogNeedsFullRender = true;
         popoutLogNeedsFullRender = true;
+        settingsLogNeedsFullRender = true;
+        desktopSettingsLogNeedsFullRender = true;
         flushVisibleLogViews();
     }
 
@@ -5611,10 +5619,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             popoutLogRenderedVersion = renderLogsIfVisible(desktopDashboardLogArea, popoutLogRenderedVersion, popoutLogNeedsFullRender);
             popoutLogNeedsFullRender = false;
         }
-        renderStyledLogLines(settingsOutputArea, sharedLogLines);
-        settingsOutputArea.setCaretPosition(settingsOutputArea.getDocument().getLength());
-        renderStyledLogLines(desktopSettingsOutputArea, sharedLogLines);
-        desktopSettingsOutputArea.setCaretPosition(desktopSettingsOutputArea.getDocument().getLength());
+        settingsLogRenderedVersion = renderLogsIfVisible(settingsOutputArea, settingsLogRenderedVersion, settingsLogNeedsFullRender);
+        settingsLogNeedsFullRender = false;
+        desktopSettingsLogRenderedVersion = renderLogsIfVisible(desktopSettingsOutputArea, desktopSettingsLogRenderedVersion, desktopSettingsLogNeedsFullRender);
+        desktopSettingsLogNeedsFullRender = false;
     }
 
     private long renderLogsIfVisible(JTextPane pane, long renderedVersion, boolean forceFullRender) {
@@ -5682,6 +5690,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             desktopDashboardLogArea.setText("");
             outputLogRenderedVersion = sharedLogVersion;
             popoutLogRenderedVersion = sharedLogVersion;
+            settingsOutputArea.setText("");
+            desktopSettingsOutputArea.setText("");
+            settingsLogRenderedVersion = sharedLogVersion;
+            desktopSettingsLogRenderedVersion = sharedLogVersion;
         });
     }
 
@@ -6048,8 +6060,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         logSequence = 0L;
         outputLogRenderedVersion = 0L;
         popoutLogRenderedVersion = 0L;
+        settingsLogRenderedVersion = 0L;
+        desktopSettingsLogRenderedVersion = 0L;
         outputLogNeedsFullRender = true;
         popoutLogNeedsFullRender = true;
+        settingsLogNeedsFullRender = true;
+        desktopSettingsLogNeedsFullRender = true;
         clearLogViewsOnly();
         logCommandOutput("[CLI] Shared command/log output cleared.");
     }
