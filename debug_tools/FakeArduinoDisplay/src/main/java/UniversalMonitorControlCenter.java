@@ -83,6 +83,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final int BACKGROUND_STATUS_REFRESH_MS = 7000;
     private static final int GAMING_REFRESH_MS = 1800;
     private static final int PERF_LOG_INTERVAL_MS = 30000;
+    private static final int PERF_DEBUG_LOG_INTERVAL_MS = 10000;
     private static final String DEFAULT_PAGE_PROFILE_NAME = "Desktop Default";
     private static final List<String> REQUIRED_ARDUINO_CORE_PACKAGES = List.of(
             "arduino:avr",
@@ -311,6 +312,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JTextArea sshStatsOutputArea = new JTextArea();
     private final JCheckBox desktopSettingsAutoRefreshToggle = new JCheckBox("Auto-refresh summary cards");
     private final JCheckBox efficiencyModeToggle = new JCheckBox("Efficiency mode (lower redraw + effects)");
+    private final JCheckBox perfDebugModeToggle = new JCheckBox("Perf debug logs");
     private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
     private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
     private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
@@ -352,6 +354,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private String lastStorageCapacitySnapshot = "";
     private String lastPopoutStorageCapacitySnapshot = "";
     private final Map<String, PerfStage> perfStages = new LinkedHashMap<>();
+    private final UiPerfDebugStats uiPerfDebugStats = new UiPerfDebugStats();
 
     private final Color darkBackground = new Color(23, 39, 66);
     private final Color darkPanelBackground = new Color(34, 54, 86);
@@ -556,6 +559,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshMonitorConnectionSettings(false);
         refreshWifiCredentialsIndicator(false);
         updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
+        perfDebugModeToggle.setToolTipText("Verbose performance counters for UI tick/update rates and skipped redraw reasons.");
+        perfDebugModeToggle.setFocusable(false);
+        perfDebugModeToggle.setSelected(Boolean.parseBoolean(System.getenv().getOrDefault("ARDUINO_MONITOR_PERF_DEBUG", "false")));
+        perfDebugModeToggle.addActionListener(e ->
+                log("[INFO] Perf debug mode " + (perfDebugModeToggle.isSelected() ? "enabled." : "disabled.")));
         efficiencyModeToggle.setSelected(true);
         efficiencyModeToggle.setFocusable(false);
         efficiencyModeToggle.addActionListener(e -> applyEfficiencyMode());
@@ -593,11 +601,24 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void runUiUpdateTick() {
         long now = System.currentTimeMillis();
+        uiPerfDebugStats.totalUiTicks++;
+        if (perfDebugModeToggle.isSelected() && uiPerfDebugStats.windowStartMs == 0L) {
+            uiPerfDebugStats.windowStartMs = now;
+        }
         boolean labelsDue = (now - lastLabelRefreshAtMs) >= LABEL_REFRESH_MS;
         boolean metersDue = (now - lastMeterRefreshAtMs) >= METER_REFRESH_MS;
         boolean chartsDue = (now - lastChartRefreshAtMs) >= CHART_REFRESH_MS;
         boolean backgroundDue = (now - lastBackgroundRefreshAtMs) >= BACKGROUND_STATUS_REFRESH_MS;
         boolean gamingDue = (now - lastGamingRefreshAtMs) >= GAMING_REFRESH_MS;
+        if (labelsDue) {
+            uiPerfDebugStats.labelTicks++;
+        }
+        if (metersDue) {
+            uiPerfDebugStats.meterTicks++;
+        }
+        if (chartsDue) {
+            uiPerfDebugStats.chartDueTicks++;
+        }
         if (labelsDue) {
             lastLabelRefreshAtMs = now;
         }
@@ -624,6 +645,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         final JavaSerialFakeDisplay.ParsedPacket packet = latestDashboardPacket;
         profileStage("stat_collection", () -> {
             if (packet == null) {
+                uiPerfDebugStats.skippedNoPacket++;
                 return;
             }
             if (labelsDue) {
@@ -639,6 +661,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         if ((now - lastPerfLogAtMs) >= PERF_LOG_INTERVAL_MS) {
             lastPerfLogAtMs = now;
             logPerfSummary();
+        }
+        if (perfDebugModeToggle.isSelected() && (now - uiPerfDebugStats.lastPerfDebugLogAtMs) >= PERF_DEBUG_LOG_INTERVAL_MS) {
+            uiPerfDebugStats.lastPerfDebugLogAtMs = now;
+            logPerfDebugSummary(now);
         }
     }
 
@@ -679,16 +705,33 @@ public class UniversalMonitorControlCenter extends JFrame {
                     && mainTabs.getSelectedIndex() >= 0
                     && "Dashboard".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
             if (dashboardTabVisible) {
+                uiPerfDebugStats.controlCenterUpdates++;
                 fakeDisplayPanel.flushLatest(chartsDue);
+            } else {
+                uiPerfDebugStats.skippedControlCenterHidden++;
             }
-            if (desktopDashboardWindow != null && desktopDashboardWindow.isVisible() && !isDashboardWindowMinimized()) {
-                profileStage("popout_update", () -> desktopDashboardPanel.flushLatest(chartsDue));
+            if (desktopDashboardWindow == null || !desktopDashboardWindow.isVisible()) {
+                uiPerfDebugStats.skippedPopoutHidden++;
+                return;
             }
+            if (isDashboardWindowMinimized()) {
+                uiPerfDebugStats.skippedPopoutMinimized++;
+                return;
+            }
+            if (!desktopDashboardWindow.isActive() && !isActive()) {
+                uiPerfDebugStats.skippedPopoutInactive++;
+                return;
+            }
+            uiPerfDebugStats.popoutUpdates++;
+            profileStage("popout_update", () -> desktopDashboardPanel.flushLatest(chartsDue));
         });
     }
 
     private void updateStoragePanels(JavaSerialFakeDisplay.ParsedPacket packet, boolean chartsDue) {
         profileStage("storage_page_update", () -> {
+            if (chartsDue) {
+                uiPerfDebugStats.storageHistoryUpdates++;
+            }
             boolean storageTabVisible = mainTabs != null
                     && mainTabs.getSelectedIndex() >= 0
                     && "Storage I/O".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
@@ -739,6 +782,28 @@ public class UniversalMonitorControlCenter extends JFrame {
                     .append(perf.calls);
         }
         log(line.toString());
+    }
+
+    private void logPerfDebugSummary(long nowMs) {
+        if (uiPerfDebugStats.windowStartMs == 0L) {
+            uiPerfDebugStats.windowStartMs = nowMs;
+        }
+        double elapsedSec = Math.max(0.001, (nowMs - uiPerfDebugStats.windowStartMs) / 1000.0);
+        String message = String.format(Locale.ROOT,
+                "[PERF-DEBUG] window=%.1fs ui_tick=%.2fHz popout=%.2fHz control_center=%.2fHz chart_due=%.2fHz storage_history=%.2fHz skipped{nopacket=%d,cc_hidden=%d,popout_hidden=%d,popout_min=%d,popout_inactive=%d}",
+                elapsedSec,
+                uiPerfDebugStats.totalUiTicks / elapsedSec,
+                uiPerfDebugStats.popoutUpdates / elapsedSec,
+                uiPerfDebugStats.controlCenterUpdates / elapsedSec,
+                uiPerfDebugStats.chartDueTicks / elapsedSec,
+                uiPerfDebugStats.storageHistoryUpdates / elapsedSec,
+                uiPerfDebugStats.skippedNoPacket,
+                uiPerfDebugStats.skippedControlCenterHidden,
+                uiPerfDebugStats.skippedPopoutHidden,
+                uiPerfDebugStats.skippedPopoutMinimized,
+                uiPerfDebugStats.skippedPopoutInactive);
+        log(message);
+        uiPerfDebugStats.resetWindow(nowMs);
     }
 
     private JPanel buildRepoPanel() {
@@ -1546,6 +1611,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
+        perfDebugModeToggle.addActionListener(e -> updateDesktopSettingsStatus());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -5217,6 +5283,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel optionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         optionRow.add(efficiencyModeToggle);
+        optionRow.add(perfDebugModeToggle);
         optionRow.add(desktopSettingsAutoRefreshToggle);
         optionRow.add(desktopSettingsShowHistoryLegendToggle);
         optionRow.add(desktopSettingsCompactSidePanelToggle);
@@ -5800,7 +5867,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (desktopSettingsAutoRefreshToggle.isSelected()) enabled++;
         if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
         if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
-        desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3");
+        desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3"
+                + " | Perf debug: " + (perfDebugModeToggle.isSelected() ? "ON" : "OFF"));
     }
 
     private void installRayfetchHistoryInputSupport() {
@@ -7919,6 +7987,39 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
+    private static class UiPerfDebugStats {
+        long windowStartMs;
+        long lastPerfDebugLogAtMs;
+        long totalUiTicks;
+        long labelTicks;
+        long meterTicks;
+        long chartDueTicks;
+        long controlCenterUpdates;
+        long popoutUpdates;
+        long storageHistoryUpdates;
+        long skippedNoPacket;
+        long skippedControlCenterHidden;
+        long skippedPopoutHidden;
+        long skippedPopoutMinimized;
+        long skippedPopoutInactive;
+
+        void resetWindow(long nowMs) {
+            windowStartMs = nowMs;
+            totalUiTicks = 0L;
+            labelTicks = 0L;
+            meterTicks = 0L;
+            chartDueTicks = 0L;
+            controlCenterUpdates = 0L;
+            popoutUpdates = 0L;
+            storageHistoryUpdates = 0L;
+            skippedNoPacket = 0L;
+            skippedControlCenterHidden = 0L;
+            skippedPopoutHidden = 0L;
+            skippedPopoutMinimized = 0L;
+            skippedPopoutInactive = 0L;
+        }
+    }
+
     private static class StorageActivityPanel extends JPanel {
         private static final int MIN_DRIVES = 3;
         private static final int HISTORY = 72;
@@ -7938,6 +8039,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         private Color statusColor = new Color(143, 197, 255);
         private Color chartBackground = new Color(17, 23, 38);
         private boolean efficiencyMode = true;
+        private int preferredPanelHeight = -1;
 
         StorageActivityPanel() {
             setOpaque(true);
@@ -7961,24 +8063,35 @@ public class UniversalMonitorControlCenter extends JFrame {
         void setConfiguredTargets(List<String> targets) {
             configuredTargets = targets == null ? new ArrayList<>() : new ArrayList<>(targets);
             ensureDriveCount(Math.max(MIN_DRIVES, configuredTargets.size()));
+            boolean changed = false;
             for (int i = 0; i < labels.size(); i++) {
                 if (i >= MIN_DRIVES && i < configuredTargets.size()) {
-                    labels.set(i, configuredTargets.get(i));
+                    String next = configuredTargets.get(i);
+                    if (!next.equals(labels.get(i))) {
+                        labels.set(i, next);
+                        changed = true;
+                    }
                 }
             }
-            updatePreferredHeight();
-            revalidate();
-            repaint();
+            if (updatePreferredHeight()) {
+                revalidate();
+                changed = true;
+            }
+            if (changed) {
+                repaint();
+            }
         }
 
         void setEfficiencyMode(boolean enabled) {
+            if (efficiencyMode == enabled) {
+                return;
+            }
             efficiencyMode = enabled;
             repaint();
         }
 
         void updateFromPacket(JavaSerialFakeDisplay.ParsedPacket packet, boolean allowHistory) {
             if (packet == null) {
-                repaint();
                 return;
             }
             lastUpdateMs = System.currentTimeMillis();
@@ -8015,7 +8128,10 @@ public class UniversalMonitorControlCenter extends JFrame {
                     utilText.set(slot, "--");
                 }
             }
-            updatePreferredHeight();
+            if (updatePreferredHeight()) {
+                revalidate();
+                changed = true;
+            }
             if (changed || allowHistory) {
                 repaint();
             }
@@ -8149,10 +8265,15 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
         }
 
-        private void updatePreferredHeight() {
+        private boolean updatePreferredHeight() {
             int rows = Math.max(MIN_DRIVES, labels.size());
-            int height = 56 + rows * 128 + Math.max(0, rows - 1) * 8;
-            setPreferredSize(new Dimension(760, Math.max(420, height)));
+            int height = Math.max(420, 56 + rows * 128 + Math.max(0, rows - 1) * 8);
+            if (height == preferredPanelHeight) {
+                return false;
+            }
+            preferredPanelHeight = height;
+            setPreferredSize(new Dimension(760, height));
+            return true;
         }
 
         private int rateToKbps(String text) {
