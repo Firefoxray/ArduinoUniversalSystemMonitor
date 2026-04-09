@@ -81,6 +81,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private static final int METER_REFRESH_MS = 500;
     private static final int CHART_REFRESH_MS = 1000;
     private static final int BACKGROUND_STATUS_REFRESH_MS = 7000;
+    private static final int BACKGROUND_NETWORK_REFRESH_MS = 30000;
     private static final int GAMING_REFRESH_MS = 1800;
     private static final int PERF_LOG_INTERVAL_MS = 30000;
     private static final int PERF_DEBUG_LOG_INTERVAL_MS = 10000;
@@ -311,7 +312,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel sshStatsNetworkLabel = new JLabel("Network: --");
     private final JTextArea sshStatsOutputArea = new JTextArea();
     private final JCheckBox desktopSettingsAutoRefreshToggle = new JCheckBox("Auto-refresh summary cards");
-    private final JCheckBox efficiencyModeToggle = new JCheckBox("Efficiency mode (lower redraw + effects)");
+    private final JCheckBox efficiencyModeToggle = new JCheckBox("Efficiency mode (lighter effects, same refresh cadence)");
     private final JCheckBox perfDebugModeToggle = new JCheckBox("Perf debug logs");
     private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
     private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
@@ -398,6 +399,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Boolean lastWifiEnabledState;
     private boolean debugStatusMissingLogged;
     private boolean transportStatusMissingLogged;
+    private long lastPreviewNetworkSnapshotAtMs = 0L;
+    private String lastPreviewHostname = "unknown-host";
+    private String lastPreviewPrimaryIp = "No IPv4 address";
+    private String lastPreviewSecondaryIp = "--";
+    private String lastPreviewCompactIpDisplay = "No IPv4 address";
+    private volatile boolean serviceStatusRefreshInFlight;
+    private volatile boolean startupStatusRefreshInFlight;
     private volatile boolean networkScanRequested;
     private volatile java.net.DatagramSocket activeNetworkScanSocket;
     private Thread networkScanThread;
@@ -562,8 +570,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         perfDebugModeToggle.setToolTipText("Verbose performance counters for UI tick/update rates and skipped redraw reasons.");
         perfDebugModeToggle.setFocusable(false);
         perfDebugModeToggle.setSelected(Boolean.parseBoolean(System.getenv().getOrDefault("ARDUINO_MONITOR_PERF_DEBUG", "false")));
-        perfDebugModeToggle.addActionListener(e ->
-                log("[INFO] Perf debug mode " + (perfDebugModeToggle.isSelected() ? "enabled." : "disabled.")));
+        perfDebugModeToggle.addActionListener(e -> {
+            onPerfDebugModeChanged();
+            log("[INFO] Perf debug mode " + (perfDebugModeToggle.isSelected() ? "enabled." : "disabled."));
+        });
         efficiencyModeToggle.setSelected(true);
         efficiencyModeToggle.setFocusable(false);
         efficiencyModeToggle.addActionListener(e -> applyEfficiencyMode());
@@ -595,15 +605,26 @@ public class UniversalMonitorControlCenter extends JFrame {
         controlCenterStorageActivityPanel.setEfficiencyMode(enabled);
         popoutStorageActivityPanel.setEfficiencyMode(enabled);
         log("[INFO] Efficiency mode " + (enabled ? "enabled" : "disabled")
-                + ". Refresh profile -> labels " + LABEL_REFRESH_MS + "ms, meters " + METER_REFRESH_MS
-                + "ms, charts " + CHART_REFRESH_MS + "ms.");
+                + ". Refresh cadence unchanged -> labels " + LABEL_REFRESH_MS + "ms, meters " + METER_REFRESH_MS
+                + "ms, charts " + CHART_REFRESH_MS + "ms (effects only).");
+    }
+
+    private void onPerfDebugModeChanged() {
+        if (perfDebugModeToggle.isSelected()) {
+            long now = System.currentTimeMillis();
+            uiPerfDebugStats.resetWindow(now);
+            uiPerfDebugStats.lastPerfDebugLogAtMs = now;
+        } else {
+            uiPerfDebugStats.windowStartMs = 0L;
+        }
     }
 
     private void runUiUpdateTick() {
         long now = System.currentTimeMillis();
         uiPerfDebugStats.totalUiTicks++;
         if (perfDebugModeToggle.isSelected() && uiPerfDebugStats.windowStartMs == 0L) {
-            uiPerfDebugStats.windowStartMs = now;
+            uiPerfDebugStats.resetWindow(now);
+            uiPerfDebugStats.lastPerfDebugLogAtMs = now;
         }
         boolean labelsDue = (now - lastLabelRefreshAtMs) >= LABEL_REFRESH_MS;
         boolean metersDue = (now - lastMeterRefreshAtMs) >= METER_REFRESH_MS;
@@ -630,12 +651,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         if (backgroundDue) {
             lastBackgroundRefreshAtMs = now;
-            profileStage("background_status", () -> {
-                refreshServiceStatus(false);
-                refreshServiceStartupStatus(false);
-                refreshDebugStatus(false);
-                refreshTransportModeStatus(false);
-            });
+            profileStage("background_status", () -> refreshBackgroundStatus(now));
         }
         if (gamingDue && isAnyGamingSurfaceVisible()) {
             lastGamingRefreshAtMs = now;
@@ -666,6 +682,19 @@ public class UniversalMonitorControlCenter extends JFrame {
             uiPerfDebugStats.lastPerfDebugLogAtMs = now;
             logPerfDebugSummary(now);
         }
+    }
+
+    private void refreshBackgroundStatus(long nowMs) {
+        refreshServiceStatus(false);
+        refreshServiceStartupStatus(false);
+        String mergedConfig = null;
+        try {
+            mergedConfig = loadMergedMonitorConfigText();
+        } catch (Exception ex) {
+            // Keep status refresh resilient and avoid noisy background logs for transient file read errors.
+        }
+        refreshDebugStatusFromConfig(mergedConfig, false);
+        refreshTransportModeStatusFromConfig(mergedConfig, false, nowMs);
     }
 
     private boolean isAnyGamingSurfaceVisible() {
@@ -786,9 +815,12 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void logPerfDebugSummary(long nowMs) {
         if (uiPerfDebugStats.windowStartMs == 0L) {
-            uiPerfDebugStats.windowStartMs = nowMs;
+            return;
         }
-        double elapsedSec = Math.max(0.001, (nowMs - uiPerfDebugStats.windowStartMs) / 1000.0);
+        double elapsedSec = (nowMs - uiPerfDebugStats.windowStartMs) / 1000.0;
+        if (elapsedSec < 1.0) {
+            return;
+        }
         String message = String.format(Locale.ROOT,
                 "[PERF-DEBUG] window=%.1fs ui_tick=%.2fHz popout=%.2fHz control_center=%.2fHz chart_due=%.2fHz storage_history=%.2fHz skipped{nopacket=%d,cc_hidden=%d,popout_hidden=%d,popout_min=%d,popout_inactive=%d}",
                 elapsedSec,
@@ -2519,9 +2551,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshServiceStatus(boolean allowPrompt) {
+        if (serviceStatusRefreshInFlight) {
+            return;
+        }
+        serviceStatusRefreshInFlight = true;
         Thread t = new Thread(() -> {
             CommandSpec spec = buildShellCommand("systemctl is-active " + SERVICE_NAME, true, allowPrompt);
             if (spec == null) {
+                serviceStatusRefreshInFlight = false;
                 return;
             }
 
@@ -2561,6 +2598,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 if (allowPrompt) {
                     log("[ERROR] Failed service status check: " + ex.getMessage());
                 }
+            } finally {
+                serviceStatusRefreshInFlight = false;
             }
         }, "service-status-thread");
 
@@ -2569,9 +2608,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshServiceStartupStatus(boolean allowPrompt) {
+        if (startupStatusRefreshInFlight) {
+            return;
+        }
+        startupStatusRefreshInFlight = true;
         Thread t = new Thread(() -> {
             CommandSpec spec = buildShellCommand("systemctl is-enabled " + SERVICE_NAME, true, allowPrompt);
             if (spec == null) {
+                startupStatusRefreshInFlight = false;
                 return;
             }
 
@@ -2611,6 +2655,8 @@ public class UniversalMonitorControlCenter extends JFrame {
                 if (allowPrompt) {
                     log("[ERROR] Failed startup status check: " + ex.getMessage());
                 }
+            } finally {
+                startupStatusRefreshInFlight = false;
             }
         }, "service-startup-status-thread");
 
@@ -2649,8 +2695,17 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshDebugStatus(boolean verbose) {
+        String text;
         try {
-            String text = loadMergedMonitorConfigText();
+            text = loadMergedMonitorConfigText();
+        } catch (Exception ex) {
+            text = null;
+        }
+        refreshDebugStatusFromConfig(text, verbose);
+    }
+
+    private void refreshDebugStatusFromConfig(String text, boolean verbose) {
+        try {
             if (text == null || text.isBlank()) {
                 setDebugIndicator("UNKNOWN", Color.GRAY);
                 lastDebugEnabledState = null;
@@ -2961,8 +3016,17 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void refreshTransportModeStatus(boolean verbose) {
+        String text;
         try {
-            String text = loadMergedMonitorConfigText();
+            text = loadMergedMonitorConfigText();
+        } catch (Exception ex) {
+            text = null;
+        }
+        refreshTransportModeStatusFromConfig(text, verbose, System.currentTimeMillis());
+    }
+
+    private void refreshTransportModeStatusFromConfig(String text, boolean verbose, long nowMs) {
+        try {
             if (text == null || text.isBlank()) {
                 setTransportIndicator("UNKNOWN", Color.GRAY);
                 lastWifiEnabledState = null;
@@ -2986,34 +3050,66 @@ public class UniversalMonitorControlCenter extends JFrame {
                         : "USB only";
                 log("[INFO] Monitor transport is set to " + mode + " in the merged monitor config.");
             }
+            boolean forceNetworkRefresh = lastWifiEnabledState == null
+                    || lastWifiEnabledState != enabled
+                    || (nowMs - lastPreviewNetworkSnapshotAtMs) >= BACKGROUND_NETWORK_REFRESH_MS;
             lastWifiEnabledState = enabled;
-            updatePreviewWifiStatus(enabled);
+            updatePreviewWifiStatus(enabled, forceNetworkRefresh, nowMs);
         } catch (Exception ex) {
             setTransportIndicator("UNKNOWN", Color.GRAY);
             lastWifiEnabledState = null;
-            updatePreviewWifiStatus(false);
+            updatePreviewWifiStatus(false, false, nowMs);
             log("[WARN] Failed to refresh transport mode: " + ex.getMessage());
         }
     }
 
     private void updatePreviewWifiStatus(boolean wifiEnabled) {
-        String hostname = detectLocalHostname();
-        List<InterfaceIpv4Info> ipAddresses = resolveInterfaceIpv4Addresses();
-        String primaryIp = ipAddresses.isEmpty() ? "No IPv4 address" : formatInterfaceIp(ipAddresses.get(0));
-        String secondaryIp = ipAddresses.size() > 1 ? formatInterfaceIp(ipAddresses.get(1)) : "--";
-        previewWifiStateLabel.setText(wifiEnabled ? "Enabled" : "Disabled");
-        previewWifiStateLabel.setForeground(wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24));
-        previewWifiHostnameLabel.setText(hostname);
-        previewPrimaryIpLabel.setText(formatPreviewIpLabel(primaryIp));
-        previewSecondaryIpLabel.setText(formatPreviewIpLabel(secondaryIp));
-        previewPrimaryIpLabel.setToolTipText(primaryIp);
-        previewSecondaryIpLabel.setToolTipText(secondaryIp);
+        updatePreviewWifiStatus(wifiEnabled, true, System.currentTimeMillis());
+    }
+
+    private void updatePreviewWifiStatus(boolean wifiEnabled, boolean forceNetworkRefresh, long nowMs) {
+        if (forceNetworkRefresh) {
+            String hostname = detectLocalHostname();
+            List<InterfaceIpv4Info> ipAddresses = resolveInterfaceIpv4Addresses();
+            String primaryIp = ipAddresses.isEmpty() ? "No IPv4 address" : formatInterfaceIp(ipAddresses.get(0));
+            String secondaryIp = ipAddresses.size() > 1 ? formatInterfaceIp(ipAddresses.get(1)) : "--";
+            String compactIpDisplay = ipAddresses.isEmpty()
+                    ? "No IPv4 address"
+                    : ipAddresses.get(0).ipAddress() + (ipAddresses.size() > 1 ? " | " + ipAddresses.get(1).ipAddress() : "");
+            lastPreviewHostname = hostname;
+            lastPreviewPrimaryIp = primaryIp;
+            lastPreviewSecondaryIp = secondaryIp;
+            lastPreviewCompactIpDisplay = compactIpDisplay;
+            lastPreviewNetworkSnapshotAtMs = nowMs;
+        }
+        String stateText = wifiEnabled ? "Enabled" : "Disabled";
+        Color stateColor = wifiEnabled ? new Color(24, 170, 24) : new Color(191, 120, 24);
+        if (!stateText.equals(previewWifiStateLabel.getText())) {
+            previewWifiStateLabel.setText(stateText);
+        }
+        if (!stateColor.equals(previewWifiStateLabel.getForeground())) {
+            previewWifiStateLabel.setForeground(stateColor);
+        }
+        if (!lastPreviewHostname.equals(previewWifiHostnameLabel.getText())) {
+            previewWifiHostnameLabel.setText(lastPreviewHostname);
+        }
+        String primaryLabel = formatPreviewIpLabel(lastPreviewPrimaryIp);
+        if (!primaryLabel.equals(previewPrimaryIpLabel.getText())) {
+            previewPrimaryIpLabel.setText(primaryLabel);
+        }
+        String secondaryLabel = formatPreviewIpLabel(lastPreviewSecondaryIp);
+        if (!secondaryLabel.equals(previewSecondaryIpLabel.getText())) {
+            previewSecondaryIpLabel.setText(secondaryLabel);
+        }
+        if (!lastPreviewPrimaryIp.equals(previewPrimaryIpLabel.getToolTipText())) {
+            previewPrimaryIpLabel.setToolTipText(lastPreviewPrimaryIp);
+        }
+        if (!lastPreviewSecondaryIp.equals(previewSecondaryIpLabel.getToolTipText())) {
+            previewSecondaryIpLabel.setToolTipText(lastPreviewSecondaryIp);
+        }
         int port = parseWifiPort(wifiPortField.getText(), Integer.parseInt(DEFAULT_WIFI_PORT));
-        String compactIpDisplay = ipAddresses.isEmpty()
-                ? "No IPv4 address"
-                : ipAddresses.get(0).ipAddress() + (ipAddresses.size() > 1 ? " | " + ipAddresses.get(1).ipAddress() : "");
-        fakeDisplayPanel.setPreviewWifiStatus(wifiEnabled, hostname, compactIpDisplay, port);
-        desktopDashboardPanel.setPreviewWifiStatus(wifiEnabled, hostname, compactIpDisplay, port);
+        fakeDisplayPanel.setPreviewWifiStatus(wifiEnabled, lastPreviewHostname, lastPreviewCompactIpDisplay, port);
+        desktopDashboardPanel.setPreviewWifiStatus(wifiEnabled, lastPreviewHostname, lastPreviewCompactIpDisplay, port);
     }
 
     private String detectLocalHostname() {
@@ -7746,12 +7842,24 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void setTransportIndicator(String text, Color color) {
         SwingUtilities.invokeLater(() -> {
-            transportIndicator.setText(text);
-            transportIndicator.setBackground(color);
-            transportIndicator.setForeground(Color.WHITE);
-            flashTransportIndicator.setText(text);
-            flashTransportIndicator.setBackground(color);
-            flashTransportIndicator.setForeground(Color.WHITE);
+            if (!text.equals(transportIndicator.getText())) {
+                transportIndicator.setText(text);
+            }
+            if (!color.equals(transportIndicator.getBackground())) {
+                transportIndicator.setBackground(color);
+            }
+            if (!Color.WHITE.equals(transportIndicator.getForeground())) {
+                transportIndicator.setForeground(Color.WHITE);
+            }
+            if (!text.equals(flashTransportIndicator.getText())) {
+                flashTransportIndicator.setText(text);
+            }
+            if (!color.equals(flashTransportIndicator.getBackground())) {
+                flashTransportIndicator.setBackground(color);
+            }
+            if (!Color.WHITE.equals(flashTransportIndicator.getForeground())) {
+                flashTransportIndicator.setForeground(Color.WHITE);
+            }
         });
     }
 
@@ -7766,26 +7874,47 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void setServiceIndicator(String label, Color color) {
         SwingUtilities.invokeLater(() -> {
-            serviceIndicator.setText(label);
-            serviceIndicator.setBackground(color);
-            serviceIndicator.setForeground(Color.WHITE);
-            desktopDashboardServiceStateLabel.setText("Service: " + label);
+            if (!label.equals(serviceIndicator.getText())) {
+                serviceIndicator.setText(label);
+            }
+            if (!color.equals(serviceIndicator.getBackground())) {
+                serviceIndicator.setBackground(color);
+            }
+            if (!Color.WHITE.equals(serviceIndicator.getForeground())) {
+                serviceIndicator.setForeground(Color.WHITE);
+            }
+            String dashboardLabel = "Service: " + label;
+            if (!dashboardLabel.equals(desktopDashboardServiceStateLabel.getText())) {
+                desktopDashboardServiceStateLabel.setText(dashboardLabel);
+            }
         });
     }
 
     private void setStartupIndicator(String label, Color color) {
         SwingUtilities.invokeLater(() -> {
-            startupIndicator.setText(label);
-            startupIndicator.setBackground(color);
-            startupIndicator.setForeground(Color.WHITE);
+            if (!label.equals(startupIndicator.getText())) {
+                startupIndicator.setText(label);
+            }
+            if (!color.equals(startupIndicator.getBackground())) {
+                startupIndicator.setBackground(color);
+            }
+            if (!Color.WHITE.equals(startupIndicator.getForeground())) {
+                startupIndicator.setForeground(Color.WHITE);
+            }
         });
     }
 
     private void setDebugIndicator(String label, Color color) {
         SwingUtilities.invokeLater(() -> {
-            debugIndicator.setText(label);
-            debugIndicator.setBackground(color);
-            debugIndicator.setForeground(Color.WHITE);
+            if (!label.equals(debugIndicator.getText())) {
+                debugIndicator.setText(label);
+            }
+            if (!color.equals(debugIndicator.getBackground())) {
+                debugIndicator.setBackground(color);
+            }
+            if (!Color.WHITE.equals(debugIndicator.getForeground())) {
+                debugIndicator.setForeground(Color.WHITE);
+            }
         });
     }
 
