@@ -314,6 +314,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JCheckBox desktopSettingsAutoRefreshToggle = new JCheckBox("Auto-refresh summary cards");
     private final JCheckBox efficiencyModeToggle = new JCheckBox("Efficiency mode (lighter effects, same refresh cadence)");
     private final JCheckBox perfDebugModeToggle = new JCheckBox("Perf debug logs");
+    private final JCheckBox loggingEnabledToggle = new JCheckBox("Enable optional logs");
     private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
     private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
     private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
@@ -335,7 +336,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel gamingMangoHudPathLabel = new JLabel("MangoHud log path: --");
     private final MangoHudTelemetryService mangoHudTelemetryService = new MangoHudTelemetryService();
     private final GamingTelemetryCache gamingTelemetryCache = new GamingTelemetryCache();
-    private final ArrayDeque<String> desktopDashboardLogLines = new ArrayDeque<>();
+    private static final int SHARED_LOG_RING_CAPACITY = 1200;
+    private final ArrayDeque<String> sharedLogLines = new ArrayDeque<>();
     private final ArrayDeque<String> rayfetchCommandHistory = new ArrayDeque<>();
     private int rayfetchHistoryCursor = 0;
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -352,6 +354,15 @@ public class UniversalMonitorControlCenter extends JFrame {
     private long lastBackgroundRefreshAtMs = 0L;
     private long lastGamingRefreshAtMs = 0L;
     private long lastPerfLogAtMs = 0L;
+    private long lastDashboardUiApplyAtMs = 0L;
+    private long lastDashboardUiRepaintAtMs = 0L;
+    private long lastDashboardHeartbeatLogAtMs = 0L;
+    private long lastDashboardWatchdogActionAtMs = 0L;
+    private long sharedLogVersion = 0L;
+    private long outputLogRenderedVersion = 0L;
+    private long popoutLogRenderedVersion = 0L;
+    private boolean outputLogNeedsFullRender = false;
+    private boolean popoutLogNeedsFullRender = false;
     private String lastStorageCapacitySnapshot = "";
     private String lastPopoutStorageCapacitySnapshot = "";
     private final Map<String, PerfStage> perfStages = new LinkedHashMap<>();
@@ -411,6 +422,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private Thread networkScanThread;
     private Path selectedCustomSketchPath;
     private boolean homeDisableWarningAcknowledged;
+    private final SharedRuntimeSettings runtimeSettings = new SharedRuntimeSettings();
 
 
 
@@ -556,8 +568,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         dashboardSudoPasswordField.setText(new String(sudoPasswordField.getPassword()));
         dashboardRememberPasswordToggle.setSelected(rememberPasswordToggle.isSelected());
         configureLogPane(outputArea);
-        settingsOutputArea.setDocument(outputArea.getDocument());
-        desktopSettingsOutputArea.setDocument(outputArea.getDocument());
         setRotationSelectorValue(r4RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(r3RotationSelector, DISPLAY_ROTATION_NORMAL);
         setRotationSelectorValue(megaRotationSelector, DISPLAY_ROTATION_NORMAL);
@@ -570,9 +580,20 @@ public class UniversalMonitorControlCenter extends JFrame {
         perfDebugModeToggle.setToolTipText("Verbose performance counters for UI tick/update rates and skipped redraw reasons.");
         perfDebugModeToggle.setFocusable(false);
         perfDebugModeToggle.setSelected(Boolean.parseBoolean(System.getenv().getOrDefault("ARDUINO_MONITOR_PERF_DEBUG", "false")));
+        runtimeSettings.setPerfDebugEnabled(perfDebugModeToggle.isSelected());
         perfDebugModeToggle.addActionListener(e -> {
             onPerfDebugModeChanged();
             log("[INFO] Perf debug mode " + (perfDebugModeToggle.isSelected() ? "enabled." : "disabled."));
+        });
+        loggingEnabledToggle.setFocusable(false);
+        loggingEnabledToggle.setSelected(true);
+        runtimeSettings.setLoggingEnabled(true);
+        loggingEnabledToggle.setToolTipText("Turns optional UI logs on/off for both Control Center and Pop-out dashboard.");
+        loggingEnabledToggle.addActionListener(e -> {
+            runtimeSettings.setLoggingEnabled(loggingEnabledToggle.isSelected());
+            if (!runtimeSettings.shouldEmitOptionalLogs()) {
+                clearLogViewsOnly();
+            }
         });
         efficiencyModeToggle.setSelected(true);
         efficiencyModeToggle.setFocusable(false);
@@ -600,6 +621,7 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void applyEfficiencyMode() {
         boolean enabled = efficiencyModeToggle.isSelected();
+        runtimeSettings.setLowRefreshMode(enabled);
         fakeDisplayPanel.setEfficiencyMode(enabled);
         desktopDashboardPanel.setEfficiencyMode(enabled);
         controlCenterStorageActivityPanel.setEfficiencyMode(enabled);
@@ -610,6 +632,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void onPerfDebugModeChanged() {
+        runtimeSettings.setPerfDebugEnabled(perfDebugModeToggle.isSelected());
         if (perfDebugModeToggle.isSelected()) {
             long now = System.currentTimeMillis();
             uiPerfDebugStats.resetWindow(now);
@@ -657,6 +680,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             lastGamingRefreshAtMs = now;
             profileStage("gaming_update", this::refreshGamingModeTelemetryCards);
         }
+        runDashboardStreamWatchdog(now);
 
         final JavaSerialFakeDisplay.ParsedPacket packet = latestDashboardPacket;
         profileStage("stat_collection", () -> {
@@ -674,7 +698,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 updateStoragePanels(packet, chartsDue);
             }
         });
-        if ((now - lastPerfLogAtMs) >= PERF_LOG_INTERVAL_MS) {
+        if ((now - lastPerfLogAtMs) >= PERF_LOG_INTERVAL_MS && runtimeSettings.shouldEmitOptionalLogs()) {
             lastPerfLogAtMs = now;
             logPerfSummary();
         }
@@ -682,6 +706,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             uiPerfDebugStats.lastPerfDebugLogAtMs = now;
             logPerfDebugSummary(now);
         }
+        profileStage("log_rendering", this::flushVisibleLogViews);
     }
 
     private void refreshBackgroundStatus(long nowMs) {
@@ -709,6 +734,10 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private boolean isDashboardWindowMinimized() {
         return desktopDashboardWindow != null && (desktopDashboardWindow.getExtendedState() & Frame.ICONIFIED) == Frame.ICONIFIED;
+    }
+
+    private boolean isPopoutWindowVisibleAndNotMinimized() {
+        return desktopDashboardWindow != null && desktopDashboardWindow.isVisible() && !isDashboardWindowMinimized();
     }
 
     private void updateDashboardLabels(JavaSerialFakeDisplay.ParsedPacket packet) {
@@ -747,12 +776,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 uiPerfDebugStats.skippedPopoutMinimized++;
                 return;
             }
-            if (!desktopDashboardWindow.isActive() && !isActive()) {
-                uiPerfDebugStats.skippedPopoutInactive++;
-                return;
-            }
             uiPerfDebugStats.popoutUpdates++;
-            profileStage("popout_update", () -> desktopDashboardPanel.flushLatest(chartsDue));
+            profileStage("popout_update", () -> {
+                desktopDashboardPanel.flushLatest(chartsDue);
+                lastDashboardUiRepaintAtMs = System.currentTimeMillis();
+            });
         });
     }
 
@@ -890,11 +918,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         tabs.setTabPlacement(JTabbedPane.TOP);
         tabs.addTab("Dashboard", buildDashboardTab());
         tabs.addTab("Flash", buildFlashTab());
-        tabs.addTab("Settings / Profiles", buildSettingsProfilesTab());
+        tabs.addTab("Arduino Profiles", buildSettingsProfilesTab());
         tabs.addTab("Monitor", buildMonitorModulesTab());
         tabs.addTab("Storage I/O", buildStorageTab());
         outputPanelTab = buildLogsTab();
-        tabs.addTab("Logs", outputPanelTab);
+        tabs.addTab("LOGS", outputPanelTab);
+        tabs.addTab("Settings", buildControlCenterSettingsTab());
         return tabs;
     }
 
@@ -1114,6 +1143,30 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(buildServiceControlsPanel());
         panel.add(Box.createVerticalStrut(6));
         panel.add(buildDebugPanel());
+        return panel;
+    }
+
+    private JPanel buildControlCenterSettingsTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        JPanel controls = new JPanel();
+        controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
+        controls.putClientProperty("uasmSettingsPanel", Boolean.TRUE);
+
+        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        modeRow.add(efficiencyModeToggle);
+        modeRow.add(perfDebugModeToggle);
+        modeRow.add(loggingEnabledToggle);
+        controls.add(modeRow);
+
+        JPanel miscRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        miscRow.add(desktopSettingsAutoRefreshToggle);
+        miscRow.add(desktopSettingsShowHistoryLegendToggle);
+        miscRow.add(desktopSettingsCompactSidePanelToggle);
+        controls.add(miscRow);
+
+        panel.add(controls, BorderLayout.NORTH);
+        panel.add(buildOutputPanel(desktopSettingsOutputArea, "Command Output / Logs"), BorderLayout.CENTER);
         return panel;
     }
 
@@ -1644,6 +1697,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
         desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
         perfDebugModeToggle.addActionListener(e -> updateDesktopSettingsStatus());
+        loggingEnabledToggle.addActionListener(e -> updateDesktopSettingsStatus());
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -2669,12 +2723,53 @@ public class UniversalMonitorControlCenter extends JFrame {
             latestDashboardPacket = packet;
             fakeDisplayPanel.updatePacket(packet);
             desktopDashboardPanel.updatePacket(packet);
+            lastDashboardUiApplyAtMs = System.currentTimeMillis();
         });
     }
 
     private void onDashboardStreamStateChanged() {
+        runtimeSettings.setDashboardStreamActive(dashboardStreamController.isProducerAlive() && dashboardStreamController.isConsumerAlive());
         updatePortButtons();
         updatePreviewButtons();
+    }
+
+    private void runDashboardStreamWatchdog(long nowMs) {
+        boolean dashboardVisible = isPopoutWindowVisibleAndNotMinimized();
+        boolean healthy = dashboardStreamController.isStreamHealthy(
+                nowMs,
+                lastDashboardUiApplyAtMs,
+                lastDashboardUiRepaintAtMs,
+                dashboardVisible
+        );
+        if (!healthy) {
+            lastDashboardWatchdogActionAtMs = nowMs;
+        }
+        if (!perfDebugModeToggle.isSelected()) {
+            return;
+        }
+        if ((nowMs - lastDashboardHeartbeatLogAtMs) < 3000L) {
+            return;
+        }
+        lastDashboardHeartbeatLogAtMs = nowMs;
+        String heartbeat = String.format(Locale.ROOT,
+                "[STREAM-DEBUG] producer=%s consumer=%s payload_age_ms=%d ui_apply_age_ms=%d repaint_age_ms=%d popout{visible=%s,minimized=%s,focused=%s} watchdog_age_ms=%d",
+                dashboardStreamController.isProducerAlive(),
+                dashboardStreamController.isConsumerAlive(),
+                ageSince(nowMs, dashboardStreamController.getLastPayloadReceivedAtMs()),
+                ageSince(nowMs, lastDashboardUiApplyAtMs),
+                ageSince(nowMs, lastDashboardUiRepaintAtMs),
+                desktopDashboardWindow != null && desktopDashboardWindow.isVisible(),
+                isDashboardWindowMinimized(),
+                desktopDashboardWindow != null && desktopDashboardWindow.isActive(),
+                ageSince(nowMs, lastDashboardWatchdogActionAtMs));
+        log(heartbeat);
+    }
+
+    private long ageSince(long nowMs, long timestampMs) {
+        if (timestampMs <= 0L) {
+            return -1L;
+        }
+        return Math.max(0L, nowMs - timestampMs);
     }
 
     private void setDebugMode(boolean enabled) {
@@ -5215,10 +5310,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         logsButton.addActionListener(e -> fetchServiceLogsIntoDashboard());
         JButton clearButton = new JButton("Clear Log");
         clearButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
-        clearButton.addActionListener(e -> {
-            desktopDashboardLogLines.clear();
-            desktopDashboardLogArea.setText("");
-        });
+        clearButton.addActionListener(e -> clearSharedCommandOutput());
 
         desktopDashboardControlsPanel.add(startButton);
         desktopDashboardControlsPanel.add(stopButton);
@@ -5380,6 +5472,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         JPanel optionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         optionRow.add(efficiencyModeToggle);
         optionRow.add(perfDebugModeToggle);
+        optionRow.add(loggingEnabledToggle);
         optionRow.add(desktopSettingsAutoRefreshToggle);
         optionRow.add(desktopSettingsShowHistoryLegendToggle);
         optionRow.add(desktopSettingsCompactSidePanelToggle);
@@ -5407,7 +5500,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 "Desktop Monitor Settings page scaffold (v11.6):\n"
                         + "- Efficiency mode is now ON by default and aggressively reduces repaint work.\n"
                         + "- Theme controls are active and shared with the main popout controls.\n"
-                        + "- Charts update slower than text cards and hidden tabs/windows are paused.\n"
+                        + "- Charts update slower than text cards; non-focused visible windows stay active.\n"
                         + "- This page is intended to become the central desktop-only settings hub.");
         notes.setEditable(false);
         notes.setLineWrap(true);
@@ -5623,38 +5716,98 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private void appendDesktopDashboardLogLine(String message) {
+    private void appendSharedLogLine(String message) {
+        if (!runtimeSettings.shouldEmitOptionalLogs() && !isCriticalLog(message)) {
+            return;
+        }
         String text = "[" + LocalDateTime.now().format(dashboardLogTimeFormat) + "] " + message;
         boolean trimmed = false;
-        while (desktopDashboardLogLines.size() >= 120) {
-            desktopDashboardLogLines.pollFirst();
+        while (sharedLogLines.size() >= SHARED_LOG_RING_CAPACITY) {
+            sharedLogLines.pollFirst();
             trimmed = true;
         }
-        desktopDashboardLogLines.addLast(text);
-        final boolean rebuilt = trimmed;
-        SwingUtilities.invokeLater(() -> {
-            profileStage("log_rendering", () -> {
-                if (rebuilt) {
-                    renderStyledLogLines(desktopDashboardLogArea, desktopDashboardLogLines);
-                } else {
-                    appendStyledLogLine(desktopDashboardLogArea, text);
-                    desktopDashboardLogArea.setCaretPosition(desktopDashboardLogArea.getDocument().getLength());
-                }
-            });
-        });
+        sharedLogLines.addLast(text);
+        sharedLogVersion++;
+        if (trimmed) {
+            outputLogNeedsFullRender = true;
+            popoutLogNeedsFullRender = true;
+        }
     }
 
     private void refreshDesktopDashboardLogSnapshot() {
-        profileStage("log_rendering", () -> {
-        String[] lines = outputArea.getText().split("\\R");
-        desktopDashboardLogLines.clear();
-        int start = Math.max(0, lines.length - 80);
-        for (int i = start; i < lines.length; i++) {
-            if (!lines[i].isBlank()) {
-                desktopDashboardLogLines.addLast("[" + LocalDateTime.now().format(dashboardLogTimeFormat) + "] " + lines[i]);
-            }
+        outputLogNeedsFullRender = true;
+        popoutLogNeedsFullRender = true;
+        flushVisibleLogViews();
+    }
+
+    private void flushVisibleLogViews() {
+        if (!runtimeSettings.shouldEmitOptionalLogs()) {
+            return;
         }
-        renderStyledLogLines(desktopDashboardLogArea, desktopDashboardLogLines);
+        if (isControlCenterLogViewVisible()) {
+            outputLogRenderedVersion = renderLogsIfVisible(outputArea, outputLogRenderedVersion, outputLogNeedsFullRender);
+            outputLogNeedsFullRender = false;
+        }
+        if (isPopoutLogViewVisible()) {
+            popoutLogRenderedVersion = renderLogsIfVisible(desktopDashboardLogArea, popoutLogRenderedVersion, popoutLogNeedsFullRender);
+            popoutLogNeedsFullRender = false;
+        }
+    }
+
+    private long renderLogsIfVisible(JTextPane pane, long renderedVersion, boolean forceFullRender) {
+        if (forceFullRender || renderedVersion > sharedLogVersion) {
+            renderStyledLogLines(pane, sharedLogLines);
+            pane.setCaretPosition(pane.getDocument().getLength());
+            return sharedLogVersion;
+        }
+        long delta = sharedLogVersion - renderedVersion;
+        if (delta <= 0) {
+            return renderedVersion;
+        }
+        if (delta >= sharedLogLines.size()) {
+            renderStyledLogLines(pane, sharedLogLines);
+            pane.setCaretPosition(pane.getDocument().getLength());
+            return sharedLogVersion;
+        }
+        int skip = Math.max(0, sharedLogLines.size() - (int) delta);
+        int idx = 0;
+        for (String line : sharedLogLines) {
+            if (idx++ < skip) {
+                continue;
+            }
+            appendStyledLogLine(pane, line);
+        }
+        pane.setCaretPosition(pane.getDocument().getLength());
+        return sharedLogVersion;
+    }
+
+    private boolean isControlCenterLogViewVisible() {
+        return isVisible()
+                && mainTabs != null
+                && mainTabs.getSelectedIndex() >= 0
+                && "LOGS".equals(mainTabs.getTitleAt(mainTabs.getSelectedIndex()));
+    }
+
+    private boolean isPopoutLogViewVisible() {
+        return isPopoutWindowVisibleAndNotMinimized()
+                && desktopDashboardTabs != null
+                && desktopDashboardTabs.getSelectedIndex() >= 0
+                && "Main Desktop Monitor".equals(desktopDashboardTabs.getTitleAt(desktopDashboardTabs.getSelectedIndex()));
+    }
+
+    private boolean isCriticalLog(String message) {
+        if (message == null) {
+            return false;
+        }
+        return message.startsWith("[ERROR]") || message.startsWith("[FATAL]") || message.contains("[ERR]");
+    }
+
+    private void clearLogViewsOnly() {
+        SwingUtilities.invokeLater(() -> {
+            outputArea.setText("");
+            desktopDashboardLogArea.setText("");
+            outputLogRenderedVersion = sharedLogVersion;
+            popoutLogRenderedVersion = sharedLogVersion;
         });
     }
 
@@ -5797,7 +5950,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         Thread t = new Thread(() -> {
             CommandSpec spec = buildShellCommand("journalctl -u " + SERVICE_NAME + " -n 40 --no-pager", true, false);
             if (spec == null) {
-                appendDesktopDashboardLogLine("[WARN] Could not build service log command.");
+                appendSharedLogLine("[WARN] Could not build service log command.");
                 return;
             }
             try {
@@ -5812,16 +5965,16 @@ public class UniversalMonitorControlCenter extends JFrame {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         if (!line.trim().isEmpty()) {
-                            appendDesktopDashboardLogLine("[svc] " + line.trim());
+                            appendSharedLogLine("[svc] " + line.trim());
                         }
                     }
                 }
                 int code = process.waitFor();
                 if (code != 0) {
-                    appendDesktopDashboardLogLine("[WARN] journalctl exited with code " + code + ".");
+                    appendSharedLogLine("[WARN] journalctl exited with code " + code + ".");
                 }
             } catch (Exception ex) {
-                appendDesktopDashboardLogLine("[ERROR] Failed to load service logs: " + ex.getMessage());
+                appendSharedLogLine("[ERROR] Failed to load service logs: " + ex.getMessage());
             }
         }, "dashboard-log-refresh-thread");
         t.setDaemon(true);
@@ -5964,7 +6117,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
         if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
         desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3"
-                + " | Perf debug: " + (perfDebugModeToggle.isSelected() ? "ON" : "OFF"));
+                + " | Perf debug: " + (perfDebugModeToggle.isSelected() ? "ON" : "OFF")
+                + " | Optional logs: " + (runtimeSettings.shouldEmitOptionalLogs() ? "ON" : "OFF"));
     }
 
     private void installRayfetchHistoryInputSupport() {
@@ -6015,12 +6169,14 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void clearSharedCommandOutput() {
-        SwingUtilities.invokeLater(() -> {
-            outputArea.setText("");
-            desktopDashboardLogLines.clear();
-            desktopDashboardLogArea.setText("");
-            log("[CLI] Shared command/log output cleared.");
-        });
+        sharedLogLines.clear();
+        sharedLogVersion = 0L;
+        outputLogRenderedVersion = 0L;
+        popoutLogRenderedVersion = 0L;
+        outputLogNeedsFullRender = true;
+        popoutLogNeedsFullRender = true;
+        clearLogViewsOnly();
+        log("[CLI] Shared command/log output cleared.");
     }
 
     private void runRayfetchDashboardCommand() {
@@ -6158,8 +6314,9 @@ public class UniversalMonitorControlCenter extends JFrame {
             }
             outputArea.setCaretColor(textColor);
             desktopDashboardLogArea.setCaretColor(textColor);
-            renderStyledLogLines(outputArea, Arrays.asList(outputArea.getText().split("\\R")));
-            renderStyledLogLines(desktopDashboardLogArea, desktopDashboardLogLines);
+            outputLogNeedsFullRender = true;
+            popoutLogNeedsFullRender = true;
+            flushVisibleLogViews();
             versionLabel.setForeground(accent);
             lightModeToggle.setForeground(textColor);
             lightModeToggle.setBackground(panelBackground);
@@ -7919,11 +8076,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void log(String message) {
-        SwingUtilities.invokeLater(() -> {
-            appendStyledLogLine(outputArea, message);
-            outputArea.setCaretPosition(outputArea.getDocument().getLength());
-        });
-        appendDesktopDashboardLogLine(message);
+        appendSharedLogLine(message);
+        SwingUtilities.invokeLater(this::flushVisibleLogViews);
     }
 
     private Path repoPath() {
@@ -8113,6 +8267,33 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         double maxMs() {
             return maxNs / 1_000_000.0;
+        }
+    }
+
+    private static class SharedRuntimeSettings {
+        private volatile boolean loggingEnabled = true;
+        private volatile boolean perfDebugEnabled = false;
+        private volatile boolean dashboardStreamActive = false;
+        private volatile boolean lowRefreshMode = true;
+
+        void setLoggingEnabled(boolean enabled) {
+            this.loggingEnabled = enabled;
+        }
+
+        void setPerfDebugEnabled(boolean enabled) {
+            this.perfDebugEnabled = enabled;
+        }
+
+        boolean shouldEmitOptionalLogs() {
+            return loggingEnabled || perfDebugEnabled;
+        }
+
+        void setDashboardStreamActive(boolean active) {
+            this.dashboardStreamActive = active;
+        }
+
+        void setLowRefreshMode(boolean enabled) {
+            this.lowRefreshMode = enabled;
         }
     }
 
