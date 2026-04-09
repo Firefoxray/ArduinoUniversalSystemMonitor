@@ -13,9 +13,6 @@ import java.util.function.Supplier;
  * Keeps fake-port process + preview serial connection ownership outside the UI.
  */
 public class DashboardStreamController {
-    private static final long PRODUCER_STALE_RESTART_MS = 4500L;
-    private static final long CONSUMER_STALE_RESTART_MS = 4500L;
-
     private final Supplier<Path> repoPathSupplier;
     private final Supplier<String> fakeInPathSupplier;
     private final Supplier<String> fakeOutPathSupplier;
@@ -30,8 +27,6 @@ public class DashboardStreamController {
     private volatile boolean previewReading;
     private Thread previewReaderThread;
     private volatile long lastPayloadReceivedAtMs;
-    private volatile long lastConsumerRestartAtMs;
-    private volatile long lastProducerRestartAtMs;
 
     public DashboardStreamController(
             Supplier<Path> repoPathSupplier,
@@ -73,77 +68,18 @@ public class DashboardStreamController {
         return lastPayloadReceivedAtMs;
     }
 
-    public long getLastConsumerRestartAtMs() {
-        return lastConsumerRestartAtMs;
-    }
-
-    public long getLastProducerRestartAtMs() {
-        return lastProducerRestartAtMs;
-    }
-
-    public long producerStaleRestartThresholdMs() {
-        return PRODUCER_STALE_RESTART_MS;
-    }
-
-    public long consumerStaleRestartThresholdMs() {
-        return CONSUMER_STALE_RESTART_MS;
-    }
-
     public void startDashboardPreviewFlow() {
         ensureDashboardStreamActive();
     }
 
     public void ensureDashboardStreamActive() {
-        long nowMs = System.currentTimeMillis();
         if (!isFakePortsRunning()) {
             startFakePorts();
             return;
         }
         if (!isPreviewConnected()) {
             connectPreviewPort();
-            return;
         }
-        if ((nowMs - lastPayloadReceivedAtMs) > PRODUCER_STALE_RESTART_MS) {
-            restartConsumer("stream marked active but payloads are stale");
-            return;
-        }
-        log.accept("[INFO] Dashboard stream already active.");
-    }
-
-    public void restartProducer(String reason) {
-        log.accept("[WARN] Restarting dashboard stream producer: " + reason);
-        stopFakePorts();
-        startFakePorts();
-        lastProducerRestartAtMs = System.currentTimeMillis();
-    }
-
-    public void restartConsumer(String reason) {
-        log.accept("[WARN] Restarting dashboard stream consumer: " + reason);
-        disconnectPreviewPort();
-        Timer delayedReconnect = new Timer(350, e -> connectPreviewPort());
-        delayedReconnect.setRepeats(false);
-        delayedReconnect.start();
-        lastConsumerRestartAtMs = System.currentTimeMillis();
-    }
-
-    public boolean isStreamHealthy(long nowMs, long lastUiApplyAtMs, long lastUiRepaintAtMs, boolean dashboardVisible) {
-        if (!isProducerAlive() || !isConsumerAlive()) {
-            return false;
-        }
-        long lastPayloadAt = getLastPayloadReceivedAtMs();
-        if (lastPayloadAt <= 0L || (nowMs - lastPayloadAt) > PRODUCER_STALE_RESTART_MS) {
-            restartProducer("no payload in " + PRODUCER_STALE_RESTART_MS + "ms");
-            return false;
-        }
-        if (dashboardVisible && lastUiApplyAtMs > 0L && (nowMs - lastUiApplyAtMs) > CONSUMER_STALE_RESTART_MS) {
-            restartConsumer("payloads arrive but UI apply is stale");
-            return false;
-        }
-        if (dashboardVisible && lastUiRepaintAtMs > 0L && (nowMs - lastUiRepaintAtMs) > CONSUMER_STALE_RESTART_MS) {
-            restartConsumer("payloads arrive but repaint is stale");
-            return false;
-        }
-        return true;
     }
 
     public void stopDashboardPreviewFlow() {
@@ -156,7 +92,6 @@ public class DashboardStreamController {
             return;
         }
         if (isFakePortsRunning()) {
-            log.accept("[INFO] Fake ports already running.");
             return;
         }
 
@@ -209,15 +144,12 @@ public class DashboardStreamController {
         if (process != null && process.isAlive()) {
             process.destroy();
             log.accept("[INFO] Sent stop signal to fake ports process.");
-        } else {
-            log.accept("[INFO] Fake ports are not running.");
         }
         notifyStateChanged();
     }
 
     public void connectPreviewPort() {
         if (isPreviewConnected()) {
-            log.accept("[INFO] Preview port already connected.");
             return;
         }
 
@@ -253,9 +185,9 @@ public class DashboardStreamController {
 
         if (port != null && port.isOpen()) {
             port.closePort();
+            log.accept("[INFO] Preview stream disconnected.");
         }
         notifyStateChanged();
-        log.accept("[INFO] Preview stream disconnected.");
     }
 
     private void readPreviewLoop(SerialPort port) {
