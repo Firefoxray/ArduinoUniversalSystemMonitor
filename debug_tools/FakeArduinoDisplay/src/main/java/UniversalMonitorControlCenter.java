@@ -2781,6 +2781,12 @@ public class UniversalMonitorControlCenter extends JFrame {
         return Math.max(0L, nowMs - timestampMs);
     }
 
+    private enum ConfigUpdateResult {
+        UPDATED,
+        UNCHANGED,
+        FAILED
+    }
+
     private void setDebugMode(boolean enabled) {
         String fakeIn = fakeInField.getText().trim();
         if (fakeIn.isEmpty()) {
@@ -2788,14 +2794,19 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        if (!updateDebugConfig(enabled, fakeIn, true)) {
+        ConfigUpdateResult updateResult = updateDebugConfig(enabled, fakeIn, true);
+        if (updateResult == ConfigUpdateResult.FAILED) {
             return;
         }
 
         setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
         lastDebugEnabledState = enabled;
         updateDebugAdvancedButtonState(enabled);
-        runServiceCommand("restart");
+        if (updateResult == ConfigUpdateResult.UPDATED) {
+            runServiceCommand("restart");
+        } else {
+            log("[INFO] Skipped service restart: debug mode settings were already applied.");
+        }
     }
 
     private void refreshDebugStatus(boolean verbose) {
@@ -5123,7 +5134,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private boolean updateDebugConfig(boolean enabled, String fakeIn, boolean applyPort) {
+    private ConfigUpdateResult updateDebugConfig(boolean enabled, String fakeIn, boolean applyPort) {
         Path configPath = monitorLocalConfigPath();
         try {
             String text = ensureWritableLocalMonitorConfig();
@@ -5143,21 +5154,26 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (!updated.equals(text)) {
                 Files.write(configPath, updated.getBytes(StandardCharsets.UTF_8), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                 log("[INFO] Updated config/monitor_config.local.json: debug_enabled=" + enabled + (applyPort ? ", debug_port=" + fakeIn : ""));
+                return ConfigUpdateResult.UPDATED;
             } else {
                 log("[INFO] config/monitor_config.local.json already had requested debug settings.");
+                return ConfigUpdateResult.UNCHANGED;
             }
-            return true;
         } catch (Exception ex) {
             log("[WARN] Could not update config/monitor_config.local.json debug settings: " + ex.getMessage());
-            return false;
+            return ConfigUpdateResult.FAILED;
         }
     }
 
     private void ensureDebugMirrorConfig(String fakeIn) {
-        if (updateDebugConfig(true, fakeIn, true)) {
+        ConfigUpdateResult updateResult = updateDebugConfig(true, fakeIn, true);
+        if (updateResult == ConfigUpdateResult.UPDATED) {
             setDebugIndicator("ON", new Color(24, 170, 24));
             log("[INFO] Restarting service so debug mirror changes apply immediately.");
             runServiceCommand("restart");
+        } else if (updateResult == ConfigUpdateResult.UNCHANGED) {
+            setDebugIndicator("ON", new Color(24, 170, 24));
+            log("[INFO] Debug mirror settings already match; skipping redundant service restart.");
         }
     }
 
