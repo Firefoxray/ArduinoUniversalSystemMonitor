@@ -5772,6 +5772,10 @@ public class UniversalMonitorControlCenter extends JFrame {
             popoutLogRenderedVersion = renderLogsIfVisible(desktopDashboardLogArea, popoutLogRenderedVersion, popoutLogNeedsFullRender);
             popoutLogNeedsFullRender = false;
         }
+        renderStyledLogLines(settingsOutputArea, sharedLogLines);
+        settingsOutputArea.setCaretPosition(settingsOutputArea.getDocument().getLength());
+        renderStyledLogLines(desktopSettingsOutputArea, sharedLogLines);
+        desktopSettingsOutputArea.setCaretPosition(desktopSettingsOutputArea.getDocument().getLength());
     }
 
     private long renderLogsIfVisible(JTextPane pane, long renderedVersion, boolean forceFullRender) {

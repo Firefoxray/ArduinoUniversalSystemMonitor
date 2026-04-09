@@ -246,11 +246,14 @@ create_service_file() {
 [Unit]
 Description=Arduino System Monitor
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=8
 
 [Service]
 ExecStart=$PYTHON_BIN $(monitor_runtime_script_path "$PROJECT_DIR")
 WorkingDirectory=$PROJECT_DIR
-Restart=always
+Restart=on-failure
+RestartSec=3
 User=$INSTALL_USER
 
 [Install]
