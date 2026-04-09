@@ -54,6 +54,15 @@ public class UniversalMonitorControlCenter extends JFrame {
         DASHBOARD_ONLY
     }
 
+    private enum LogChannel {
+        OPTIONAL_APP,
+        PERF_DEBUG,
+        ESSENTIAL,
+        COMMAND_OUTPUT
+    }
+
+    private record LogEntry(long sequence, LogChannel channel, String text) {}
+
     private static final String SERVICE_NAME = "arduino-monitor.service";
     private static final String UPDATE_SOURCE_FILE = ".last_update_source";
     private static final String APP_NAME = "Ray Co. Universal Arduino System Monitor - Control Center";
@@ -337,7 +346,9 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final MangoHudTelemetryService mangoHudTelemetryService = new MangoHudTelemetryService();
     private final GamingTelemetryCache gamingTelemetryCache = new GamingTelemetryCache();
     private static final int SHARED_LOG_RING_CAPACITY = 1200;
-    private final ArrayDeque<String> sharedLogLines = new ArrayDeque<>();
+    private static final int COMMAND_OUTPUT_RING_CAPACITY = 1600;
+    private final ArrayDeque<LogEntry> sharedLogLines = new ArrayDeque<>();
+    private final ArrayDeque<LogEntry> commandOutputLines = new ArrayDeque<>();
     private final ArrayDeque<String> rayfetchCommandHistory = new ArrayDeque<>();
     private int rayfetchHistoryCursor = 0;
     private final DateTimeFormatter dashboardLogTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -359,6 +370,7 @@ public class UniversalMonitorControlCenter extends JFrame {
     private long lastDashboardHeartbeatLogAtMs = 0L;
     private long lastDashboardWatchdogActionAtMs = 0L;
     private long sharedLogVersion = 0L;
+    private long logSequence = 0L;
     private long outputLogRenderedVersion = 0L;
     private long popoutLogRenderedVersion = 0L;
     private boolean outputLogNeedsFullRender = false;
@@ -591,9 +603,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         loggingEnabledToggle.setToolTipText("Turns optional UI logs on/off for both Control Center and Pop-out dashboard.");
         loggingEnabledToggle.addActionListener(e -> {
             runtimeSettings.setLoggingEnabled(loggingEnabledToggle.isSelected());
-            if (!runtimeSettings.shouldEmitOptionalLogs()) {
-                clearLogViewsOnly();
-            }
         });
         efficiencyModeToggle.setSelected(true);
         efficiencyModeToggle.setFocusable(false);
@@ -698,7 +707,7 @@ public class UniversalMonitorControlCenter extends JFrame {
                 updateStoragePanels(packet, chartsDue);
             }
         });
-        if ((now - lastPerfLogAtMs) >= PERF_LOG_INTERVAL_MS && runtimeSettings.shouldEmitOptionalLogs()) {
+        if ((now - lastPerfLogAtMs) >= PERF_LOG_INTERVAL_MS && runtimeSettings.isOptionalLogsEnabled()) {
             lastPerfLogAtMs = now;
             logPerfSummary();
         }
@@ -5716,22 +5725,36 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
     }
 
-    private void appendSharedLogLine(String message) {
-        if (!runtimeSettings.shouldEmitOptionalLogs() && !isCriticalLog(message)) {
+    private void appendSharedLogLine(String message, LogChannel channel) {
+        if (!shouldEmitChannel(channel)) {
             return;
         }
         String text = "[" + LocalDateTime.now().format(dashboardLogTimeFormat) + "] " + message;
+        LogEntry entry = new LogEntry(++logSequence, channel, text);
         boolean trimmed = false;
         while (sharedLogLines.size() >= SHARED_LOG_RING_CAPACITY) {
             sharedLogLines.pollFirst();
             trimmed = true;
         }
-        sharedLogLines.addLast(text);
+        sharedLogLines.addLast(entry);
+        if (channel == LogChannel.COMMAND_OUTPUT) {
+            while (commandOutputLines.size() >= COMMAND_OUTPUT_RING_CAPACITY) {
+                commandOutputLines.pollFirst();
+            }
+            commandOutputLines.addLast(entry);
+        }
         sharedLogVersion++;
         if (trimmed) {
             outputLogNeedsFullRender = true;
             popoutLogNeedsFullRender = true;
         }
+    }
+
+    private boolean shouldEmitChannel(LogChannel channel) {
+        return switch (channel) {
+            case OPTIONAL_APP, PERF_DEBUG -> runtimeSettings.isOptionalLogsEnabled();
+            case ESSENTIAL, COMMAND_OUTPUT -> true;
+        };
     }
 
     private void refreshDesktopDashboardLogSnapshot() {
@@ -5741,9 +5764,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void flushVisibleLogViews() {
-        if (!runtimeSettings.shouldEmitOptionalLogs()) {
-            return;
-        }
         if (isControlCenterLogViewVisible()) {
             outputLogRenderedVersion = renderLogsIfVisible(outputArea, outputLogRenderedVersion, outputLogNeedsFullRender);
             outputLogNeedsFullRender = false;
@@ -5771,11 +5791,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         }
         int skip = Math.max(0, sharedLogLines.size() - (int) delta);
         int idx = 0;
-        for (String line : sharedLogLines) {
+        for (LogEntry entry : sharedLogLines) {
             if (idx++ < skip) {
                 continue;
             }
-            appendStyledLogLine(pane, line);
+            appendStyledLogLine(pane, entry.text());
         }
         pane.setCaretPosition(pane.getDocument().getLength());
         return sharedLogVersion;
@@ -5795,11 +5815,25 @@ public class UniversalMonitorControlCenter extends JFrame {
                 && "Main Desktop Monitor".equals(desktopDashboardTabs.getTitleAt(desktopDashboardTabs.getSelectedIndex()));
     }
 
-    private boolean isCriticalLog(String message) {
-        if (message == null) {
-            return false;
+    private LogChannel classifyLogChannel(String message) {
+        if (message == null || message.isBlank()) {
+            return LogChannel.OPTIONAL_APP;
         }
-        return message.startsWith("[ERROR]") || message.startsWith("[FATAL]") || message.contains("[ERR]");
+        String upper = message.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("[CLI]") || upper.startsWith("[COMMAND]") || upper.startsWith("[RAYFETCH]")
+                || upper.startsWith("[RUN]") || upper.startsWith("[DONE]") || upper.startsWith("[FAIL]")
+                || upper.contains("[CLI][OUT]") || upper.contains("[CLI][ERR]") || upper.startsWith("[ARDUINO-CLI INSTALL]")) {
+            return LogChannel.COMMAND_OUTPUT;
+        }
+        if (upper.startsWith("[PERF]")) {
+            return LogChannel.PERF_DEBUG;
+        }
+        if (upper.startsWith("[ERROR]") || upper.startsWith("[WARN]") || upper.startsWith("[FATAL]")
+                || upper.contains("[ERR]") || upper.startsWith("[SERVICE]") || upper.startsWith("[STREAM]")
+                || upper.startsWith("[WATCHDOG]") || upper.startsWith("[LIFECYCLE]")) {
+            return LogChannel.ESSENTIAL;
+        }
+        return LogChannel.OPTIONAL_APP;
     }
 
     private void clearLogViewsOnly() {
@@ -5877,10 +5911,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardBlackModeToggle.setForeground(textColor);
     }
 
-    private void renderStyledLogLines(JTextPane pane, Iterable<String> lines) {
+    private void renderStyledLogLines(JTextPane pane, Iterable<LogEntry> lines) {
         pane.setText("");
-        for (String line : lines) {
-            appendStyledLogLine(pane, line);
+        for (LogEntry entry : lines) {
+            appendStyledLogLine(pane, entry.text());
         }
         pane.setCaretPosition(pane.getDocument().getLength());
     }
@@ -5950,7 +5984,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         Thread t = new Thread(() -> {
             CommandSpec spec = buildShellCommand("journalctl -u " + SERVICE_NAME + " -n 40 --no-pager", true, false);
             if (spec == null) {
-                appendSharedLogLine("[WARN] Could not build service log command.");
+                log("[WARN] Could not build service log command.");
                 return;
             }
             try {
@@ -5965,16 +5999,16 @@ public class UniversalMonitorControlCenter extends JFrame {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         if (!line.trim().isEmpty()) {
-                            appendSharedLogLine("[svc] " + line.trim());
+                            logCommandOutput("[svc] " + line.trim());
                         }
                     }
                 }
                 int code = process.waitFor();
                 if (code != 0) {
-                    appendSharedLogLine("[WARN] journalctl exited with code " + code + ".");
+                    log("[WARN] journalctl exited with code " + code + ".");
                 }
             } catch (Exception ex) {
-                appendSharedLogLine("[ERROR] Failed to load service logs: " + ex.getMessage());
+                log("[ERROR] Failed to load service logs: " + ex.getMessage());
             }
         }, "dashboard-log-refresh-thread");
         t.setDaemon(true);
@@ -6118,7 +6152,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
         desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3"
                 + " | Perf debug: " + (perfDebugModeToggle.isSelected() ? "ON" : "OFF")
-                + " | Optional logs: " + (runtimeSettings.shouldEmitOptionalLogs() ? "ON" : "OFF"));
+                + " | Optional logs: " + (runtimeSettings.isOptionalLogsEnabled() ? "ON" : "OFF"));
     }
 
     private void installRayfetchHistoryInputSupport() {
@@ -6170,13 +6204,15 @@ public class UniversalMonitorControlCenter extends JFrame {
 
     private void clearSharedCommandOutput() {
         sharedLogLines.clear();
+        commandOutputLines.clear();
         sharedLogVersion = 0L;
+        logSequence = 0L;
         outputLogRenderedVersion = 0L;
         popoutLogRenderedVersion = 0L;
         outputLogNeedsFullRender = true;
         popoutLogNeedsFullRender = true;
         clearLogViewsOnly();
-        log("[CLI] Shared command/log output cleared.");
+        logCommandOutput("[CLI] Shared command/log output cleared.");
     }
 
     private void runRayfetchDashboardCommand() {
@@ -6191,12 +6227,12 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
         rememberRayfetchCommand(raw);
-        log("[CLI] Running: " + raw);
-        log("[Command] python3 UniversalArduinoMonitor.py " + mappedArg);
-        log("[RayFetch] Running alias '" + raw + "' -> " + mappedArg);
+        logCommandOutput("[CLI] Running: " + raw);
+        logCommandOutput("[Command] python3 UniversalArduinoMonitor.py " + mappedArg);
+        logCommandOutput("[RayFetch] Running alias '" + raw + "' -> " + mappedArg);
         for (String logoLine : RAYFETCH_ASCII_LOGO.split("\\R")) {
             if (!logoLine.isBlank()) {
-                log("[RayFetch] " + logoLine);
+                logCommandOutput("[RayFetch] " + logoLine);
             }
         }
         Thread runner = new Thread(() -> {
@@ -6214,11 +6250,11 @@ public class UniversalMonitorControlCenter extends JFrame {
                 int code = process.waitFor();
                 stdoutReader.join(300);
                 stderrReader.join(300);
-                log(code == 0
+                logCommandOutput(code == 0
                         ? "[CLI] Command completed successfully."
                         : "[CLI][ERR] Command exited with code " + code + ".");
             } catch (Exception ex) {
-                log("[CLI][ERR] Failed to run command: " + ex.getMessage());
+                logCommandOutput("[CLI][ERR] Failed to run command: " + ex.getMessage());
             }
         }, "rayfetch-dashboard-cli");
         runner.setDaemon(true);
@@ -6229,10 +6265,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                log(prefix + " " + line);
+                logCommandOutput(prefix + " " + line);
             }
         } catch (IOException ex) {
-            log("[CLI][ERR] Failed to read command stream: " + ex.getMessage());
+            logCommandOutput("[CLI][ERR] Failed to read command stream: " + ex.getMessage());
         }
     }
 
@@ -6825,7 +6861,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return;
         }
 
-        log("[RUN] " + label + " in " + workingDirectory.getAbsolutePath());
+        logCommandOutput("[RUN] " + label + " in " + workingDirectory.getAbsolutePath());
         setActionButtons(false);
 
         Thread t = new Thread(() -> {
@@ -6844,18 +6880,18 @@ public class UniversalMonitorControlCenter extends JFrame {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    log("[" + label + "] " + line);
+                    logCommandOutput("[" + label + "] " + line);
                 }
 
                 int code = process.waitFor();
                 if (code == 0) {
                     success = true;
-                    log("[DONE] " + label + " completed successfully.");
+                    logCommandOutput("[DONE] " + label + " completed successfully.");
                     if (onSuccess != null) {
                         onSuccess.run();
                     }
                 } else {
-                    log("[FAIL] " + label + " exited with code " + code + ".");
+                    logCommandOutput("[FAIL] " + label + " exited with code " + code + ".");
                 }
             } catch (Exception ex) {
                 log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
@@ -6879,7 +6915,7 @@ public class UniversalMonitorControlCenter extends JFrame {
             return false;
         }
 
-        log("[RUN] " + label + " in " + repoPath().toAbsolutePath());
+        logCommandOutput("[RUN] " + label + " in " + repoPath().toAbsolutePath());
         try {
             ProcessBuilder pb = new ProcessBuilder(spec.command);
             pb.directory(repoPath().toFile());
@@ -6891,15 +6927,15 @@ public class UniversalMonitorControlCenter extends JFrame {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    log("[" + label + "] " + line);
+                    logCommandOutput("[" + label + "] " + line);
                 }
             }
             int code = process.waitFor();
             if (code == 0) {
-                log("[DONE] " + label + " completed successfully.");
+                logCommandOutput("[DONE] " + label + " completed successfully.");
                 return true;
             }
-            log("[FAIL] " + label + " exited with code " + code + ".");
+            logCommandOutput("[FAIL] " + label + " exited with code " + code + ".");
             return false;
         } catch (Exception ex) {
             log("[ERROR] Command failed for " + label + ": " + ex.getMessage());
@@ -8076,7 +8112,12 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void log(String message) {
-        appendSharedLogLine(message);
+        appendSharedLogLine(message, classifyLogChannel(message));
+        SwingUtilities.invokeLater(this::flushVisibleLogViews);
+    }
+
+    private void logCommandOutput(String message) {
+        appendSharedLogLine(message, LogChannel.COMMAND_OUTPUT);
         SwingUtilities.invokeLater(this::flushVisibleLogViews);
     }
 
@@ -8284,8 +8325,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             this.perfDebugEnabled = enabled;
         }
 
-        boolean shouldEmitOptionalLogs() {
-            return loggingEnabled || perfDebugEnabled;
+        boolean isOptionalLogsEnabled() {
+            return loggingEnabled;
         }
 
         void setDashboardStreamActive(boolean active) {
