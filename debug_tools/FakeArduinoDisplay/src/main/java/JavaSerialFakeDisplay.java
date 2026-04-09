@@ -75,6 +75,9 @@ public class JavaSerialFakeDisplay extends JFrame {
 
         refreshButton.addActionListener(e -> refreshPorts());
         connectButton.addActionListener(e -> toggleConnection());
+        Timer uiTimer = new Timer(250, e -> fakeDisplayPanel.flushLatest(true));
+        uiTimer.setRepeats(true);
+        uiTimer.start();
 
         refreshPorts();
     }
@@ -387,6 +390,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private static final int SCREEN_H = 320;
         private static final int GRAPH_POINTS = 62;
         private static final int STORAGE_IO_SLOTS = 3;
+        private static final int HISTORY_UPDATE_MS_DEFAULT = 900;
         private static final Color BG = new Color(8, 12, 26);
         private static final Color CYAN = new Color(60, 240, 255);
         private static final Color WHITE = new Color(235, 240, 255);
@@ -402,6 +406,7 @@ public class JavaSerialFakeDisplay extends JFrame {
         private static final String MONO = Font.MONOSPACED;
 
         private ParsedPacket packet = new ParsedPacket();
+        private ParsedPacket pendingPacket = new ParsedPacket();
         private int pageIndex = 0;
         private RenderMode renderMode = RenderMode.ARDUINO_PREVIEW;
         private final int[] cpuHistory = new int[GRAPH_POINTS];
@@ -423,6 +428,11 @@ public class JavaSerialFakeDisplay extends JFrame {
         private final String[] pageNames = {
                 "Home", "CPU", "Processes", "Network", "GPU", "Storage", "Graph"
         };
+        private boolean efficiencyMode = true;
+        private boolean dirtyVisuals = true;
+        private String lastRenderSignature = "";
+        private long lastHistoryUpdateMs = 0L;
+        private int historyUpdateMs = HISTORY_UPDATE_MS_DEFAULT;
 
         FakeDisplayPanel() {
             setPreferredSize(new Dimension(920, 560));
@@ -434,23 +444,60 @@ public class JavaSerialFakeDisplay extends JFrame {
                         return;
                     }
                     pageIndex = (pageIndex + 1) % 7;
+                    dirtyVisuals = true;
                     repaint();
                 }
             });
-            Timer repaintTimer = new Timer(180, e -> repaint());
-            repaintTimer.setRepeats(true);
-            repaintTimer.start();
         }
 
         void setRenderMode(RenderMode mode) {
             renderMode = mode == null ? RenderMode.ARDUINO_PREVIEW : mode;
+            dirtyVisuals = true;
             repaint();
         }
 
         void updatePacket(ParsedPacket packet) {
-            this.packet = packet;
+            this.pendingPacket = packet == null ? new ParsedPacket() : packet;
+            dirtyVisuals = true;
+        }
+
+        void setEfficiencyMode(boolean enabled) {
+            efficiencyMode = enabled;
+            historyUpdateMs = enabled ? 1000 : HISTORY_UPDATE_MS_DEFAULT;
+            dirtyVisuals = true;
+            repaint();
+        }
+
+        void flushLatest(boolean allowHistoryUpdate) {
+            if (!isDisplayable() || !isShowing() || pendingPacket == null) {
+                return;
+            }
+            packet = pendingPacket;
+            String signature = packet.get("CPU", "0")
+                    + "|" + packet.get("RAM", "0")
+                    + "|" + packet.get("GPU", "0")
+                    + "|" + packet.get("UPTIME", "--")
+                    + "|" + packet.get("DOWN", packet.get("NETDOWN", "--"))
+                    + "|" + packet.get("UPNET", packet.get("NETUP", "--"))
+                    + "|" + packet.get("DISK0", packet.get("D0", "--"))
+                    + "|" + packet.get("DISK1", packet.get("D1", "--"))
+                    + "|" + pageIndex
+                    + "|" + renderMode.name();
+            boolean valueChanged = !signature.equals(lastRenderSignature);
+            long now = System.currentTimeMillis();
+            boolean historyDue = allowHistoryUpdate && (now - lastHistoryUpdateMs) >= historyUpdateMs;
+            if (historyDue) {
+                lastHistoryUpdateMs = now;
+            }
+            if (!dirtyVisuals && !valueChanged && !historyDue) {
+                return;
+            }
             updateSmoothedGpuSample(packet.getInt("GPU", 0));
-            pushHistory(packet);
+            if (historyDue) {
+                pushHistory(packet);
+            }
+            lastRenderSignature = signature;
+            dirtyVisuals = false;
             repaint();
         }
 
@@ -459,6 +506,7 @@ public class JavaSerialFakeDisplay extends JFrame {
             previewWifiHostname = (hostname == null || hostname.isBlank()) ? "unknown-host" : hostname.trim();
             previewWifiIp = (ipAddress == null || ipAddress.isBlank()) ? "No IPv4 address" : ipAddress.trim();
             previewWifiPort = port > 0 ? port : 5000;
+            dirtyVisuals = true;
             repaint();
         }
 
@@ -546,7 +594,8 @@ public class JavaSerialFakeDisplay extends JFrame {
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
             Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Object aa = efficiencyMode ? RenderingHints.VALUE_ANTIALIAS_OFF : RenderingHints.VALUE_ANTIALIAS_ON;
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, aa);
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
             int w = getWidth();
@@ -606,9 +655,14 @@ public class JavaSerialFakeDisplay extends JFrame {
         }
 
         private void drawDesktopOverview(Graphics2D g2, int w, int h) {
-            GradientPaint background = new GradientPaint(0, 0, new Color(11, 19, 36), 0, h, new Color(6, 10, 20));
-            g2.setPaint(background);
-            g2.fillRect(0, 0, w, h);
+            if (efficiencyMode) {
+                g2.setColor(new Color(9, 16, 30));
+                g2.fillRect(0, 0, w, h);
+            } else {
+                GradientPaint background = new GradientPaint(0, 0, new Color(11, 19, 36), 0, h, new Color(6, 10, 20));
+                g2.setPaint(background);
+                g2.fillRect(0, 0, w, h);
+            }
 
             int outerPad = 16;
             int top = outerPad + 8;
@@ -816,9 +870,14 @@ public class JavaSerialFakeDisplay extends JFrame {
             int gy = y + 34;
             int gw = w - 20;
             int gh = h - 76;
-            GradientPaint chartPaint = new GradientPaint(gx, gy, new Color(18, 28, 46), gx, gy + gh, new Color(10, 16, 30));
-            g2.setPaint(chartPaint);
-            g2.fillRect(gx, gy, gw, gh);
+            if (efficiencyMode) {
+                g2.setColor(new Color(13, 20, 36));
+                g2.fillRect(gx, gy, gw, gh);
+            } else {
+                GradientPaint chartPaint = new GradientPaint(gx, gy, new Color(18, 28, 46), gx, gy + gh, new Color(10, 16, 30));
+                g2.setPaint(chartPaint);
+                g2.fillRect(gx, gy, gw, gh);
+            }
             g2.setColor(GRID);
             g2.drawRect(gx, gy, gw, gh);
             for (int i = 1; i < 4; i++) {

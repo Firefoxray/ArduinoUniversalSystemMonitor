@@ -1,3 +1,13 @@
+## v11.6 - 2026-04-09
+- Bumped the shared project version to v11.6 across VERSION, README, generated Arduino app headers, and Control Center/dashboard version references.
+- Replaced packet-driven immediate UI redraws with a centralized UI scheduler (250 ms tick) that applies staggered refresh cadences (labels 1000 ms, meters 500 ms, charts 1000 ms) so rendering is capped and predictable.
+- Added aggressive visibility gating so hidden tabs/pages and minimized/hidden pop-out windows no longer keep repainting high-cost dashboard/storage surfaces in the background.
+- Refactored dashboard rendering into a snapshot-consumer model: packet ingestion now stores the latest snapshot, and UI painting consumes cached state only on scheduler ticks.
+- Updated dashboard/storage rendering to diff-based updates so unchanged values skip repaint work; history/chart buffers now advance only on chart cadence instead of every packet.
+- Added lightweight performance instrumentation/timing with periodic offender summaries for stat collection, control-center update, pop-out update, chart update, storage page update, and log rendering.
+- Reduced expensive paint effects in efficiency mode by default (lower antialias cost, simplified gradient usage, reduced unnecessary repaint triggers) to cut Xwayland/GPU load.
+- Optimized log rendering to append only new lines during normal operation and rebuild only when old lines roll off, avoiding full log-pane re-render on every message.
+
 ## v11.5 Beta - 2026-04-08
 - Bumped the shared project version to v11.5 Beta across VERSION, README, generated Arduino app headers, runtime/version labels, and Control Center/dashboard/pop-out visible version text.
 - Removed obsolete dashboard controls (Open Storage I/O Tab guidance/button and Update from Latest Codex Branch debug button) and reflowed the service/debug sections for a cleaner dashboard layout.
