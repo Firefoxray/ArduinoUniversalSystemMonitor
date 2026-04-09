@@ -367,8 +367,6 @@ public class UniversalMonitorControlCenter extends JFrame {
     private long lastPerfLogAtMs = 0L;
     private long lastDashboardUiApplyAtMs = 0L;
     private long lastDashboardUiRepaintAtMs = 0L;
-    private long lastDashboardHeartbeatLogAtMs = 0L;
-    private long lastDashboardWatchdogActionAtMs = 0L;
     private long sharedLogVersion = 0L;
     private long logSequence = 0L;
     private long outputLogRenderedVersion = 0L;
@@ -689,8 +687,6 @@ public class UniversalMonitorControlCenter extends JFrame {
             lastGamingRefreshAtMs = now;
             profileStage("gaming_update", this::refreshGamingModeTelemetryCards);
         }
-        runDashboardStreamWatchdog(now);
-
         final JavaSerialFakeDisplay.ParsedPacket packet = latestDashboardPacket;
         profileStage("stat_collection", () -> {
             if (packet == null) {
@@ -2740,45 +2736,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         runtimeSettings.setDashboardStreamActive(dashboardStreamController.isProducerAlive() && dashboardStreamController.isConsumerAlive());
         updatePortButtons();
         updatePreviewButtons();
-    }
-
-    private void runDashboardStreamWatchdog(long nowMs) {
-        boolean dashboardVisible = isPopoutWindowVisibleAndNotMinimized();
-        boolean healthy = dashboardStreamController.isStreamHealthy(
-                nowMs,
-                lastDashboardUiApplyAtMs,
-                lastDashboardUiRepaintAtMs,
-                dashboardVisible
-        );
-        if (!healthy) {
-            lastDashboardWatchdogActionAtMs = nowMs;
-        }
-        if (!perfDebugModeToggle.isSelected()) {
-            return;
-        }
-        if ((nowMs - lastDashboardHeartbeatLogAtMs) < 3000L) {
-            return;
-        }
-        lastDashboardHeartbeatLogAtMs = nowMs;
-        String heartbeat = String.format(Locale.ROOT,
-                "[STREAM-DEBUG] producer=%s consumer=%s payload_age_ms=%d ui_apply_age_ms=%d repaint_age_ms=%d popout{visible=%s,minimized=%s,focused=%s} watchdog_age_ms=%d",
-                dashboardStreamController.isProducerAlive(),
-                dashboardStreamController.isConsumerAlive(),
-                ageSince(nowMs, dashboardStreamController.getLastPayloadReceivedAtMs()),
-                ageSince(nowMs, lastDashboardUiApplyAtMs),
-                ageSince(nowMs, lastDashboardUiRepaintAtMs),
-                desktopDashboardWindow != null && desktopDashboardWindow.isVisible(),
-                isDashboardWindowMinimized(),
-                desktopDashboardWindow != null && desktopDashboardWindow.isActive(),
-                ageSince(nowMs, lastDashboardWatchdogActionAtMs));
-        log(heartbeat);
-    }
-
-    private long ageSince(long nowMs, long timestampMs) {
-        if (timestampMs <= 0L) {
-            return -1L;
-        }
-        return Math.max(0L, nowMs - timestampMs);
     }
 
     private enum ConfigUpdateResult {
