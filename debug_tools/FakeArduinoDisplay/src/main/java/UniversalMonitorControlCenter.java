@@ -317,12 +317,13 @@ public class UniversalMonitorControlCenter extends JFrame {
     private final JLabel sshStatsTransportLabel = new JLabel("Transport: --");
     private final JLabel sshStatsNetworkLabel = new JLabel("Network: --");
     private final JTextArea sshStatsOutputArea = new JTextArea();
-    private final JCheckBox desktopSettingsAutoRefreshToggle = new JCheckBox("Auto-refresh summary cards");
     private final JCheckBox efficiencyModeToggle = new JCheckBox("Efficiency mode (lighter effects, same refresh cadence)");
-    private final JCheckBox loggingEnabledToggle = new JCheckBox("Enable optional logs");
-    private final JCheckBox desktopSettingsShowHistoryLegendToggle = new JCheckBox("Show history legend overlays");
-    private final JCheckBox desktopSettingsCompactSidePanelToggle = new JCheckBox("Compact side panel spacing");
-    private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor settings framework ready.");
+    private final JCheckBox loggingEnabledToggle = new JCheckBox("App Logs");
+    private final JCheckBox essentialLogsToggle = new JCheckBox("Warnings/Errors");
+    private final JCheckBox commandLogsToggle = new JCheckBox("Command/Service Logs");
+    private final JCheckBox debugModeToggle = new JCheckBox("Debug Mode");
+    private final JCheckBox desktopDebugModeToggle = new JCheckBox("Debug Mode");
+    private final JLabel desktopSettingsStatusLabel = new JLabel("Desktop monitor quick settings ready.");
     private final JTextField rayfetchCommandInputField = new JTextField(26);
     private final JButton rayfetchRunCommandButton = new JButton("Run RayFetch Command");
     private final JButton rayfetchClearLogsButton = new JButton("Clear Logs");
@@ -586,11 +587,18 @@ public class UniversalMonitorControlCenter extends JFrame {
         updatePreviewWifiStatus(lastWifiEnabledState != null && lastWifiEnabledState);
         loggingEnabledToggle.setFocusable(false);
         loggingEnabledToggle.setSelected(true);
-        runtimeSettings.setLoggingEnabled(true);
-        loggingEnabledToggle.setToolTipText("Turns optional UI logs on/off for both Control Center and Pop-out dashboard.");
-        loggingEnabledToggle.addActionListener(e -> {
-            runtimeSettings.setLoggingEnabled(loggingEnabledToggle.isSelected());
-        });
+        essentialLogsToggle.setFocusable(false);
+        essentialLogsToggle.setSelected(true);
+        commandLogsToggle.setFocusable(false);
+        commandLogsToggle.setSelected(true);
+        runtimeSettings.setLogChannels(true, true, true);
+        loggingEnabledToggle.setToolTipText("Toggle optional app logs for both Control Center and pop-out dashboard views.");
+        essentialLogsToggle.setToolTipText("Toggle warnings/errors and service lifecycle logs.");
+        commandLogsToggle.setToolTipText("Toggle command output logs (CLI/RayFetch/fetched service logs).");
+        debugModeToggle.setFocusable(false);
+        desktopDebugModeToggle.setFocusable(false);
+        debugModeToggle.setToolTipText("Shared debug mode toggle (writes debug_enabled in monitor config).");
+        desktopDebugModeToggle.setToolTipText("Shared debug mode toggle (same setting as Control Center).");
         efficiencyModeToggle.setSelected(true);
         efficiencyModeToggle.setFocusable(false);
         efficiencyModeToggle.addActionListener(e -> applyEfficiencyMode());
@@ -602,6 +610,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         refreshServiceStatus(false);
         refreshServiceStartupStatus(false);
         refreshDebugStatus(false);
+        applySharedLogFilterSettings();
         refreshTransportModeStatus(false);
         refreshGamingModeTelemetryCards();
         if (this.launchMode == LaunchMode.DASHBOARD_ONLY) {
@@ -928,8 +937,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         modulePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         content.add(modulePanel);
-        content.add(Box.createVerticalStrut(6));
-        content.add(buildMonitorSettingsPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -1030,17 +1037,19 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         modeRow.add(efficiencyModeToggle);
+        modeRow.add(debugModeToggle);
         modeRow.add(loggingEnabledToggle);
+        modeRow.add(essentialLogsToggle);
+        modeRow.add(commandLogsToggle);
         controls.add(modeRow);
 
-        JPanel miscRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
-        miscRow.add(desktopSettingsAutoRefreshToggle);
-        miscRow.add(desktopSettingsShowHistoryLegendToggle);
-        miscRow.add(desktopSettingsCompactSidePanelToggle);
-        controls.add(miscRow);
+        controls.add(Box.createVerticalStrut(6));
+        controls.add(buildMonitorSettingsPanel());
 
-        panel.add(controls, BorderLayout.NORTH);
-        panel.add(buildOutputPanel(desktopSettingsOutputArea, "Command Output / Logs"), BorderLayout.CENTER);
+        JPanel content = new JPanel(new BorderLayout(8, 8));
+        content.add(controls, BorderLayout.NORTH);
+        content.add(buildOutputPanel(desktopSettingsOutputArea, "Command Output / Logs"), BorderLayout.CENTER);
+        panel.add(new JScrollPane(content), BorderLayout.CENTER);
         return panel;
     }
 
@@ -1567,10 +1576,11 @@ public class UniversalMonitorControlCenter extends JFrame {
         rayfetchClearLogsButton.addActionListener(e -> clearSharedCommandOutput());
         desktopDashboardFullscreenToggleButton.addActionListener(e -> toggleDesktopDashboardFullscreen());
         rayfetchCommandInputField.addActionListener(e -> runRayfetchDashboardCommand());
-        desktopSettingsAutoRefreshToggle.addActionListener(e -> updateDesktopSettingsStatus());
-        desktopSettingsShowHistoryLegendToggle.addActionListener(e -> updateDesktopSettingsStatus());
-        desktopSettingsCompactSidePanelToggle.addActionListener(e -> updateDesktopSettingsStatus());
-        loggingEnabledToggle.addActionListener(e -> updateDesktopSettingsStatus());
+        loggingEnabledToggle.addActionListener(e -> applySharedLogFilterSettings());
+        essentialLogsToggle.addActionListener(e -> applySharedLogFilterSettings());
+        commandLogsToggle.addActionListener(e -> applySharedLogFilterSettings());
+        debugModeToggle.addActionListener(e -> applySharedDebugToggleState(debugModeToggle));
+        desktopDebugModeToggle.addActionListener(e -> applySharedDebugToggleState(desktopDebugModeToggle));
 
         serviceOnButton.addActionListener(e -> runServiceCommand("start"));
         serviceOffButton.addActionListener(e -> runServiceCommand("stop"));
@@ -2629,6 +2639,8 @@ public class UniversalMonitorControlCenter extends JFrame {
 
         setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
         lastDebugEnabledState = enabled;
+        syncDebugModeToggles(enabled);
+        updateDesktopSettingsStatus();
         updateDebugAdvancedButtonState(enabled);
         if (updateResult == ConfigUpdateResult.UPDATED) {
             runServiceCommand("restart");
@@ -2652,6 +2664,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             if (text == null || text.isBlank()) {
                 setDebugIndicator("UNKNOWN", Color.GRAY);
                 lastDebugEnabledState = null;
+                syncDebugModeToggles(false);
+                updateDesktopSettingsStatus();
                 updateDebugAdvancedButtonState(false);
                 if (verbose || !debugStatusMissingLogged) {
                     log("[WARN] Cannot refresh debug status: no monitor config file was found.");
@@ -2662,6 +2676,8 @@ public class UniversalMonitorControlCenter extends JFrame {
             debugStatusMissingLogged = false;
             boolean enabled = text.matches("(?s).*\"debug_enabled\"\\s*:\\s*true.*");
             setDebugIndicator(enabled ? "ON" : "OFF", enabled ? new Color(24, 170, 24) : new Color(190, 35, 35));
+            syncDebugModeToggles(enabled);
+            updateDesktopSettingsStatus();
             updateDebugAdvancedButtonState(enabled);
 
             if (verbose || lastDebugEnabledState == null || lastDebugEnabledState != enabled) {
@@ -2671,6 +2687,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         } catch (Exception ex) {
             setDebugIndicator("UNKNOWN", Color.GRAY);
             lastDebugEnabledState = null;
+            syncDebugModeToggles(false);
+            updateDesktopSettingsStatus();
             updateDebugAdvancedButtonState(false);
             log("[WARN] Failed to refresh debug status: " + ex.getMessage());
         }
@@ -5172,9 +5190,14 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardControlsPanel.add(dashboardStartButton);
         desktopDashboardControlsPanel.add(dashboardStopButton);
         desktopDashboardControlsPanel.add(refreshPortsButton);
+        JButton dashboardDebugButton = new JButton("Toggle Debug");
+        dashboardDebugButton.putClientProperty("uasmDashboardCompactButton", Boolean.TRUE);
+        dashboardDebugButton.addActionListener(e -> setDebugMode(!Boolean.TRUE.equals(lastDebugEnabledState)));
+
         desktopDashboardControlsPanel.add(updateAndRestartButton);
         desktopDashboardControlsPanel.add(logsButton);
         desktopDashboardControlsPanel.add(clearButton);
+        desktopDashboardControlsPanel.add(dashboardDebugButton);
         desktopDashboardControlsPanel.add(desktopDashboardLightModeToggle);
         desktopDashboardControlsPanel.add(desktopDashboardBlackModeToggle);
         desktopDashboardControlsPanel.putClientProperty("uasmDashboardControls", Boolean.TRUE);
@@ -5184,7 +5207,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Runtime", desktopDashboardUptimeSummaryLabel));
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Network Mini", desktopDashboardNetworkSummaryLabel));
         desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Storage Mini", desktopDashboardStorageSummaryLabel));
-        desktopDashboardSummaryPanel.add(buildDashboardSummaryCard("Project Version", desktopDashboardVersionSummaryLabel));
 
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
@@ -5272,7 +5294,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         statusRow.add(buildInfoValuePanel("Remote Network", sshStatsNetworkLabel));
         top.add(statusRow);
 
-        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.6):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
+        JLabel helper = new JLabel("<html><b>SSH Stats framework (v11.7 Beta):</b> this page reuses existing SSH target concepts and can probe a remote monitor service now. "
                 + "Live packet streaming from a remote Python monitor is a planned follow-up and the stat cards/log area are intentionally scaffold-ready.</html>");
         helper.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         top.add(helper);
@@ -5301,7 +5323,7 @@ public class UniversalMonitorControlCenter extends JFrame {
         cards.add(buildDashboardSummaryCard("Telemetry Source Status", gamingTelemetryStateLabel));
         cards.add(buildDashboardSummaryCard("MangoHud Log Path", gamingMangoHudPathLabel));
         panel.add(cards, BorderLayout.CENTER);
-        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.6):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
+        JLabel footer = new JLabel("<html><b>Gaming Mode framework (v11.7 Beta):</b> Linux/Fedora telemetry is designed around explicit external providers (MangoHud-style logs). "
                 + "Live parsing hooks are scaffolded now and fields are aligned for later Arduino gaming-page output.</html>");
         footer.putClientProperty("uasmSettingsHelpBlock", Boolean.TRUE);
         panel.add(footer, BorderLayout.SOUTH);
@@ -5323,11 +5345,17 @@ public class UniversalMonitorControlCenter extends JFrame {
         controls.add(themeRow);
 
         JPanel optionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
-        optionRow.add(efficiencyModeToggle);
-        optionRow.add(loggingEnabledToggle);
-        optionRow.add(desktopSettingsAutoRefreshToggle);
-        optionRow.add(desktopSettingsShowHistoryLegendToggle);
-        optionRow.add(desktopSettingsCompactSidePanelToggle);
+        JCheckBox desktopEfficiencyModeToggle = new JCheckBox("Efficiency mode (quick)");
+        desktopEfficiencyModeToggle.setSelected(efficiencyModeToggle.isSelected());
+        desktopEfficiencyModeToggle.addActionListener(e -> {
+            if (efficiencyModeToggle.isSelected() != desktopEfficiencyModeToggle.isSelected()) {
+                efficiencyModeToggle.setSelected(desktopEfficiencyModeToggle.isSelected());
+            }
+            applyEfficiencyMode();
+        });
+        desktopDebugModeToggle.setSelected(Boolean.TRUE.equals(lastDebugEnabledState));
+        optionRow.add(desktopEfficiencyModeToggle);
+        optionRow.add(desktopDebugModeToggle);
         controls.add(optionRow);
 
         JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
@@ -5349,11 +5377,10 @@ public class UniversalMonitorControlCenter extends JFrame {
         panel.add(controls, BorderLayout.NORTH);
 
         JTextArea notes = new JTextArea(
-                "Desktop Monitor Settings page scaffold (v11.6):\n"
-                        + "- Efficiency mode is now ON by default and aggressively reduces repaint work.\n"
-                        + "- Theme controls are active and shared with the main popout controls.\n"
-                        + "- Charts update slower than text cards; non-focused visible windows stay active.\n"
-                        + "- This page is intended to become the central desktop-only settings hub.");
+                "Desktop Monitor quick settings (v11.7 Beta):\n"
+                        + "- Efficiency mode + theme controls are convenience toggles for this window.\n"
+                        + "- Debug Mode + log filters are shared with Control Center Settings.\n"
+                        + "- Use Control Center > Settings for full monitor connection/settings edits.");
         notes.setEditable(false);
         notes.setLineWrap(true);
         notes.setWrapStyleWord(true);
@@ -5598,7 +5625,8 @@ public class UniversalMonitorControlCenter extends JFrame {
     private boolean shouldEmitChannel(LogChannel channel) {
         return switch (channel) {
             case OPTIONAL_APP -> runtimeSettings.isOptionalLogsEnabled();
-            case ESSENTIAL, COMMAND_OUTPUT -> true;
+            case ESSENTIAL -> runtimeSettings.isEssentialLogsEnabled();
+            case COMMAND_OUTPUT -> runtimeSettings.isCommandLogsEnabled();
         };
     }
 
@@ -5998,12 +6026,39 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private void updateDesktopSettingsStatus() {
-        int enabled = 0;
-        if (desktopSettingsAutoRefreshToggle.isSelected()) enabled++;
-        if (desktopSettingsShowHistoryLegendToggle.isSelected()) enabled++;
-        if (desktopSettingsCompactSidePanelToggle.isSelected()) enabled++;
-        desktopSettingsStatusLabel.setText("Desktop settings scaffold toggles enabled: " + enabled + "/3"
-                + " | Optional logs: " + (runtimeSettings.isOptionalLogsEnabled() ? "ON" : "OFF"));
+        String debugState = Boolean.TRUE.equals(lastDebugEnabledState) ? "ON" : "OFF";
+        desktopSettingsStatusLabel.setText("Shared settings: Debug " + debugState
+                + " | App Logs " + (runtimeSettings.isOptionalLogsEnabled() ? "ON" : "OFF")
+                + " | Warnings/Errors " + (runtimeSettings.isEssentialLogsEnabled() ? "ON" : "OFF")
+                + " | Command/Service " + (runtimeSettings.isCommandLogsEnabled() ? "ON" : "OFF"));
+    }
+
+    private void applySharedLogFilterSettings() {
+        runtimeSettings.setLogChannels(
+                loggingEnabledToggle.isSelected(),
+                essentialLogsToggle.isSelected(),
+                commandLogsToggle.isSelected());
+        refreshDesktopDashboardLogSnapshot();
+        updateDesktopSettingsStatus();
+    }
+
+    private void applySharedDebugToggleState(JCheckBox source) {
+        boolean enabled = source.isSelected();
+        if ((lastDebugEnabledState != null && lastDebugEnabledState == enabled)
+                || (lastDebugEnabledState == null && "ON".equalsIgnoreCase(debugIndicator.getText()) == enabled)) {
+            syncDebugModeToggles(enabled);
+            return;
+        }
+        setDebugMode(enabled);
+    }
+
+    private void syncDebugModeToggles(boolean enabled) {
+        if (debugModeToggle.isSelected() != enabled) {
+            debugModeToggle.setSelected(enabled);
+        }
+        if (desktopDebugModeToggle.isSelected() != enabled) {
+            desktopDebugModeToggle.setSelected(enabled);
+        }
     }
 
     private void installRayfetchHistoryInputSupport() {
@@ -8149,16 +8204,28 @@ public class UniversalMonitorControlCenter extends JFrame {
     }
 
     private static class SharedRuntimeSettings {
-        private volatile boolean loggingEnabled = true;
+        private volatile boolean optionalLogsEnabled = true;
+        private volatile boolean essentialLogsEnabled = true;
+        private volatile boolean commandLogsEnabled = true;
         private volatile boolean dashboardStreamActive = false;
         private volatile boolean lowRefreshMode = true;
 
-        void setLoggingEnabled(boolean enabled) {
-            this.loggingEnabled = enabled;
+        void setLogChannels(boolean optionalEnabled, boolean essentialEnabled, boolean commandEnabled) {
+            this.optionalLogsEnabled = optionalEnabled;
+            this.essentialLogsEnabled = essentialEnabled;
+            this.commandLogsEnabled = commandEnabled;
         }
 
         boolean isOptionalLogsEnabled() {
-            return loggingEnabled;
+            return optionalLogsEnabled;
+        }
+
+        boolean isEssentialLogsEnabled() {
+            return essentialLogsEnabled;
+        }
+
+        boolean isCommandLogsEnabled() {
+            return commandLogsEnabled;
         }
 
         void setDashboardStreamActive(boolean active) {
