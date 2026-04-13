@@ -937,6 +937,8 @@ public class UniversalMonitorControlCenter extends JFrame {
         modulePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         content.add(modulePanel);
+        content.add(Box.createVerticalStrut(6));
+        content.add(buildMonitorSettingsPanel());
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -1042,9 +1044,6 @@ public class UniversalMonitorControlCenter extends JFrame {
         modeRow.add(essentialLogsToggle);
         modeRow.add(commandLogsToggle);
         controls.add(modeRow);
-
-        controls.add(Box.createVerticalStrut(6));
-        controls.add(buildMonitorSettingsPanel());
 
         JPanel content = new JPanel(new BorderLayout(8, 8));
         content.add(controls, BorderLayout.NORTH);
