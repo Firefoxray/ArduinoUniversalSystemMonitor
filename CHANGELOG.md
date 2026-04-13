@@ -1,3 +1,11 @@
+## v11.7 Beta - 2026-04-13
+- Unified Control Center + Desktop Monitor quick settings around one shared runtime settings model (single in-app source of truth for debug/log filters/efficiency sync between windows).
+- Converted the Control Center Settings tab into the primary settings page and moved the working monitor connection/settings panel there.
+- Reduced Desktop Monitor Settings to quick controls only (theme, efficiency quick toggle, shared debug status/toggle) and removed inert scaffold-only toggles.
+- Added shared debug ON/OFF controls in both Control Center Settings and desktop popup controls, wired to real `debug_enabled` config updates and synced status indicators.
+- Fixed log filtering by category so app logs, warnings/errors, and command/service logs are emitted only when their matching toggle is enabled.
+- Bumped displayed/defined version text to `v11.7 Beta` (VERSION, README, generated Arduino headers, and Java Control Center labels).
+
 ## v11.6 - 2026-04-09
 - Bumped the shared project version to v11.6 across VERSION, README, generated Arduino app headers, and Control Center/dashboard version references.
 - Replaced packet-driven immediate UI redraws with a centralized UI scheduler (250 ms tick) that applies staggered refresh cadences (labels 1000 ms, meters 500 ms, charts 1000 ms) so rendering is capped and predictable.
