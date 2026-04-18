@@ -171,40 +171,56 @@ refresh_cli_launchers() {
     local user_name="${SUDO_USER:-${USER:-$(id -un)}}"
     local user_home
     local user_bin
-    local launcher
     local launchers=(uasm uasm-fetch uasmfetch rayfetch uasm-update)
+    local launcher
+    local run_as_user_cmd=(bash -lc)
 
     user_home="$(getent passwd "$user_name" | cut -d: -f6)"
     [[ -z "$user_home" ]] && user_home="$HOME"
     user_bin="$user_home/.local/bin"
 
-    if [[ "$user_name" == "$(id -un)" ]]; then
-        mkdir -p "$user_bin"
-        for launcher in "${launchers[@]}"; do
-            if [[ -f "$PROJECT_DIR/$launcher" ]]; then
-                cat > "$user_bin/$launcher" <<LAUNCHER
-#!/usr/bin/env bash
-set -Eeuo pipefail
-export UASM_REPO_DIR=$(printf '%q' "$PROJECT_DIR")
-exec "\$UASM_REPO_DIR/$launcher" "\$@"
-LAUNCHER
-                chmod +x "$user_bin/$launcher"
-            fi
-        done
-    else
-        sudo -u "$user_name" mkdir -p "$user_bin"
-        for launcher in "${launchers[@]}"; do
-            if [[ -f "$PROJECT_DIR/$launcher" ]]; then
-                sudo -u "$user_name" bash -lc "cat > $(printf '%q' "$user_bin/$launcher") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-export UASM_REPO_DIR=$(printf '%q' "$PROJECT_DIR")
-exec \"\$UASM_REPO_DIR/$launcher\" \"\$@\"
-LAUNCHER"
-                sudo -u "$user_name" chmod +x "$user_bin/$launcher"
-            fi
-        done
+    if [[ "$user_name" != "$(id -un)" ]]; then
+        run_as_user_cmd=(sudo -u "$user_name" bash -lc)
     fi
+
+    "${run_as_user_cmd[@]}" "mkdir -p $(printf '%q' "$user_bin")"
+    for launcher in "${launchers[@]}"; do
+        [[ -f "$PROJECT_DIR/$launcher" ]] || continue
+
+        local launcher_target="$user_bin/$launcher"
+        local python_cmd="exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py")"
+        case "$launcher" in
+            uasm)
+                "${run_as_user_cmd[@]}" "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ \"\$#\" -eq 0 ]]; then
+  echo \"Use 'uasm help' for a command list.\"
+  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
+fi
+if [[ \"\${1:-}\" == \"help\" ]]; then
+  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
+fi
+$python_cmd \"\$@\"
+LAUNCHER"
+                ;;
+            uasm-fetch|uasmfetch|rayfetch)
+                "${run_as_user_cmd[@]}" "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+$python_cmd fetch \"\$@\"
+LAUNCHER"
+                ;;
+            uasm-update)
+                "${run_as_user_cmd[@]}" "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+$python_cmd update \"\$@\"
+LAUNCHER"
+                ;;
+        esac
+        "${run_as_user_cmd[@]}" "chmod +x $(printf '%q' "$launcher_target")"
+    done
 }
 
 echo "==== Ray Co Arduino Monitor Updater ===="
