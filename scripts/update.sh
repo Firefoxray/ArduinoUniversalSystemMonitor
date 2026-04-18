@@ -181,12 +181,28 @@ refresh_cli_launchers() {
     if [[ "$user_name" == "$(id -un)" ]]; then
         mkdir -p "$user_bin"
         for launcher in "${launchers[@]}"; do
-            [[ -f "$PROJECT_DIR/$launcher" ]] && ln -sfn "$PROJECT_DIR/$launcher" "$user_bin/$launcher"
+            if [[ -f "$PROJECT_DIR/$launcher" ]]; then
+                cat > "$user_bin/$launcher" <<LAUNCHER
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export UASM_REPO_DIR=$(printf '%q' "$PROJECT_DIR")
+exec "\$UASM_REPO_DIR/$launcher" "\$@"
+LAUNCHER
+                chmod +x "$user_bin/$launcher"
+            fi
         done
     else
         sudo -u "$user_name" mkdir -p "$user_bin"
         for launcher in "${launchers[@]}"; do
-            [[ -f "$PROJECT_DIR/$launcher" ]] && sudo -u "$user_name" ln -sfn "$PROJECT_DIR/$launcher" "$user_bin/$launcher"
+            if [[ -f "$PROJECT_DIR/$launcher" ]]; then
+                sudo -u "$user_name" bash -lc "cat > $(printf '%q' "$user_bin/$launcher") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export UASM_REPO_DIR=$(printf '%q' "$PROJECT_DIR")
+exec \"\$UASM_REPO_DIR/$launcher\" \"\$@\"
+LAUNCHER"
+                sudo -u "$user_name" chmod +x "$user_bin/$launcher"
+            fi
         done
     fi
 }

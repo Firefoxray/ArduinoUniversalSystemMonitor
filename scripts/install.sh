@@ -305,7 +305,13 @@ install_cli_launchers() {
     sudo -u "$INSTALL_USER" mkdir -p "$user_bin_dir"
     for launcher in "${launchers[@]}"; do
         if [ -f "$PROJECT_DIR/$launcher" ]; then
-            sudo -u "$INSTALL_USER" ln -sfn "$PROJECT_DIR/$launcher" "$user_bin_dir/$launcher"
+            sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$user_bin_dir/$launcher") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export UASM_REPO_DIR=$(printf '%q' "$PROJECT_DIR")
+exec \"\$UASM_REPO_DIR/$launcher\" \"\$@\"
+LAUNCHER"
+            sudo -u "$INSTALL_USER" chmod +x "$user_bin_dir/$launcher"
         fi
     done
 
