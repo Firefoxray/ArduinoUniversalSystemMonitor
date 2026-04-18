@@ -299,20 +299,47 @@ install_cli_launchers() {
     echo "[8/8] Installing CLI launchers into user PATH..."
 
     local user_bin_dir="$INSTALL_HOME/.local/bin"
-    local launcher
     local launchers=(uasm uasm-fetch uasmfetch rayfetch uasm-update)
 
     sudo -u "$INSTALL_USER" mkdir -p "$user_bin_dir"
     for launcher in "${launchers[@]}"; do
-        if [ -f "$PROJECT_DIR/$launcher" ]; then
-            sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$user_bin_dir/$launcher") <<'LAUNCHER'
+        if [ ! -f "$PROJECT_DIR/$launcher" ]; then
+            continue
+        fi
+
+        local launcher_target="$user_bin_dir/$launcher"
+        local python_cmd="exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py")"
+        case "$launcher" in
+            uasm)
+                sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-export UASM_REPO_DIR=$(printf '%q' "$PROJECT_DIR")
-exec \"\$UASM_REPO_DIR/$launcher\" \"\$@\"
+if [[ \"\$#\" -eq 0 ]]; then
+  echo \"Use 'uasm help' for a command list.\"
+  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
+fi
+if [[ \"\${1:-}\" == \"help\" ]]; then
+  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
+fi
+$python_cmd \"\$@\"
 LAUNCHER"
-            sudo -u "$INSTALL_USER" chmod +x "$user_bin_dir/$launcher"
-        fi
+                ;;
+            uasm-fetch|uasmfetch|rayfetch)
+                sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+$python_cmd fetch \"\$@\"
+LAUNCHER"
+                ;;
+            uasm-update)
+                sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+$python_cmd update \"\$@\"
+LAUNCHER"
+                ;;
+        esac
+        sudo -u "$INSTALL_USER" chmod +x "$launcher_target"
     done
 
     if ! sudo -u "$INSTALL_USER" bash -lc 'echo "$PATH"' | tr ':' '\n' | grep -qx "$user_bin_dir"; then
