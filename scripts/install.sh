@@ -84,18 +84,18 @@ install_system_packages() {
 
     case "$DISTRO" in
         fedora)
-            sudo dnf install -y python3 python3-pip git curl socat
+            sudo dnf install -y python3 python3-pip python3-virtualenv git curl socat lm_sensors pciutils upower
             ;;
         debian)
             sudo apt update
-            sudo apt install -y python3 python3-pip git curl socat
+            sudo apt install -y python3 python3-pip python3-venv git curl socat lm-sensors pciutils upower
             ;;
         arch)
-            sudo pacman -Sy --noconfirm python python-pip git curl socat
+            sudo pacman -Sy --noconfirm python python-pip git curl socat lm_sensors pciutils upower
             ;;
         *)
             echo "Unsupported distro."
-            echo "Please manually install: python3, python3-pip, git, curl, socat"
+            echo "Please manually install: python3, python3-pip, git, curl, socat, lm-sensors, pciutils, upower"
             exit 1
             ;;
     esac
@@ -236,6 +236,7 @@ JSON
 
     chmod +x "$(monitor_runtime_script_path "$PROJECT_DIR")" 2>/dev/null || true
     chmod +x "$PROJECT_DIR"/*.sh 2>/dev/null || true
+    chmod +x "$PROJECT_DIR"/uasm "$PROJECT_DIR"/uasm-fetch "$PROJECT_DIR"/uasmfetch "$PROJECT_DIR"/rayfetch "$PROJECT_DIR"/uasm-update 2>/dev/null || true
     chmod +x "$PROJECT_DIR/scripts"/*.sh 2>/dev/null || true
 }
 
@@ -294,6 +295,38 @@ enable_and_start_service() {
     sudo systemctl restart "$SERVICE_NAME"
 }
 
+install_cli_launchers() {
+    echo "[8/8] Installing CLI launchers into user PATH..."
+
+    local user_bin_dir="$INSTALL_HOME/.local/bin"
+    local launcher
+    local launchers=(uasm uasm-fetch uasmfetch rayfetch uasm-update)
+
+    sudo -u "$INSTALL_USER" mkdir -p "$user_bin_dir"
+    for launcher in "${launchers[@]}"; do
+        if [ -f "$PROJECT_DIR/$launcher" ]; then
+            sudo -u "$INSTALL_USER" ln -sfn "$PROJECT_DIR/$launcher" "$user_bin_dir/$launcher"
+        fi
+    done
+
+    if ! sudo -u "$INSTALL_USER" bash -lc 'echo "$PATH"' | tr ':' '\n' | grep -qx "$user_bin_dir"; then
+        local shell_rc="$INSTALL_HOME/.bashrc"
+        if [ -n "${SHELL:-}" ] && [[ "$SHELL" == *zsh ]]; then
+            shell_rc="$INSTALL_HOME/.zshrc"
+        fi
+        if [ -w "$shell_rc" ] || [ ! -e "$shell_rc" ]; then
+            echo '' >> "$shell_rc"
+            echo '# ArduinoUniversalSystemMonitor CLI aliases' >> "$shell_rc"
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
+            chown "$INSTALL_USER":"$INSTALL_USER" "$shell_rc" 2>/dev/null || true
+            echo "Added ~/.local/bin to PATH in $shell_rc"
+        else
+            echo "Could not auto-update PATH in $shell_rc. Add this manually:"
+            echo '  export PATH="$HOME/.local/bin:$PATH"'
+        fi
+    fi
+}
+
 finish_message() {
     echo
     echo "==== INSTALL COMPLETE ===="
@@ -331,4 +364,5 @@ ensure_config
 create_service_file
 prompt_arduino_install
 enable_and_start_service
+install_cli_launchers
 finish_message

@@ -167,6 +167,30 @@ fix_repo_ownership() {
     fi
 }
 
+refresh_cli_launchers() {
+    local user_name="${SUDO_USER:-${USER:-$(id -un)}}"
+    local user_home
+    local user_bin
+    local launcher
+    local launchers=(uasm uasm-fetch uasmfetch rayfetch uasm-update)
+
+    user_home="$(getent passwd "$user_name" | cut -d: -f6)"
+    [[ -z "$user_home" ]] && user_home="$HOME"
+    user_bin="$user_home/.local/bin"
+
+    if [[ "$user_name" == "$(id -un)" ]]; then
+        mkdir -p "$user_bin"
+        for launcher in "${launchers[@]}"; do
+            [[ -f "$PROJECT_DIR/$launcher" ]] && ln -sfn "$PROJECT_DIR/$launcher" "$user_bin/$launcher"
+        done
+    else
+        sudo -u "$user_name" mkdir -p "$user_bin"
+        for launcher in "${launchers[@]}"; do
+            [[ -f "$PROJECT_DIR/$launcher" ]] && sudo -u "$user_name" ln -sfn "$PROJECT_DIR/$launcher" "$user_bin/$launcher"
+        done
+    fi
+}
+
 echo "==== Ray Co Arduino Monitor Updater ===="
 
 install_missing_prereqs
@@ -221,6 +245,7 @@ fi
 
 echo "[5/7] Making sure scripts are executable..."
 chmod +x UniversalArduinoMonitor.py scripts/UniversalArduinoMonitor.py 2>/dev/null || true
+chmod +x uasm uasm-fetch uasmfetch rayfetch uasm-update 2>/dev/null || true
 chmod +x install.sh scripts/install.sh 2>/dev/null || true
 chmod +x update.sh scripts/update.sh 2>/dev/null || true
 chmod +x uninstall_monitor.sh scripts/uninstall_monitor.sh 2>/dev/null || true
@@ -229,6 +254,7 @@ chmod +x scripts/arduino/install_arduinos.sh scripts/arduino/sync_version.py scr
 chmod +x arduino_install.sh scripts/arduino_install.sh 2>/dev/null || true
 chmod +x UniversalMonitorControlCenter.sh scripts/UniversalMonitorControlCenter.sh 2>/dev/null || true
 chmod +x install_control_center_desktop.sh scripts/install_control_center_desktop.sh 2>/dev/null || true
+refresh_cli_launchers
 
 echo "[6/7] Rebuilding Java Control Center artifacts..."
 if [[ -f debug_tools/FakeArduinoDisplay/gradlew ]]; then
