@@ -1,4 +1,39 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec python3 "$SCRIPT_DIR/UniversalArduinoMonitor.py" update "$@"
+
+resolve_source_path() {
+  local source_path="$1"
+  while [[ -L "$source_path" ]]; do
+    local source_dir
+    source_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+    source_path="$(readlink "$source_path")"
+    [[ "$source_path" != /* ]] && source_path="$source_dir/$source_path"
+  done
+  printf '%s\n' "$source_path"
+}
+
+find_runtime_script() {
+  local resolved source_dir candidate
+  resolved="$(resolve_source_path "${BASH_SOURCE[0]}")"
+  source_dir="$(cd -P "$(dirname "$resolved")" && pwd)"
+
+  for candidate in \
+    "${UASM_REPO_DIR:-}/UniversalArduinoMonitor.py" \
+    "$source_dir/UniversalArduinoMonitor.py" \
+    "$source_dir/../UniversalArduinoMonitor.py" \
+    "$HOME/ArduinoUniversalSystemMonitor/UniversalArduinoMonitor.py" \
+    "$PWD/UniversalArduinoMonitor.py"
+  do
+    [[ -n "$candidate" && -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
+
+RUNTIME_SCRIPT="$(find_runtime_script || true)"
+if [[ -z "$RUNTIME_SCRIPT" ]]; then
+  echo "Unable to locate UniversalArduinoMonitor.py."
+  echo "Set UASM_REPO_DIR to your repo path or reinstall launchers with install.sh."
+  exit 2
+fi
+
+exec python3 "$RUNTIME_SCRIPT" update "$@"

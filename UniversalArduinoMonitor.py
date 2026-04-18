@@ -413,6 +413,7 @@ _battery_cache = {"ts": 0.0, "data": None}
 _qbt_cache = {"ts": 0.0, "data": None}
 _ip_cache = {"ts": 0.0, "data": None}
 _lspci_gpu_cache = {"ts": 0.0, "data": None}
+_optional_serial_state: Dict[str, Dict[str, object]] = {}
 
 
 def clean_field(text: object, max_len: int = 32) -> str:
@@ -754,6 +755,14 @@ def connect_arduinos_blocking() -> Dict[str, serial.Serial]:
 def connect_optional_serial(path: str, baud: int, label: str) -> Optional[serial.Serial]:
     if not path:
         return None
+    now = time.time()
+    state_key = f"{label}:{path}"
+    state = _optional_serial_state.setdefault(
+        state_key,
+        {"failures": 0, "next_retry_at": 0.0, "last_error": "", "last_log_at": 0.0, "was_connected": False},
+    )
+    if now < float(state.get("next_retry_at", 0.0)):
+        return None
     try:
         ser = serial.Serial(path, baud, timeout=0.5, write_timeout=1)
         time.sleep(0.15)
@@ -762,10 +771,31 @@ def connect_optional_serial(path: str, baud: int, label: str) -> Optional[serial
             ser.reset_output_buffer()
         except Exception:
             pass
+        if not state.get("was_connected", False) and int(state.get("failures", 0)) > 0:
+            print(f"{label} recovered on {path}")
+        state["failures"] = 0
+        state["next_retry_at"] = 0.0
+        state["last_error"] = ""
+        state["last_log_at"] = now
+        state["was_connected"] = True
         print(f"{label} connected on {path}")
         return ser
     except (SerialException, OSError) as exc:
-        print(f"{label} unavailable on {path}: {exc}")
+        err_text = str(exc)
+        failures = int(state.get("failures", 0)) + 1
+        backoff = min(300.0, 10.0 * (2 ** min(failures - 1, 5)))
+        should_log = (
+            failures == 1
+            or err_text != state.get("last_error", "")
+            or (now - float(state.get("last_log_at", 0.0))) >= 300.0
+        )
+        if should_log:
+            print(f"{label} unavailable on {path}: {exc} (retrying in {int(backoff)}s)")
+            state["last_log_at"] = now
+            state["last_error"] = err_text
+        state["failures"] = failures
+        state["next_retry_at"] = now + backoff
+        state["was_connected"] = False
         return None
 
 
@@ -781,6 +811,17 @@ def write_optional_serial(current: Optional[serial.Serial], payload: str, path: 
         return ser
     except (SerialException, OSError) as exc:
         print(f"{label} write failed: {exc}")
+        now = time.time()
+        state_key = f"{label}:{path}"
+        state = _optional_serial_state.setdefault(
+            state_key,
+            {"failures": 0, "next_retry_at": 0.0, "last_error": "", "last_log_at": 0.0, "was_connected": False},
+        )
+        state["failures"] = int(state.get("failures", 0)) + 1
+        state["next_retry_at"] = now + min(300.0, 10.0 * (2 ** min(int(state["failures"]) - 1, 5)))
+        state["last_error"] = str(exc)
+        state["last_log_at"] = now
+        state["was_connected"] = False
         try:
             if ser is not None:
                 ser.close()
@@ -2685,7 +2726,7 @@ COMMAND_REGISTRY = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="UASM CLI + Universal Arduino monitor runtime (RayFetch remains an optional fetch personality)."
     )
@@ -2709,12 +2750,20 @@ def parse_args() -> argparse.Namespace:
         add_args_fn = command_meta.get("add_args")
         if callable(add_args_fn):
             add_args_fn(sub_parser)
+    subparsers.add_parser("help", help="Show this command list/help output.")
+    return parser
 
+
+def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     return parser.parse_args()
 
 
 def main() -> None:
-    args = parse_args()
+    parser = build_parser()
+    args = parse_args(parser)
+    if args.command == "help":
+        parser.print_help()
+        raise SystemExit(0)
     if args.command in COMMAND_REGISTRY:
         handler = COMMAND_REGISTRY[args.command]["handler"]
         raise SystemExit(handler(args))
