@@ -256,8 +256,11 @@ PROC_CACHE_TTL = 1.0
 STATIC_CACHE_TTL = 30.0
 TEMP_CACHE_TTL = 1.0
 STORAGE_CACHE_TTL = 10.0
+STORAGE_TARGETS_CACHE_TTL = 10.0
+STORAGE_IO_CACHE_TTL = 1.0
 BATTERY_CACHE_TTL = 10.0
 QBT_CACHE_TTL = max(0.5, to_float(CONFIG.get("qbittorrent_poll_interval"), 2.0))
+IP_CACHE_TTL = 5.0
 
 ROOT_MOUNT = str(CONFIG.get("root_mount") or os.environ.get("ARDUINO_MONITOR_ROOT") or "/")
 CONFIG_SECONDARY_MOUNT = str(CONFIG.get("secondary_mount") or "").strip()
@@ -403,10 +406,13 @@ _proc_cache = {"ts": 0.0, "data": None}
 _static_cache = {"ts": 0.0, "data": None}
 _temp_cache = {"ts": 0.0, "data": None}
 _storage_cache = {"ts": 0.0, "data": None}
+_storage_targets_cache = {"ts": 0.0, "data": None}
 _storage_io_cache = {"ts": 0.0, "data": None}
 _storage_io_prev_samples: Dict[str, Dict[str, float]] = {}
 _battery_cache = {"ts": 0.0, "data": None}
 _qbt_cache = {"ts": 0.0, "data": None}
+_ip_cache = {"ts": 0.0, "data": None}
+_lspci_gpu_cache = {"ts": 0.0, "data": None}
 
 
 def clean_field(text: object, max_len: int = 32) -> str:
@@ -440,6 +446,11 @@ def run_cmd(cmd: List[str], timeout: float = 2.0) -> str:
         return ""
 
 
+def run_command(cmd: List[str], timeout: float = 2.0) -> str:
+    """Compatibility alias for older call sites."""
+    return run_cmd(cmd, timeout=timeout)
+
+
 def cmd_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
@@ -456,6 +467,14 @@ def get_ip() -> str:
         return ip
     except Exception:
         return "No IP"
+
+
+def get_cached_ip() -> str:
+    now = time.time()
+    if _ip_cache["data"] is None or (now - _ip_cache["ts"]) >= IP_CACHE_TTL:
+        _ip_cache["data"] = get_ip()
+        _ip_cache["ts"] = now
+    return _ip_cache["data"]
 
 
 def get_hostname() -> str:
@@ -809,7 +828,7 @@ def perform_wifi_pairing_handshake(sock: socket.socket) -> bool:
         local_hostname = normalize_identity_value(socket.gethostname(), 64) or "--"
     except Exception:
         local_hostname = normalize_identity_value(get_hostname(), 64) or "--"
-    local_host_ip = normalize_identity_value(get_ip(), 64) or "--"
+    local_host_ip = normalize_identity_value(get_cached_ip(), 64) or "--"
     hello = f"{WIFI_PAIRING_MAGIC}|{local_hostname}|{local_host_ip}\n"
     try:
         sock.sendall(hello.encode("utf-8"))
@@ -846,7 +865,7 @@ def evaluate_discovery_record(record: WifiDiscoveryRecord) -> Tuple[bool, List[s
             f"pairing target_hostname mismatch (expected '{WIFI_TARGET_HOSTNAME}', got '{record.target_hostname or '--'}')"
         )
 
-    local_host_ip = get_ip()
+    local_host_ip = get_cached_ip()
     local_hostname = get_hostname()
     if record.target_host and not identity_matches(record.target_host, local_host_ip):
         reasons.append(f"pairing mismatch: reply targets host '{record.target_host}', local host is '{local_host_ip}'")
@@ -1284,9 +1303,17 @@ def collect_storage_targets() -> List[Dict[str, Any]]:
     return [item[1] for item in candidates]
 
 
+def get_cached_storage_targets() -> List[Dict[str, Any]]:
+    now = time.time()
+    if _storage_targets_cache["data"] is None or (now - _storage_targets_cache["ts"]) >= STORAGE_TARGETS_CACHE_TTL:
+        _storage_targets_cache["data"] = collect_storage_targets()
+        _storage_targets_cache["ts"] = now
+    return _storage_targets_cache["data"]
+
+
 def build_storage_lines(max_lines: int = STORAGE_LINES) -> List[str]:
     lines: List[str] = []
-    targets = collect_storage_targets()
+    targets = get_cached_storage_targets()
     if STORAGE_ENABLED_TARGET_SET:
         targets = [target for target in targets if target["id"] in STORAGE_ENABLED_TARGET_SET]
     for target in targets[:max_lines]:
@@ -1368,10 +1395,7 @@ def collect_storage_io_entries(targets: List[Dict[str, Any]], now_time: float) -
 
 
 def get_cached_storage_io_entries(targets: List[Dict[str, Any]], now_time: float) -> List[Dict[str, object]]:
-    if _storage_io_cache["data"] is None:
-        _storage_io_cache["data"] = collect_storage_io_entries(targets, now_time)
-        _storage_io_cache["ts"] = now_time
-    else:
+    if _storage_io_cache["data"] is None or (now_time - _storage_io_cache["ts"]) >= STORAGE_IO_CACHE_TTL:
         _storage_io_cache["data"] = collect_storage_io_entries(targets, now_time)
         _storage_io_cache["ts"] = now_time
     return _storage_io_cache["data"]
@@ -1695,8 +1719,15 @@ def read_hwmon_temp_c(card: Path) -> Optional[str]:
 def get_lspci_gpu_lines() -> List[str]:
     if not cmd_exists("lspci"):
         return []
-    out = run_cmd(["lspci"], timeout=3)
-    return [line.strip() for line in out.splitlines() if ("VGA compatible controller" in line or "Display controller" in line)]
+    now = time.time()
+    if _lspci_gpu_cache["data"] is None or (now - _lspci_gpu_cache["ts"]) >= STATIC_CACHE_TTL:
+        out = run_cmd(["lspci"], timeout=3)
+        _lspci_gpu_cache["data"] = [
+            line.strip() for line in out.splitlines()
+            if ("VGA compatible controller" in line or "Display controller" in line)
+        ]
+        _lspci_gpu_cache["ts"] = now
+    return list(_lspci_gpu_cache["data"])
 
 
 def parse_pretty_gpu_name(vendor_hint: str) -> str:
@@ -1976,7 +2007,7 @@ def collect_snapshot(last_net, last_time):
     per_core = per_core[:CPU_THREADS_TO_SEND]
 
     static = get_cached_static()
-    storage_targets = collect_storage_targets()
+    storage_targets = get_cached_storage_targets()
     enabled_storage_targets = [target for target in storage_targets if not STORAGE_ENABLED_TARGET_SET or target["id"] in STORAGE_ENABLED_TARGET_SET]
     iface = static["iface"]
     now_time = time.time()
@@ -2015,7 +2046,7 @@ def collect_snapshot(last_net, last_time):
         "cpu_temp": clean_field(get_cached_temp(), 12),
         "os_name": clean_field(static["os_name"], 24),
         "host_name": clean_field(static["host_name"], 24),
-        "ip": clean_field(get_ip(), 18),
+        "ip": clean_field(get_cached_ip(), 18),
         "uptime": clean_field(get_uptime(), 18),
         "down_rate": clean_field(format_speed(down_bps), 18),
         "up_rate": clean_field(format_speed(up_bps), 18),
@@ -2091,7 +2122,7 @@ def build_arduino_status_snapshot() -> Dict[str, object]:
         "os_name": static["os_name"],
         "host_name": static["host_name"],
         "active_interface": static["iface"],
-        "ip": get_ip(),
+        "ip": get_cached_ip(),
         "preferred_port": PREFERRED_PORT or "AUTO",
         "explicit_ports": EXPLICIT_ARDUINO_PORTS,
         "candidate_ports": candidate_ports,
@@ -2278,7 +2309,7 @@ def main_sender() -> None:
         return
 
     static = get_cached_static()
-    storage_targets = collect_storage_targets()
+    storage_targets = get_cached_storage_targets()
     enabled_storage_targets = [target for target in storage_targets if not STORAGE_ENABLED_TARGET_SET or target["id"] in STORAGE_ENABLED_TARGET_SET]
     print(f"Running Universal Arduino Monitor {APP_VERSION} for Linux")
     print("Originally tuned on Fedora; intended to work across Linux desktops.")
@@ -2477,9 +2508,186 @@ def main_sender() -> None:
         release_single_instance_lock()
 
 
+def run_update_command() -> int:
+    update_script = REPO_ROOT / "update.sh"
+    if not update_script.exists():
+        print(f"Update script not found: {update_script}")
+        return 2
+    try:
+        result = subprocess.run([str(update_script)], check=False)
+        return int(result.returncode)
+    except Exception as exc:
+        print(f"Failed to run update flow: {exc}")
+        return 2
+
+
+def capture_systemctl_state(service_name: str) -> str:
+    if not cmd_exists("systemctl"):
+        return "systemctl not available"
+    loaded = run_cmd(["systemctl", "is-enabled", service_name], timeout=1.5) or "unknown"
+    active = run_cmd(["systemctl", "is-active", service_name], timeout=1.5) or "unknown"
+    return f"enabled={loaded} active={active}"
+
+
+def run_doctor_command() -> int:
+    checks: List[Tuple[str, bool, str]] = []
+    checks.append(("python3", cmd_exists("python3"), "required runtime"))
+    checks.append(("git", cmd_exists("git"), "used by updater/install scripts"))
+    checks.append(("serial module", True, f"pyserial={serial.__version__ if hasattr(serial, '__version__') else 'installed'}"))
+    checks.append(("psutil module", True, f"psutil={psutil.__version__ if hasattr(psutil, '__version__') else 'installed'}"))
+    checks.append(("config/default", DEFAULT_CONFIG_PATH.exists(), str(DEFAULT_CONFIG_PATH)))
+    checks.append(("config/shared", CONFIG_PATH.exists(), str(CONFIG_PATH)))
+    checks.append(("config/local", LOCAL_CONFIG_PATH.exists(), str(LOCAL_CONFIG_PATH)))
+    service_file = Path("/etc/systemd/system/arduino-monitor.service")
+    checks.append(("service file", service_file.exists(), str(service_file)))
+    checks.append(("systemd state", True, capture_systemctl_state("arduino-monitor.service")))
+
+    serial_ports = list(list_ports.comports())
+    checks.append(("serial ports visible", bool(serial_ports), f"count={len(serial_ports)}"))
+    checks.append(("candidate Arduino ports", bool(list_candidate_ports()), str(list_candidate_ports())))
+
+    iface = get_cached_static().get("iface", "unknown")
+    ip_addr = get_cached_ip()
+    checks.append(("network interface", iface != "lo", f"iface={iface}"))
+    checks.append(("host IPv4", ip_addr not in {"No IP", "--", ""}, f"ip={ip_addr}"))
+
+    wifi_target = WIFI_HOST or "<discovery>"
+    checks.append(
+        ("transport config", WIFI_ENABLED or bool(EXPLICIT_ARDUINO_PORTS) or PREFER_USB, f"wifi={WIFI_ENABLED} host={wifi_target} usb_prefer={PREFER_USB}")
+    )
+
+    optional_tools = ["nvidia-smi", "intel_gpu_top", "lspci", "sensors", "upower", "lsblk", "ip"]
+    present_optional = [tool for tool in optional_tools if cmd_exists(tool)]
+    checks.append(("optional tools", True, ",".join(present_optional) if present_optional else "none found"))
+
+    if PAGE_GPU_ENABLED:
+        gpu_tool_ready = cmd_exists("nvidia-smi") or bool(pick_primary_gpu_card())
+        checks.append(("gpu backend", gpu_tool_ready, "nvidia-smi or /sys/class/drm"))
+    else:
+        checks.append(("gpu backend", True, "GPU page disabled in config"))
+
+    print("=== UASM Doctor ===")
+    failures = 0
+    for name, ok, detail in checks:
+        marker = "OK" if ok else "WARN"
+        print(f"[{marker}] {name}: {detail}")
+        if not ok:
+            failures += 1
+    return 0 if failures == 0 else 1
+
+
+def run_config_command(as_json: bool = False) -> int:
+    payload = {
+        "version": APP_VERSION,
+        "paths": {
+            "default_config": str(DEFAULT_CONFIG_PATH),
+            "shared_config": str(CONFIG_PATH),
+            "local_config": str(LOCAL_CONFIG_PATH),
+            "wifi_default_header": str(WIFI_DEFAULT_CONFIG_PATH),
+            "wifi_local_header": str(WIFI_LOCAL_CONFIG_PATH),
+        },
+        "effective": {
+            "send_interval": SEND_INTERVAL,
+            "wifi_enabled": WIFI_ENABLED,
+            "wifi_host": WIFI_HOST,
+            "wifi_port": WIFI_PORT,
+            "prefer_usb": PREFER_USB,
+            "program_mode": PROGRAM_MODE,
+            "page_gpu_enabled": PAGE_GPU_ENABLED,
+            "page_processes_enabled": PAGE_PROCESSES_ENABLED,
+            "page_storage_enabled": PAGE_STORAGE_ENABLED,
+        },
+    }
+    if as_json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print("=== UASM Config ===")
+        print(f"Version: {payload['version']}")
+        for key, value in payload["paths"].items():
+            print(f"{key}: {value}")
+        for key, value in payload["effective"].items():
+            print(f"{key}: {value}")
+    return 0
+
+
+def collect_one_shot_snapshot() -> Dict[str, object]:
+    static = get_cached_static()
+    iface = static["iface"]
+    net_stats = psutil.net_io_counters(pernic=True)
+    last_net = net_stats.get(iface) or psutil.net_io_counters()
+    last_time = time.time()
+    snapshot, _, _ = collect_snapshot(last_net, last_time)
+    return snapshot
+
+
+def run_fetch_outputs(
+    *,
+    show_rayfetch: bool = False,
+    show_json: bool = False,
+    show_payload_preview: bool = False,
+    show_status: bool = False,
+) -> int:
+    if show_status:
+        print_arduino_status()
+    if show_rayfetch or show_json or show_payload_preview:
+        snapshot = collect_one_shot_snapshot()
+        if show_rayfetch:
+            print_rayfetch(snapshot)
+        if show_json:
+            print(json.dumps(snapshot, indent=2))
+        if show_payload_preview:
+            print(build_arduino_payload(snapshot), end="")
+    return 0
+
+
+def handle_fetch_command(_args: argparse.Namespace) -> int:
+    return run_fetch_outputs(show_rayfetch=True)
+
+
+def handle_status_command(_args: argparse.Namespace) -> int:
+    return run_fetch_outputs(show_status=True)
+
+
+def handle_update_command(_args: argparse.Namespace) -> int:
+    return run_update_command()
+
+
+def handle_doctor_command(_args: argparse.Namespace) -> int:
+    return run_doctor_command()
+
+
+def handle_config_command(args: argparse.Namespace) -> int:
+    return run_config_command(as_json=getattr(args, "config_json", False))
+
+
+COMMAND_REGISTRY = {
+    "fetch": {
+        "help": "One-shot fetch summary (canonical UASM command).",
+        "handler": handle_fetch_command,
+    },
+    "status": {
+        "help": "Print sender diagnostics without connecting.",
+        "handler": handle_status_command,
+    },
+    "update": {
+        "help": "Run update.sh (thin wrapper around existing updater).",
+        "handler": handle_update_command,
+    },
+    "doctor": {
+        "help": "Run lightweight environment diagnostics.",
+        "handler": handle_doctor_command,
+    },
+    "config": {
+        "help": "Show effective config paths/settings.",
+        "handler": handle_config_command,
+        "add_args": lambda parser: parser.add_argument("--json", action="store_true", dest="config_json", help="Print config output as JSON."),
+    },
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Ray Co. Universal Arduino System Monitor sender + RayFetch one-shot tools."
+        description="UASM CLI + Universal Arduino monitor runtime (RayFetch remains an optional fetch personality)."
     )
     parser.add_argument("--rayfetch", action="store_true", help="Print one-shot terminal summary without connecting to Arduino.")
     parser.add_argument("--json", action="store_true", dest="as_json", help="Print one-shot snapshot as JSON.")
@@ -2493,29 +2701,36 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print Arduino sender diagnostics (ports/interface/transport config) without connecting.",
     )
+    parser.add_argument("--update", action="store_true", help="Run the project update flow (compatibility flag).")
+
+    subparsers = parser.add_subparsers(dest="command")
+    for command_name, command_meta in COMMAND_REGISTRY.items():
+        sub_parser = subparsers.add_parser(command_name, help=command_meta["help"])
+        add_args_fn = command_meta.get("add_args")
+        if callable(add_args_fn):
+            add_args_fn(sub_parser)
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.command in COMMAND_REGISTRY:
+        handler = COMMAND_REGISTRY[args.command]["handler"]
+        raise SystemExit(handler(args))
+    if getattr(args, "update", False):
+        raise SystemExit(run_update_command())
+
     one_shot_mode = args.rayfetch or args.as_json or args.payload_preview or args.arduino_status
     if one_shot_mode:
-        if args.arduino_status:
-            print_arduino_status()
-        if args.rayfetch or args.as_json or args.payload_preview:
-            static = get_cached_static()
-            iface = static["iface"]
-            net_stats = psutil.net_io_counters(pernic=True)
-            last_net = net_stats.get(iface) or psutil.net_io_counters()
-            last_time = time.time()
-            snapshot, _, _ = collect_snapshot(last_net, last_time)
-            if args.rayfetch:
-                print_rayfetch(snapshot)
-            if args.as_json:
-                print(json.dumps(snapshot, indent=2))
-            if args.payload_preview:
-                print(build_arduino_payload(snapshot), end="")
-        return
+        raise SystemExit(
+            run_fetch_outputs(
+                show_rayfetch=args.rayfetch,
+                show_json=args.as_json,
+                show_payload_preview=args.payload_preview,
+                show_status=args.arduino_status,
+            )
+        )
 
     main_sender()
 

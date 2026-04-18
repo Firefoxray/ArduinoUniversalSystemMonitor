@@ -1,3 +1,21 @@
+## v12.0 Beta - 2026-04-18
+- Bumped shared project version references to `v12.0 Beta` and synchronized generated Arduino version headers.
+- Updated README install guidance so Fedora and Debian are presented side-by-side, with Linux Mint guidance aligned to the Debian path.
+- Documented and automated user PATH launcher setup so `uasm` commands can be used directly without `python3 ...` or `./` prefixes after install/update.
+- Updated install/update scripts to refresh CLI launcher symlinks in `~/.local/bin` (`uasm`, `uasm-fetch`, `uasmfetch`, `rayfetch`, `uasm-update`).
+
+## v11.8 Beta - 2026-04-18
+- Kept one unified Python runtime model and expanded CLI ergonomics without introducing a split service-vs-desktop architecture.
+- Added first-class CLI subcommands to `UniversalArduinoMonitor.py` (`fetch`, `status`, `update`, `doctor`, `config`) while preserving legacy flags and long-running sender behavior.
+- Added compatibility launchers for CLI usage (`uasm`, `rayfetch`, `uasm-update`) so one-shot and update workflows map to the same backend.
+- Formalized UASM naming as primary CLI by adding `uasm-fetch` and `uasmfetch` fetch aliases while keeping `rayfetch` as an optional personality alias.
+- Refactored CLI command wiring around a small command registry so extending commands later is straightforward without duplicating parser logic.
+- Expanded `uasm doctor` checks to include service/systemd status, serial visibility, network basics, transport settings, and optional tool availability.
+- Reduced runtime overhead by caching storage target discovery, throttling storage I/O recomputation, caching host IP lookups, and caching `lspci` GPU line parsing.
+- Fixed a battery/upower command compatibility bug by restoring a `run_command` compatibility alias.
+- Improved Debian guidance and package coverage in docs/install paths while preserving Fedora workflows.
+- Bumped shared version references to `v11.8 Beta` and synchronized generated Arduino version headers.
+
 ## v11.7 Beta - 2026-04-13
 - Unified Control Center + Desktop Monitor quick settings around one shared runtime settings model (single in-app source of truth for debug/log filters/efficiency sync between windows).
 - Converted the Control Center Settings tab into the primary settings page and moved the working monitor connection/settings panel there.

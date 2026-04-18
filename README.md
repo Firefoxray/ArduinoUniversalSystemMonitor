@@ -1,128 +1,158 @@
-# Arduino Universal System Monitor (v11.7 Beta)
+# Arduino Universal System Monitor (v12.0 Beta)
 
-A Fedora-first desktop monitor that sends live PC stats to Arduino touchscreen dashboards, with a GUI Control Center for setup, flashing, and monitor settings.
+A Linux system monitor that sends live PC stats to Arduino touchscreen dashboards.
 
-**Current version:** `v11.7 Beta` (shared via `VERSION`).
+**Current version:** `v12.0 Beta` (shared via `VERSION`).
 
-- **Current focus:** Linux/Fedora workflow and GUI-first setup.
-- **Primary GUI:** Java Control Center (`./UniversalMonitorControlCenter.sh`).
-- **Monitor runtime:** Python sender (`UniversalArduinoMonitor.py`) managed by systemd.
+- **Main runtime (both Fedora + Debian):** `UniversalArduinoMonitor.py`.
+- **Service path:** `arduino-monitor.service` runs the same Python runtime in background.
+- **GUI tools are optional:** launched manually with:
+  - `./UniversalMonitorControlCenter.sh`
+  - `./UniversalMonitorDashboard.sh`
+- **CLI identity (primary):** UASM.
+- **RayFetch:** optional fetch-style personality alias on the same backend.
 
 ---
 
-## Project overview
+## Unified architecture
 
-This project combines:
-- a **Python monitor service** that reads system stats and sends data over USB or Wi-Fi,
-- **Arduino sketches** for supported boards/displays,
-- a **GUI Control Center** to configure transport, pages, modules, storage mappings, and flash boards.
+This project keeps one runtime architecture:
 
-It is currently tuned and tested mainly for **Fedora Linux**.
+- Python monitor runtime is the core sender/data collector.
+- GUI is optional and independent.
+- Headless Debian works because GUI is optional (not because of a separate mode).
+- Fedora desktop workflow stays intact when GUI tools are launched.
 
 ---
 
 ## Main features
 
-- Live stats: CPU, RAM, temperatures, network, storage, processes, GPU, and optional qBittorrent data.
-- USB + Wi-Fi monitor transport, with UNO R4 Wi-Fi pairing helpers.
-- Board/page profiles and per-board display options.
-- RayFetch one-shot CLI modes for snapshot debugging:
-  - `--rayfetch`
-  - `--json`
-  - `--payload-preview`
-  - `--arduino-status`
-- Storage target controls, including:
-  - `storage_enabled_targets`
-  - `storage_disk0_target`
-  - `storage_disk1_target`
-- Built-in flashing workflow from the Control Center.
-- Desktop pop-out Gaming Mode framework page with MangoHud-oriented Linux telemetry scaffolding for future FPS/frametime ingestion.
+- Live stats: CPU, RAM, temperatures, network, storage, processes, GPU, optional qBittorrent.
+- USB + Wi-Fi monitor transport with UNO R4 Wi-Fi pairing/discovery helpers.
+- Shared snapshot backend for service sender and one-shot CLI output.
+- Optional Java Control Center + desktop dashboard.
+- UASM CLI:
+  - `fetch`
+  - `status`
+  - `update`
+  - `doctor`
+  - `config`
 
 ---
 
-## Screens / pages
+## Fedora / Debian / Linux Mint install
 
-The Arduino side supports pages such as:
-- Home / quad overview
-- CPU
-- GPU
-- Network
-- Storage
-- Processes
-- Graphs
-- qBittorrent (optional)
-
-Preview screenshots are available in `screenshots/`.
-
----
-
-## Easy install/setup (Fedora)
-
-### 1) Install base packages
+### Fedora
 
 ```bash
 sudo dnf install -y git python3 python3-pip java-21-openjdk arduino-cli socat
-```
 
-### 2) Clone the repo
-
-```bash
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
 cd ArduinoUniversalSystemMonitor
-```
 
-### 3) Run the easiest Fedora setup path
-
-```bash
 chmod +x fedora_easy_setup.sh
 ./fedora_easy_setup.sh
 ```
 
-Installer actions (high-level):
-- installs Python dependencies,
-- ensures config files exist,
-- configures/starts `arduino-monitor.service`,
-- optionally launches Arduino install/flash flow.
-
-If you prefer the generic path, run `./install.sh` directly.
-
-### 4) Launch the GUI Control Center
+Generic installer path (also valid on Fedora):
 
 ```bash
-./UniversalMonitorControlCenter.sh
+./install.sh
 ```
-
-From the GUI, review/save monitor settings, choose storage targets, and run flash actions.
-
-### 5) Launch desktop pop-out dashboard only (standalone scaffold)
-
-```bash
-./UniversalMonitorDashboard.sh
-```
-
-This runs the Java app in `--dashboard-only` mode so the pop-out dashboard opens directly without showing the full Control Center window.
 
 ---
 
-## Run instructions
+### Debian (headless or desktop)
 
-### Service commands
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv socat lm-sensors pciutils upower
+
+git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
+cd ArduinoUniversalSystemMonitor
+
+./install.sh
+```
+
+Notes:
+- `./install.sh` handles distro detection and service creation.
+- GUI tools are optional; headless deployments can skip GUI launch commands.
+- Linux Mint users can use the same Debian package/install path.
+
+### Make `uasm` commands work without `python3 ...` or `./`
+
+The installer now links CLI launchers into `~/.local/bin` (`uasm`, `uasm-fetch`, `uasmfetch`, `rayfetch`, `uasm-update`) and adds `~/.local/bin` to PATH if needed.
+
+If your current shell still cannot find `uasm`, run:
+
+```bash
+source ~/.bashrc   # or: source ~/.zshrc
+hash -r
+which uasm
+```
+
+If needed, add PATH manually:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+---
+
+## Run / service commands
 
 ```bash
 sudo systemctl status arduino-monitor.service
 sudo systemctl restart arduino-monitor.service
 sudo systemctl stop arduino-monitor.service
-# if you see start-limit-hit after repeated failures:
 sudo systemctl reset-failed arduino-monitor.service
 ```
 
-### Manual monitor run (debug/testing)
+Manual runtime launch:
 
 ```bash
 python3 UniversalArduinoMonitor.py
 ```
 
-### RayFetch one-shot commands
+---
+
+## CLI usage (UASM + RayFetch)
+
+### New command structure
+
+```bash
+# canonical one-shot fetch
+python3 UniversalArduinoMonitor.py fetch
+./uasm fetch
+./uasm-fetch
+./uasmfetch
+
+# optional RayFetch personality alias (same backend path)
+./rayfetch
+
+# diagnostics/status
+python3 UniversalArduinoMonitor.py status
+./uasm status
+
+# update flow
+python3 UniversalArduinoMonitor.py --update
+python3 UniversalArduinoMonitor.py update
+./uasm update
+./rayfetch update
+./uasm-update
+
+# health checks
+python3 UniversalArduinoMonitor.py doctor
+./uasm doctor
+
+# config display
+python3 UniversalArduinoMonitor.py config
+python3 UniversalArduinoMonitor.py config --json
+./uasm config
+```
+
+### Legacy one-shot flags (still supported)
 
 ```bash
 python3 UniversalArduinoMonitor.py --rayfetch
@@ -131,30 +161,40 @@ python3 UniversalArduinoMonitor.py --payload-preview
 python3 UniversalArduinoMonitor.py --arduino-status
 ```
 
+### How to add your own CLI command later (manual extensibility)
+
+The CLI is intentionally centralized in `UniversalArduinoMonitor.py`:
+
+1. Add a handler function near the CLI section (`handle_<name>_command`).
+2. Add one `COMMAND_REGISTRY` entry with:
+   - `help`
+   - `handler`
+   - optional `add_args` function for command-specific flags
+3. The parser auto-builds subcommands from that registry.
+
+This keeps one shared backend path and avoids duplicating command logic.
+
 ---
 
-## Notes / limitations
+## Optional GUI launch
 
-- **Fedora-first** project: most testing and setup tuning is currently Fedora-based.
-- Linux support is strongest; other distros may need package-name adjustments.
-- Legacy Windows files remain under `legacy/Windows/` for reference only.
-- Some features (serial permissions/group updates) may require logout/login after install.
+Run GUI only when you want it:
+
+```bash
+./UniversalMonitorControlCenter.sh
+./UniversalMonitorDashboard.sh
+```
+
+The monitor runtime/service does not require these commands to run.
 
 ---
 
-## TODO
+## Notes
 
-- GUI-first polish pass across all tabs and setup flows.
-- Reduce remaining manual setup friction in installer + Control Center.
-- Improve first-run diagnostics/help messaging.
-- **Windows compatibility planned for a future release**.
+- Linux-focused project. Legacy Windows files remain under `legacy/Windows/` for reference.
+- Serial permission changes can require logout/login.
+- Fedora remains a primary desktop target; Debian instructions are now documented for the same runtime path.
 
-## Remote actions (advanced / optional in v11.7 Beta)
+## Remote actions (advanced / optional in v12.0 Beta)
 
-The Control Center includes a **Remote / CLI actions panel** with a conservative "predefined actions only" model:
-- update project
-- flash Arduinos
-- monitor service restart/status
-- Wi-Fi discovery debug log action
-
-Actions can run locally or over SSH (saved target profiles supported). This is intended as an advanced helper path, not a required setup path for v11.7 Beta.
+The Control Center includes a **Remote / CLI actions panel** for predefined actions (update, flash, service control, discovery debug), runnable locally or over SSH profiles.
