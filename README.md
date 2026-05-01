@@ -1,8 +1,8 @@
-# Arduino Universal System Monitor (v12.0 Beta)
+# Arduino Universal System Monitor (v12.0.1 Beta)
 
 A Linux system monitor that sends live PC stats to Arduino touchscreen dashboards.
 
-**Current version:** `v12.0 Beta` (shared via `VERSION`).
+**Current version:** `v12.0.1 Beta` (shared via `VERSION`).
 
 - **Main runtime (both Fedora + Debian):** `UniversalArduinoMonitor.py`.
 - **Service path:** `arduino-monitor.service` runs the same Python runtime in background.
@@ -45,7 +45,7 @@ This project keeps one runtime architecture:
 ### Fedora
 
 ```bash
-sudo dnf install -y git python3 python3-pip java-21-openjdk arduino-cli socat
+sudo dnf install -y git python3 python3-pip java-25-openjdk java-25-openjdk-devel arduino-cli socat
 
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
 cd ArduinoUniversalSystemMonitor

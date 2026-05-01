@@ -1,3 +1,8 @@
+## v12.0.1 Beta - 2026-04-26
+- Updated the Java Control Center launcher/runtime detection to prefer Java 25 from PATH, JAVA_HOME, and common `/usr/lib/jvm` locations (including Fedora 44 defaults), while keeping Java 21 as an optional fallback.
+- Replaced the outdated Java requirement messaging with Fedora 44-friendly guidance that recommends `sudo dnf install java-25-openjdk java-25-openjdk-devel` when JDK tooling is missing.
+- Updated FakeArduinoDisplay Gradle Java toolchain/compatibility to Java 25 and refreshed Fedora setup/docs to install Java 25 JDK packages by default.
+
 ## v12.0 Beta - 2026-04-18
 - Bumped shared project version references to `v12.0 Beta` and synchronized generated Arduino version headers.
 - Updated README install guidance so Fedora and Debian are presented side-by-side, with Linux Mint guidance aligned to the Debian path.
