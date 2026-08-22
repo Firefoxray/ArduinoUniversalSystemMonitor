@@ -1,3 +1,8 @@
+## Unreleased
+- Fixed Fedora 44 easy setup by removing the unavailable `arduino-cli` DNF package dependency.
+- Added one shared Arduino CLI bootstrapper that uses Arduino's official installer and places the verified binary in `~/.local/bin` for Fedora and other supported Linux install flows.
+- Updated Fedora documentation to make Fedora 44 support and the non-DNF Arduino CLI installation path explicit.
+
 ## v12.0.1 Beta - 2026-04-26
 - Updated the Java Control Center launcher/runtime detection to prefer Java 25 from PATH, JAVA_HOME, and common `/usr/lib/jvm` locations (including Fedora 44 defaults), while keeping Java 21 as an optional fallback.
 - Replaced the outdated Java requirement messaging with Fedora 44-friendly guidance that recommends `sudo dnf install java-25-openjdk java-25-openjdk-devel` when JDK tooling is missing.

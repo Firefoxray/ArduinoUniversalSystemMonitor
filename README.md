@@ -42,10 +42,10 @@ This project keeps one runtime architecture:
 
 ## Fedora / Debian / Linux Mint install
 
-### Fedora
+### Fedora 44
 
 ```bash
-sudo dnf install -y git python3 python3-pip java-25-openjdk java-25-openjdk-devel arduino-cli socat
+sudo dnf install -y git
 
 git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git
 cd ArduinoUniversalSystemMonitor
@@ -53,6 +53,10 @@ cd ArduinoUniversalSystemMonitor
 chmod +x fedora_easy_setup.sh
 ./fedora_easy_setup.sh
 ```
+
+The Fedora helper installs the Fedora 44 system packages with DNF, then installs
+`arduino-cli` to `~/.local/bin` with Arduino's official installer. The CLI is not
+requested from DNF.
 
 Generic installer path (also valid on Fedora):
 
@@ -76,6 +80,8 @@ cd ArduinoUniversalSystemMonitor
 
 Notes:
 - `./install.sh` handles distro detection and service creation.
+- If you choose to flash boards and `arduino-cli` is missing, the installer uses
+  the same official Arduino installer and user-local path on supported Linux distributions.
 - GUI tools are optional; headless deployments can skip GUI launch commands.
 - Linux Mint users can use the same Debian package/install path.
 
@@ -193,7 +199,7 @@ The monitor runtime/service does not require these commands to run.
 
 - Linux-focused project. Legacy Windows files remain under `legacy/Windows/` for reference.
 - Serial permission changes can require logout/login.
-- Fedora remains a primary desktop target; Debian instructions are now documented for the same runtime path.
+- Fedora 44 remains a primary desktop target; Debian instructions are documented for the same runtime path.
 
 ## Remote actions (advanced / optional in v12.0 Beta)
 

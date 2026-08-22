@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../lib/project_paths.sh"
+source "$SCRIPT_DIR/../../lib/arduino_cli.sh"
 PROJECT_DIR="$(resolve_project_dir "${PROJECT_DIR:-$SCRIPT_DIR/..}" "${BASH_SOURCE[0]}")"
 MONITOR_LOCAL_CONFIG_PATH="$(monitor_local_config_path "$PROJECT_DIR")"
 
@@ -69,54 +70,6 @@ echo "==== Ray Co Arduino Auto Flasher $APP_VERSION ===="
 echo "Program mode profile: $UASM_PROGRAM_MODE"
 
 cd "$PROJECT_DIR"
-
-ensure_arduino_cli() {
-    local local_bin_dir="$HOME/.local/bin"
-    local local_cli="$local_bin_dir/arduino-cli"
-    local tmp_dir=""
-
-    export PATH="$local_bin_dir:$PATH"
-
-    if command -v arduino-cli >/dev/null 2>&1; then
-        echo "arduino-cli already installed."
-        return 0
-    fi
-
-    if [[ -x "$local_cli" ]]; then
-        echo "arduino-cli already exists at $local_cli; adding $local_bin_dir to PATH for this run."
-        return 0
-    fi
-
-    echo "arduino-cli not found. Installing..."
-    mkdir -p "$local_bin_dir"
-    tmp_dir="$(mktemp -d)"
-
-    if curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$tmp_dir" sh; then
-        if [[ ! -x "$tmp_dir/arduino-cli" ]]; then
-            echo "arduino-cli installer completed, but no binary was produced in $tmp_dir."
-            rm -rf "$tmp_dir"
-            echo "Failed to install arduino-cli automatically."
-            echo "Install it manually, then rerun this script."
-            exit 1
-        fi
-
-        install -m 755 "$tmp_dir/arduino-cli" "$local_cli.new"
-        mv -f "$local_cli.new" "$local_cli"
-        rm -rf "$tmp_dir"
-        echo "arduino-cli installed to $local_bin_dir"
-    else
-        rm -rf "$tmp_dir"
-        echo "Failed to install arduino-cli automatically."
-        echo "Install it manually, then rerun this script."
-        exit 1
-    fi
-
-    if ! command -v arduino-cli >/dev/null 2>&1; then
-        echo "arduino-cli still not found after install."
-        echo "Add $local_bin_dir to your PATH and try again."
-        exit 1
-    fi
-}
 
 ensure_arduino_cores() {
     if ! arduino-cli core list | grep -q '^arduino:avr'; then
