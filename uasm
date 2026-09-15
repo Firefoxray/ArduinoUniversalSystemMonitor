@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve this launcher through symlinks so ~/.local/bin/uasm can safely point
+# back to the repository copy on every machine.
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+  LINK_TARGET="$(readlink "$SCRIPT_SOURCE")"
+  if [[ "$LINK_TARGET" = /* ]]; then
+    SCRIPT_SOURCE="$LINK_TARGET"
+  else
+    SCRIPT_SOURCE="$SOURCE_DIR/$LINK_TARGET"
+  fi
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 REPO_DIR="${UASM_REPO_DIR:-$SCRIPT_DIR}"
 RUNTIME_SCRIPT="$REPO_DIR/UniversalArduinoMonitor.py"
 
@@ -12,11 +24,21 @@ if [[ ! -f "$RUNTIME_SCRIPT" ]]; then
   exit 2
 fi
 
+# Keep the historical launcher names as lightweight aliases to one canonical
+# implementation. The invoked basename is preserved even when this file is
+# reached through a symlink.
+case "$(basename "$0")" in
+  uasm-fetch|uasmfetch|rayfetch)
+    set -- fetch "$@"
+    ;;
+  uasm-update)
+    set -- update "$@"
+    ;;
+esac
+
 if [[ "$#" -eq 0 ]]; then
   echo "Use 'uasm help' for a command list."
-  exec python3 "$RUNTIME_SCRIPT" help
+  set -- help
 fi
-if [[ "${1:-}" == "help" ]]; then
-  exec python3 "$RUNTIME_SCRIPT" help
-fi
-exec python3 "$RUNTIME_SCRIPT" "$@"
+
+exec /usr/bin/env python3 "$RUNTIME_SCRIPT" "$@"
