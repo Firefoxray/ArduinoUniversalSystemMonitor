@@ -18,6 +18,10 @@ have_command() {
     command -v "$1" >/dev/null 2>&1
 }
 
+service_installed() {
+    systemctl cat "$SERVICE_NAME" >/dev/null 2>&1
+}
+
 detect_distro() {
     if [[ -f /etc/fedora-release ]]; then
         DISTRO="fedora"
@@ -344,7 +348,7 @@ fi
 fix_repo_ownership
 
 echo "[7/7] Checking monitor service..."
-if systemctl list-unit-files --plain --no-legend --type=service 2>/dev/null | grep -q "^$SERVICE_NAME"; then
+if service_installed; then
     sudo systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true
     sudo systemctl restart "$SERVICE_NAME"
 else
@@ -360,6 +364,6 @@ echo "Git changes pulled: $GIT_UPDATED"
 echo "Virtual environment rebuilt: $VENV_REBUILT"
 echo "Service: $SERVICE_NAME"
 echo
-if systemctl list-unit-files --plain --no-legend --type=service 2>/dev/null | grep -q "^$SERVICE_NAME"; then
+if service_installed; then
     sudo systemctl status "$SERVICE_NAME" --no-pager || true
 fi
