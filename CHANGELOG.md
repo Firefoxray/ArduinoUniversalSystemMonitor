@@ -1,7 +1,11 @@
 ## Unreleased
-- Fixed Fedora 44 easy setup by removing the unavailable `arduino-cli` DNF package dependency.
-- Added one shared Arduino CLI bootstrapper that uses Arduino's official installer and places the verified binary in `~/.local/bin` for Fedora and other supported Linux install flows.
-- Updated Fedora documentation to make Fedora 44 support and the non-DNF Arduino CLI installation path explicit.
+
+## v12.1 - 2026-09-15
+- Promoted Arduino Universal System Monitor from the 12.0.x Beta line to stable `v12.1` across the shared `VERSION` source, README, Python/Java version consumers, and all generated Arduino firmware version headers.
+- Added Fedora 45 as the current tested Fedora desktop target and installed Fedora-native `python3-psutil` and `python3-pyserial` dependencies so the systemd monitor service survives Python changes across Fedora upgrades.
+- Added Fedora runtime dependency verification and documented recovery for `ModuleNotFoundError` failures after a Fedora major-version upgrade.
+- Fixed Fedora Arduino CLI setup by using the shared official Arduino installer/bootstrap path instead of relying on an unavailable Fedora DNF package.
+- Restored the project screenshot gallery to the GitHub README and synchronized R4, R3 2.8/3.5, and Mega 2.8/3.5 firmware display version text to `v12.1`.
 
 ## v12.0.1 Beta - 2026-04-26
 - Updated the Java Control Center launcher/runtime detection to prefer Java 25 from PATH, JAVA_HOME, and common `/usr/lib/jvm` locations (including Fedora 44 defaults), while keeping Java 21 as an optional fallback.
