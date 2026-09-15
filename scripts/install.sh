@@ -84,18 +84,18 @@ install_system_packages() {
 
     case "$DISTRO" in
         fedora)
-            sudo dnf install -y python3 python3-pip python3-virtualenv git curl socat lm_sensors pciutils upower
+            sudo dnf install -y python3 python3-pip python3-virtualenv python3-psutil python3-pyserial git curl socat lm_sensors pciutils upower
             ;;
         debian)
             sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git curl socat lm-sensors pciutils upower
+            sudo apt install -y python3 python3-pip python3-venv python3-psutil python3-serial git curl socat lm-sensors pciutils upower
             ;;
         arch)
-            sudo pacman -Sy --noconfirm python python-pip git curl socat lm_sensors pciutils upower
+            sudo pacman -Sy --noconfirm python python-pip python-psutil python-pyserial git curl socat lm_sensors pciutils upower
             ;;
         *)
             echo "Unsupported distro."
-            echo "Please manually install: python3, python3-pip, git, curl, socat, lm-sensors, pciutils, upower"
+            echo "Please manually install: python3, python3-pip, psutil, pyserial, git, curl, socat, lm-sensors, pciutils, upower"
             exit 1
             ;;
     esac
@@ -107,6 +107,11 @@ install_system_packages() {
 
     if ! have_command python3; then
         echo "Error: python3 is still not available after package installation."
+        exit 1
+    fi
+
+    if ! "$PYTHON_BIN" -c 'import psutil, serial' >/dev/null 2>&1; then
+        echo "Error: the system Python runtime cannot import psutil and/or pyserial."
         exit 1
     fi
 }
@@ -146,11 +151,18 @@ run_pip_user_install() {
 }
 
 install_python_packages() {
-    echo "[3/8] Installing Python packages..."
+    echo "[3/8] Verifying Python packages..."
 
     cd "$PROJECT_DIR"
-    configure_pip_flags
 
+    # Core/service dependencies are installed by the distro package manager so
+    # Fedora/Debian/Arch Python upgrades keep the systemd runtime intact.
+    if "$PYTHON_BIN" -c 'import psutil, serial' >/dev/null 2>&1; then
+        echo "System Python runtime dependencies are available."
+        return 0
+    fi
+
+    configure_pip_flags
     if [ -f requirements.txt ]; then
         if run_pip_user_install -r requirements.txt; then
             echo "Python packages installed to the user site-packages directory."
@@ -300,46 +312,14 @@ install_cli_launchers() {
 
     local user_bin_dir="$INSTALL_HOME/.local/bin"
     local launchers=(uasm uasm-fetch uasmfetch rayfetch uasm-update)
+    local launcher
 
     sudo -u "$INSTALL_USER" mkdir -p "$user_bin_dir"
-    for launcher in "${launchers[@]}"; do
-        if [ ! -f "$PROJECT_DIR/$launcher" ]; then
-            continue
-        fi
 
-        local launcher_target="$user_bin_dir/$launcher"
-        local python_cmd="exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py")"
-        case "$launcher" in
-            uasm)
-                sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if [[ \"\$#\" -eq 0 ]]; then
-  echo \"Use 'uasm help' for a command list.\"
-  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
-fi
-if [[ \"\${1:-}\" == \"help\" ]]; then
-  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
-fi
-$python_cmd \"\$@\"
-LAUNCHER"
-                ;;
-            uasm-fetch|uasmfetch|rayfetch)
-                sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-$python_cmd fetch \"\$@\"
-LAUNCHER"
-                ;;
-            uasm-update)
-                sudo -u "$INSTALL_USER" bash -lc "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-$python_cmd update \"\$@\"
-LAUNCHER"
-                ;;
-        esac
-        sudo -u "$INSTALL_USER" chmod +x "$launcher_target"
+    # All command names resolve to the same symlink-safe canonical launcher.
+    # uasm dispatches aliases based on the invoked basename.
+    for launcher in "${launchers[@]}"; do
+        sudo -u "$INSTALL_USER" ln -sfn "$PROJECT_DIR/uasm" "$user_bin_dir/$launcher"
     done
 
     if ! sudo -u "$INSTALL_USER" bash -lc 'echo "$PATH"' | tr ':' '\n' | grep -qx "$user_bin_dir"; then
@@ -378,8 +358,8 @@ finish_message() {
     echo "  sudo systemctl restart arduino-monitor"
     echo "  sudo systemctl status arduino-monitor"
     echo
-    echo "Update later with:"
-    echo "  cd $PROJECT_DIR && ./scripts/update.sh"
+    echo "Update/repair later with:"
+    echo "  uasm update"
     echo
     echo "Uninstall later with:"
     echo "  cd $PROJECT_DIR && ./scripts/uninstall_monitor.sh"
