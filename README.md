@@ -1,8 +1,8 @@
-# Arduino Universal System Monitor (v12.0.1 Beta)
+# Arduino Universal System Monitor (v12.1)
 
 A Linux system monitor that sends live PC stats to Arduino touchscreen dashboards.
 
-**Current version:** `v12.0.1 Beta` (shared via `VERSION`).
+**Current version:** `v12.1` (shared via `VERSION`).
 
 - **Main runtime (both Fedora + Debian):** `UniversalArduinoMonitor.py`.
 - **Service path:** `arduino-monitor.service` runs the same Python runtime in background.
@@ -232,6 +232,6 @@ The monitor runtime/service does not require these commands to run.
 - Serial permission changes can require logout/login.
 - Fedora 45 is the current tested desktop target; Fedora 44 remains supported for existing installs, and Debian uses the same runtime path.
 
-## Remote actions (advanced / optional in v12.0 Beta)
+## Remote actions (advanced / optional in v12.1)
 
 The Control Center includes a **Remote / CLI actions panel** for predefined actions (update, flash, service control, discovery debug), runnable locally or over SSH profiles.
