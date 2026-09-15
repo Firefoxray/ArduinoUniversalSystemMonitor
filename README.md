@@ -14,6 +14,24 @@ A Linux system monitor that sends live PC stats to Arduino touchscreen dashboard
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/quad1.JPEG" alt="Arduino Universal System Monitor hardware dashboards" width="900">
+</p>
+
+<p align="center">
+  <img src="screenshots/controlcenter1.png" alt="UASM Control Center" width="440">
+  <img src="screenshots/arduinoPreview1.png" alt="Arduino preview" width="440">
+</p>
+
+<p align="center">
+  <img src="screenshots/home1.JPEG" alt="Arduino dashboard home screen" width="440">
+  <img src="screenshots/graph1.JPEG" alt="Arduino dashboard graph screen" width="440">
+</p>
+
+---
+
 ## Unified architecture
 
 This project keeps one runtime architecture:
@@ -42,7 +60,9 @@ This project keeps one runtime architecture:
 
 ## Fedora / Debian / Linux Mint install
 
-### Fedora 44
+### Fedora 45
+
+Fedora 45 is the current tested Fedora desktop target. Fedora 44 remains supported for existing installations.
 
 ```bash
 sudo dnf install -y git
@@ -54,9 +74,20 @@ chmod +x fedora_easy_setup.sh
 ./fedora_easy_setup.sh
 ```
 
-The Fedora helper installs the Fedora 44 system packages with DNF, then installs
-`arduino-cli` to `~/.local/bin` with Arduino's official installer. The CLI is not
-requested from DNF.
+The Fedora helper installs the Fedora system packages with DNF, including native
+`python3-psutil` and `python3-pyserial` packages used by the systemd monitor service.
+It then installs `arduino-cli` to `~/.local/bin` with Arduino's official installer;
+`arduino-cli` is not requested from DNF.
+
+If a Fedora major-version upgrade leaves the monitor failing with an error such as
+`ModuleNotFoundError: No module named 'serial'`, restore the system Python dependencies
+and restart the service:
+
+```bash
+sudo dnf install -y python3-pyserial python3-psutil
+sudo systemctl reset-failed arduino-monitor.service
+sudo systemctl restart arduino-monitor.service
+```
 
 Generic installer path (also valid on Fedora):
 
@@ -199,7 +230,7 @@ The monitor runtime/service does not require these commands to run.
 
 - Linux-focused project. Legacy Windows files remain under `legacy/Windows/` for reference.
 - Serial permission changes can require logout/login.
-- Fedora 44 remains a primary desktop target; Debian instructions are documented for the same runtime path.
+- Fedora 45 is the current tested desktop target; Fedora 44 remains supported for existing installs, and Debian uses the same runtime path.
 
 ## Remote actions (advanced / optional in v12.0 Beta)
 
