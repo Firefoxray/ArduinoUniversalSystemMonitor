@@ -11,6 +11,8 @@ PYTHON_BIN="$VENV_DIR/bin/python3"
 PIP_BIN="$VENV_DIR/bin/pip"
 REPO_USER=""
 REPO_GROUP=""
+GIT_UPDATED=0
+VENV_REBUILT=0
 
 have_command() {
     command -v "$1" >/dev/null 2>&1
@@ -61,6 +63,34 @@ install_missing_prereqs() {
     fi
 }
 
+ensure_system_runtime_dependencies() {
+    detect_distro
+
+    if /usr/bin/env python3 -c 'import psutil, serial' >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "Core Python runtime dependencies are missing; attempting repair for $DISTRO..."
+    case "$DISTRO" in
+        fedora)
+            sudo dnf install -y python3-psutil python3-pyserial
+            ;;
+        debian)
+            sudo apt update
+            sudo apt install -y python3-psutil python3-serial
+            ;;
+        arch)
+            sudo pacman -Sy --noconfirm python-psutil python-pyserial
+            ;;
+        *)
+            echo "Unable to auto-repair psutil/pyserial on this distro."
+            return 1
+            ;;
+    esac
+
+    /usr/bin/env python3 -c 'import psutil, serial'
+}
+
 refresh_python_paths() {
     VENV_DIR="$PROJECT_DIR/.venv"
     PYTHON_BIN="$VENV_DIR/bin/python3"
@@ -69,6 +99,7 @@ refresh_python_paths() {
 
 venv_needs_rebuild() {
     if [[ ! -d "$VENV_DIR" ]]; then
+        echo "Virtual environment is missing."
         return 0
     fi
 
@@ -77,15 +108,23 @@ venv_needs_rebuild() {
         return 0
     fi
 
-    if [[ -f "$PIP_BIN" ]]; then
-        local pip_shebang
-        pip_shebang="$(head -n 1 "$PIP_BIN" 2>/dev/null || true)"
-        if [[ "$pip_shebang" == '#!'* ]]; then
-            local pip_python="${pip_shebang#\#!}"
-            if [[ "$pip_python" != "$PYTHON_BIN" ]]; then
-                echo "Detected relocated virtual environment (pip points to $pip_python)."
-                return 0
-            fi
+    if [[ ! -x "$PIP_BIN" ]]; then
+        echo "Detected missing venv pip launcher at $PIP_BIN"
+        return 0
+    fi
+
+    if ! "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+        echo "Detected venv interpreter without a working pip module."
+        return 0
+    fi
+
+    local pip_shebang
+    pip_shebang="$(head -n 1 "$PIP_BIN" 2>/dev/null || true)"
+    if [[ "$pip_shebang" == '#!'* ]]; then
+        local pip_python="${pip_shebang#\#!}"
+        if [[ "$pip_python" != "$PYTHON_BIN" ]]; then
+            echo "Detected relocated virtual environment (pip points to $pip_python)."
+            return 0
         fi
     fi
 
@@ -98,7 +137,15 @@ rebuild_venv_if_needed() {
         rm -rf "$VENV_DIR"
         run_as_repo_user "python3 -m venv $(printf '%q' "$VENV_DIR")"
         refresh_python_paths
+        VENV_REBUILT=1
     fi
+
+    if ! "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+        echo "pip is still unavailable in the venv; trying ensurepip..."
+        run_as_repo_user "$(printf '%q' "$PYTHON_BIN") -m ensurepip --upgrade"
+    fi
+
+    "$PYTHON_BIN" -m pip --version >/dev/null
 }
 
 detect_repo_owner() {
@@ -117,10 +164,6 @@ detect_repo_owner() {
         REPO_GROUP="$REPO_USER"
     fi
 }
-
-JAVA_HELPER="$PROJECT_DIR/lib/java_control_center.sh"
-# shellcheck source=lib/java_control_center.sh
-source "$JAVA_HELPER"
 
 run_as_repo_user() {
     local command_text="$1"
@@ -184,48 +227,37 @@ refresh_cli_launchers() {
     fi
 
     "${run_as_user_cmd[@]}" "mkdir -p $(printf '%q' "$user_bin")"
-    for launcher in "${launchers[@]}"; do
-        [[ -f "$PROJECT_DIR/$launcher" ]] || continue
 
+    # One canonical launcher lives in the repo. Historical command names are
+    # symlinks to it, and the launcher dispatches based on argv[0]. This avoids
+    # duplicated generated shell scripts and survives repo moves cleanly.
+    for launcher in "${launchers[@]}"; do
         local launcher_target="$user_bin/$launcher"
-        local python_cmd="exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py")"
-        case "$launcher" in
-            uasm)
-                "${run_as_user_cmd[@]}" "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if [[ \"\$#\" -eq 0 ]]; then
-  echo \"Use 'uasm help' for a command list.\"
-  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
-fi
-if [[ \"\${1:-}\" == \"help\" ]]; then
-  exec /usr/bin/env python3 $(printf '%q' "$PROJECT_DIR/UniversalArduinoMonitor.py") help
-fi
-$python_cmd \"\$@\"
-LAUNCHER"
-                ;;
-            uasm-fetch|uasmfetch|rayfetch)
-                "${run_as_user_cmd[@]}" "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-$python_cmd fetch \"\$@\"
-LAUNCHER"
-                ;;
-            uasm-update)
-                "${run_as_user_cmd[@]}" "cat > $(printf '%q' "$launcher_target") <<'LAUNCHER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-$python_cmd update \"\$@\"
-LAUNCHER"
-                ;;
-        esac
-        "${run_as_user_cmd[@]}" "chmod +x $(printf '%q' "$launcher_target")"
+        "${run_as_user_cmd[@]}" "ln -sfn $(printf '%q' "$PROJECT_DIR/uasm") $(printf '%q' "$launcher_target")"
     done
+
+    if ! sudo -u "$user_name" bash -lc 'echo "$PATH"' | tr ':' '\n' | grep -qx "$user_bin"; then
+        local shell_rc="$user_home/.bashrc"
+        if [[ "${SHELL:-}" == *zsh ]]; then
+            shell_rc="$user_home/.zshrc"
+        fi
+        if [[ -w "$shell_rc" || ! -e "$shell_rc" ]]; then
+            echo '' >> "$shell_rc"
+            echo '# ArduinoUniversalSystemMonitor CLI aliases' >> "$shell_rc"
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_rc"
+            chown "$user_name":"$user_name" "$shell_rc" 2>/dev/null || true
+            echo "Added ~/.local/bin to PATH in $shell_rc"
+        else
+            echo "Could not auto-update PATH in $shell_rc. Add this manually:"
+            echo '  export PATH="$HOME/.local/bin:$PATH"'
+        fi
+    fi
 }
 
 echo "==== Ray Co Arduino Monitor Updater ===="
 
 install_missing_prereqs
+ensure_system_runtime_dependencies
 
 if [[ ! -d "$PROJECT_DIR/.git" ]]; then
     echo "Warning: $PROJECT_DIR is not a git repository."
@@ -244,38 +276,47 @@ fi
 detect_repo_owner
 cd "$PROJECT_DIR"
 
+JAVA_HELPER="$PROJECT_DIR/lib/java_control_center.sh"
+if [[ -f "$JAVA_HELPER" ]]; then
+    # shellcheck source=lib/java_control_center.sh
+    source "$JAVA_HELPER"
+fi
+
 echo "[1/7] Checking GitHub for new changes..."
 if git_remote_has_updates main; then
     echo "Updates found on origin/main. Pulling latest changes from GitHub..."
     run_as_repo_user "git pull origin main"
-    run_as_repo_user "printf '%s\n' main > $(printf '%q' "$UPDATE_SOURCE_FILE")"
+    GIT_UPDATED=1
     fix_repo_ownership
 else
     status=$?
     if [[ $status -eq 2 ]]; then
         exit 1
     fi
-    echo "Project is already up to date on origin/main. Nothing to pull or reinstall."
-    run_as_repo_user "printf '%s\n' main > $(printf '%q' "$UPDATE_SOURCE_FILE")"
-    exit 0
+    echo "Project is already up to date on origin/main. Continuing with health/repair checks."
 fi
+run_as_repo_user "printf '%s\n' main > $(printf '%q' "$UPDATE_SOURCE_FILE")"
 
-echo "[2/7] Ensuring Python virtual environment exists..."
+echo "[2/7] Ensuring Python virtual environment is healthy..."
 rebuild_venv_if_needed
 
-echo "[3/7] Updating Python packaging tools..."
-run_as_repo_user "$(printf '%q' "$PYTHON_BIN") -m pip install --upgrade pip"
+echo "[3/7] Verifying Python packaging tools..."
+if [[ "$VENV_REBUILT" -eq 1 ]]; then
+    run_as_repo_user "$(printf '%q' "$PYTHON_BIN") -m pip install --upgrade pip"
+else
+    "$PYTHON_BIN" -m pip --version
+fi
 
 echo "[4/7] Installing/updating Python requirements..."
 if [[ -f requirements.txt ]]; then
-    run_as_repo_user "$(printf '%q' "$PIP_BIN") install -r requirements.txt"
-    echo "Requirements updated."
+    run_as_repo_user "$(printf '%q' "$PYTHON_BIN") -m pip install -r requirements.txt"
+    echo "Requirements verified."
 else
-    run_as_repo_user "$(printf '%q' "$PIP_BIN") install psutil pyserial"
-    echo "requirements.txt missing, installed fallback dependencies (psutil, pyserial)."
+    run_as_repo_user "$(printf '%q' "$PYTHON_BIN") -m pip install psutil pyserial"
+    echo "requirements.txt missing, verified fallback dependencies (psutil, pyserial)."
 fi
 
-echo "[5/7] Making sure scripts are executable..."
+echo "[5/7] Refreshing scripts and CLI launchers..."
 chmod +x UniversalArduinoMonitor.py scripts/UniversalArduinoMonitor.py 2>/dev/null || true
 chmod +x uasm uasm-fetch uasmfetch rayfetch uasm-update 2>/dev/null || true
 chmod +x install.sh scripts/install.sh 2>/dev/null || true
@@ -288,23 +329,37 @@ chmod +x UniversalMonitorControlCenter.sh scripts/UniversalMonitorControlCenter.
 chmod +x install_control_center_desktop.sh scripts/install_control_center_desktop.sh 2>/dev/null || true
 refresh_cli_launchers
 
-echo "[6/7] Rebuilding Java Control Center artifacts..."
-if [[ -f debug_tools/FakeArduinoDisplay/gradlew ]]; then
-    chmod +x debug_tools/FakeArduinoDisplay/gradlew
-    build_control_center
+echo "[6/7] Checking Control Center artifacts..."
+CONTROL_CENTER_JAR="$PROJECT_DIR/debug_tools/FakeArduinoDisplay/build/libs/UniversalMonitorControlCenter.jar"
+if [[ "$GIT_UPDATED" -eq 1 || ! -f "$CONTROL_CENTER_JAR" ]]; then
+    if [[ -f debug_tools/FakeArduinoDisplay/gradlew && -f "$JAVA_HELPER" ]]; then
+        chmod +x debug_tools/FakeArduinoDisplay/gradlew
+        build_control_center
+    else
+        echo "Skipping Java rebuild because the Control Center build files are unavailable."
+    fi
 else
-    echo "Skipping Java rebuild because debug_tools/FakeArduinoDisplay/gradlew is missing."
+    echo "No Control Center source update detected and existing jar is present; skipping rebuild."
 fi
 fix_repo_ownership
 
-echo "[7/7] Restarting monitor service..."
-sudo systemctl restart "$SERVICE_NAME"
+echo "[7/7] Checking monitor service..."
+if systemctl list-unit-files --plain --no-legend --type=service 2>/dev/null | grep -q "^$SERVICE_NAME"; then
+    sudo systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true
+    sudo systemctl restart "$SERVICE_NAME"
+else
+    echo "$SERVICE_NAME is not installed on this machine; skipping service restart."
+fi
 
 echo
-echo "==== UPDATE COMPLETE ===="
+echo "==== UPDATE / REPAIR COMPLETE ===="
 echo "Repo: $PROJECT_DIR"
 echo "Repo owner used for git/build steps: $REPO_USER"
 echo "Virtual environment: $VENV_DIR"
+echo "Git changes pulled: $GIT_UPDATED"
+echo "Virtual environment rebuilt: $VENV_REBUILT"
 echo "Service: $SERVICE_NAME"
 echo
-sudo systemctl status "$SERVICE_NAME" --no-pager
+if systemctl list-unit-files --plain --no-legend --type=service 2>/dev/null | grep -q "^$SERVICE_NAME"; then
+    sudo systemctl status "$SERVICE_NAME" --no-pager || true
+fi

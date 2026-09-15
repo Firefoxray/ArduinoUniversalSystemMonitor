@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="${UASM_REPO_DIR:-$SCRIPT_DIR}"
-RUNTIME_SCRIPT="$REPO_DIR/UniversalArduinoMonitor.py"
-
-if [[ ! -f "$RUNTIME_SCRIPT" ]]; then
-  echo "Unable to locate UniversalArduinoMonitor.py."
-  echo "Expected at: $RUNTIME_SCRIPT"
-  echo "Set UASM_REPO_DIR to your repo path or reinstall with install.sh."
-  exit 2
-fi
-
-exec python3 "$RUNTIME_SCRIPT" update "$@"
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+  LINK_TARGET="$(readlink "$SCRIPT_SOURCE")"
+  [[ "$LINK_TARGET" = /* ]] && SCRIPT_SOURCE="$LINK_TARGET" || SCRIPT_SOURCE="$SOURCE_DIR/$LINK_TARGET"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+exec "$SCRIPT_DIR/uasm" update "$@"
