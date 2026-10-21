@@ -18,6 +18,8 @@ from typing import Any
 
 import psutil
 
+from .hardware import GPU, ProcessRow, read_gpu, top_processes, uptime_seconds
+
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVICE_NAME = "arduino-monitor.service"
@@ -202,6 +204,11 @@ class Snapshot:
     per_cpu: tuple[float, ...]
     hostname: str
     os_name: str
+    gpu: GPU
+    uptime_seconds: int
+    top_processes: tuple[ProcessRow, ...]
+    root_used_percent: float | None
+    storage_label: str
 
 
 class TelemetrySampler:
@@ -212,6 +219,13 @@ class TelemetrySampler:
         self._last_net: tuple[int, int] | None = None
         psutil.cpu_percent(interval=None)
         psutil.cpu_percent(interval=None, percpu=True)
+        self._extras_time = 0.0
+        self._gpu = GPU()
+        self._processes: tuple[ProcessRow, ...] = ()
+        self._disk_percent: float | None = None
+        self._disk_label = "Storage unavailable"
+        # Prime process CPU counters; subsequent nonblocking samples have deltas.
+        top_processes(1)
 
     def sample(self) -> Snapshot:
         current_time = time.monotonic()
@@ -224,6 +238,17 @@ class TelemetrySampler:
         self._last_net = (net.bytes_recv, net.bytes_sent)
         self._last_time = current_time
         memory = psutil.virtual_memory()
+        if current_time - self._extras_time >= 4.0:
+            self._gpu = read_gpu()
+            self._processes = top_processes(6)
+            try:
+                usage = psutil.disk_usage("/")
+                self._disk_percent = float(usage.percent)
+                self._disk_label = f"/ · {usage.used / 1024**3:.0f} / {usage.total / 1024**3:.0f} GiB"
+            except (OSError, PermissionError):
+                self._disk_percent = None
+                self._disk_label = "Root filesystem unavailable"
+            self._extras_time = current_time
         return Snapshot(
             cpu=psutil.cpu_percent(interval=None),
             ram=float(memory.percent),
@@ -235,6 +260,11 @@ class TelemetrySampler:
             per_cpu=tuple(psutil.cpu_percent(interval=None, percpu=True)),
             hostname=platform.node(),
             os_name=platform.platform(),
+            gpu=self._gpu,
+            uptime_seconds=uptime_seconds(),
+            top_processes=self._processes,
+            root_used_percent=self._disk_percent,
+            storage_label=self._disk_label,
         )
 
 
