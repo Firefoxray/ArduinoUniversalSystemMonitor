@@ -3,6 +3,26 @@
 **Status: Qt development preview; NOT the v13.0 stable release yet.**
 The main runtime and Arduino firmware remain on v12.1 while migration happens.
 
+## Safest preview: separate Git worktree
+
+Keep the v12.1 checkout and its running systemd service untouched:
+
+~~~bash
+cd ~/ArduinoUniversalSystemMonitor
+git fetch origin
+git worktree add -b v13-qt-preview ../ArduinoUniversalSystemMonitor-v13 origin/feature/v13-qt-control-center-foundation
+cd ../ArduinoUniversalSystemMonitor-v13
+sudo dnf install -y python3-pyside6 python3-psutil python3-pyserial
+./uasm gui
+# The standalone monitoring window:
+./uasm dashboard
+~~~
+
+This preview checkout has its **own** ignored local config and does not change
+the service running from the original v12.1 checkout. Do not assume that saving
+Wi-Fi preferences in the worktree updates the live sender. Do not run the v13
+updater/installer against your production service while testing the GUI.
+
 ## Run the preview on a graphical Linux desktop
 
 ~~~bash
