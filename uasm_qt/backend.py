@@ -168,13 +168,25 @@ def run_doctor(root: Path = ROOT) -> str:
 
 
 def _temperature() -> float | None:
+    """Return a CPU-specific sensor only; never mislabel GPU/NVMe heat as CPU."""
     try:
-        for sensors in psutil.sensors_temperatures().values():
-            for sensor in sensors:
-                if sensor.current is not None and 0 <= sensor.current <= 150:
-                    return float(sensor.current)
+        all_sensors = psutil.sensors_temperatures()
     except (AttributeError, OSError):
-        pass
+        return None
+    cpu_chips = ("coretemp", "k10temp", "zenpower", "cpu_thermal", "x86_pkg_temp")
+    for chip, sensors in all_sensors.items():
+        if not any(name in chip.lower() for name in cpu_chips):
+            continue
+        ordered = sorted(
+            sensors,
+            key=lambda sensor: not any(
+                word in str(sensor.label).lower()
+                for word in ("package", "tctl", "tdie")
+            )
+        )
+        for sensor in ordered:
+            if sensor.current is not None and 0 <= sensor.current <= 150:
+                return float(sensor.current)
     return None
 
 
