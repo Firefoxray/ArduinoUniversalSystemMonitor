@@ -366,14 +366,16 @@ class ControlCenter(QWidget):
     def overview(self):
         body, layout = page("Overview", "Live telemetry and device transport at a glance.")
         grid = QGridLayout()
-        self.metrics = [QLabel("—") for _ in range(4)]
+        self.metrics = [QLabel("—") for _ in range(8)]
         for i, (heading, metric) in enumerate(zip(
-            ("CPU usage", "RAM usage", "Network download", "Monitor service"), self.metrics,
+            ("CPU", "GPU", "RAM", "VRAM", "CPU temperature",
+             "GPU temperature", "Download", "Monitor service"), self.metrics,
         )):
             box, inner = card(heading)
-            metric.setObjectName("value")
+            inner.setContentsMargins(13, 10, 13, 10)
+            metric.setObjectName("compactValue")
             inner.addWidget(metric)
-            grid.addWidget(box, i // 2, i % 2)
+            grid.addWidget(box, i // 4, i % 4)
         layout.addLayout(grid)
         box, inner = card("Arduino devices · USB + Wi-Fi")
         self.board_line = text("Checking USB and scanning Wi-Fi…")
@@ -502,13 +504,24 @@ class ControlCenter(QWidget):
 
     def update_stats(self, snapshot):
         self.metrics[0].setText(f"{snapshot.cpu:.0f}%")
-        self.metrics[1].setText(f"{snapshot.ram:.0f}%")
-        self.metrics[2].setText(readable_rate(snapshot.down_bytes_per_sec))
+        self.metrics[1].setText("N/A" if snapshot.gpu.load is None else f"{snapshot.gpu.load:.0f}%")
+        self.metrics[2].setText(f"{snapshot.ram:.0f}%")
+        self.metrics[3].setText(
+            "N/A" if not snapshot.gpu.vram_total else
+            f"{100 * (snapshot.gpu.vram_used or 0) / snapshot.gpu.vram_total:.0f}%"
+        )
+        self.metrics[4].setText(
+            "N/A" if snapshot.temperature is None else f"{snapshot.temperature:.0f}°C"
+        )
+        self.metrics[5].setText(
+            "N/A" if snapshot.gpu.temperature is None else f"{snapshot.gpu.temperature:.0f}°C"
+        )
+        self.metrics[6].setText(readable_rate(snapshot.down_bytes_per_sec))
 
     def refresh_status(self):
         # This quick systemd query runs only every 12 seconds, not every frame.
         state, enabled = service_state()
-        self.metrics[3].setText(state)
+        self.metrics[7].setText(state)
         self.footer.setText(f"Monitor: {state} ({enabled})  •  Runtime: {version()}  •  Qt preview")
         self.refresh_devices()
 
