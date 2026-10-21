@@ -1,0 +1,40 @@
+name: Qt preview checks
+on:
+  push:
+    paths:
+      - "uasm_qt/**"
+      - "tests/test_qt_*.py"
+      - "requirements-qt.txt"
+      - "UniversalMonitorQt.sh"
+      - ".github/workflows/qt-preview.yml"
+  pull_request:
+    paths:
+      - "uasm_qt/**"
+      - "tests/test_qt_*.py"
+      - "requirements-qt.txt"
+      - "UniversalMonitorQt.sh"
+      - ".github/workflows/qt-preview.yml"
+jobs:
+  qt-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install optional Qt dependencies
+        run: python -m pip install -r requirements-qt.txt
+      - name: Compile and run backend regression tests
+        run: |
+          python -m compileall -q uasm_qt
+          python -m unittest discover -s tests -p 'test_qt_*.py' -v
+      - name: Install Linux Qt shared libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-cursor0
+      - name: Smoke test both Qt windows offscreen
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m uasm_qt --smoke
+          python -m uasm_qt --dashboard-only --smoke
