@@ -3,8 +3,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from uasm_qt.backend import ConfigError, ConfigStore, readable_rate, version
+from uasm_qt.backend import ConfigError, ConfigStore, readable_rate, version, _temperature
 
 
 class ConfigStoreTests(unittest.TestCase):
@@ -65,6 +67,20 @@ class ConfigStoreTests(unittest.TestCase):
     def test_rate_formatting(self):
         self.assertEqual(readable_rate(0), "0 B/s")
         self.assertEqual(readable_rate(1024**2), "1.0 MiB/s")
+
+    def test_temperature_ignores_non_cpu_sensors(self):
+        temp = lambda label, current: SimpleNamespace(label=label, current=current)
+        with patch("uasm_qt.backend.psutil.sensors_temperatures", return_value={
+            "amdgpu": [temp("junction", 85)],
+            "nvme": [temp("Composite", 46)],
+            "coretemp": [temp("Core 0", 54), temp("Package id 0", 49)],
+        }):
+            self.assertEqual(_temperature(), 49.0)
+        with patch("uasm_qt.backend.psutil.sensors_temperatures", return_value={
+            "amdgpu": [temp("edge", 45)],
+        }):
+            self.assertIsNone(_temperature())
+
 
 
 if __name__ == "__main__":
