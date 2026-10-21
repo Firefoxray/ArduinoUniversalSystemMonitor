@@ -5,13 +5,14 @@ import argparse
 import subprocess
 import sys
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QProcess, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtNetwork import QAbstractSocket, QTcpSocket
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QProgressBar, QScrollArea,
     QSpinBox, QStackedWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -22,21 +23,32 @@ from .backend import (
 )
 
 STYLE = """
-QWidget { background: #101722; color: #e8f0fa; font-family: "Noto Sans", "Segoe UI", sans-serif; font-size: 13px; }
-QFrame#sidebar { background: #152131; border-right: 1px solid #2e4159; }
-QFrame#card { background: #1a293a; border: 1px solid #304258; border-radius: 12px; }
-QLabel#heading { font-size: 24px; font-weight: bold; }
-QLabel#muted { color: #a1b4cb; }
-QLabel#value { font-size: 29px; font-weight: bold; color: white; }
-QPushButton { background: #293c53; border: 1px solid #40576e; border-radius: 8px; padding: 9px 12px; }
-QPushButton:hover { background: #36526d; }
-QPushButton#primary { background: #287db3; border-color: #4999d1; font-weight: bold; }
-QPushButton#nav { background: transparent; border: none; text-align: left; padding: 12px; }
-QPushButton#nav:checked { background: #285277; border-left: 3px solid #7bcaff; }
-QLineEdit, QSpinBox, QPlainTextEdit, QTableWidget { background: #121e2c; border: 1px solid #3a5068; border-radius: 7px; padding: 7px; }
-QHeaderView::section { background: #24374c; padding: 8px; border: none; }
+/* Neutral graphite theme with restrained silver/steel accents. */
+QWidget { background: #181c20; color: #e4e8eb; font-family: "Noto Sans", "Segoe UI", sans-serif; font-size: 13px; }
+QLabel, QCheckBox { background: transparent; }
+QFrame#sidebar { background: #20252b; border-right: 1px solid #3a424a; }
+QFrame#card { background: #242a30; border: 1px solid #3c454e; border-radius: 9px; }
+QLabel#heading { font-size: 23px; font-weight: 700; }
+QLabel#muted { color: #aeb8c1; }
+QLabel#value { font-size: 21px; font-weight: 700; color: #f4f5f6; }
+QLabel#compactValue { font-size: 19px; font-weight: 700; color: #f4f5f6; }
+QPushButton { background: #353e47; border: 1px solid #505b65; border-radius: 6px; padding: 8px 11px; }
+QPushButton:hover { background: #46535e; }
+QPushButton#primary { background: #596d7d; border-color: #8297a7; font-weight: 700; }
+QPushButton#primary:hover { background: #6d8395; }
+QPushButton#nav { background: transparent; border: none; text-align: left; padding: 11px; }
+QPushButton#nav:checked { background: #3b4752; border-left: 3px solid #a9becd; }
+QLineEdit, QSpinBox, QPlainTextEdit, QTableWidget {
+ background: #1c2228; border: 1px solid #46515a; border-radius: 5px; padding: 6px;
+ selection-background-color: #516577;
+}
+QHeaderView::section { background: #323b44; color: #e1e6eb; padding: 7px; border: none; }
+QTableWidget { gridline-color: #343d45; alternate-background-color: #242c33; }
 QScrollArea { border: none; }
+QProgressBar { background: #353d45; border: none; border-radius: 4px; text-align: center; min-height: 8px; max-height: 10px; }
+QProgressBar::chunk { background: #91a9b8; border-radius: 4px; }
 """
+
 
 
 def text(content, muted=False):
@@ -90,93 +102,177 @@ class Hub(QObject):
     def __init__(self):
         super().__init__()
         self.sampler = TelemetrySampler()
+        # GPU/psutil probing never blocks Qt's main/UI thread.
+        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="uasm-telemetry")
+        self.pending = None
         self.timer = QTimer(self)
         self.timer.setInterval(1300)
         self.timer.timeout.connect(self.poll)
+        self.completed = QTimer(self)
+        self.completed.setInterval(75)
+        self.completed.timeout.connect(self.collect)
 
     def poll(self):
+        if self.pending is None:
+            self.pending = self.pool.submit(self.sampler.sample)
+
+    def collect(self):
+        if self.pending is None or not self.pending.done():
+            return
+        job, self.pending = self.pending, None
         try:
-            self.sample.emit(self.sampler.sample())
+            self.sample.emit(job.result())
         except Exception as exc:
             self.error.emit(str(exc))
 
     def start(self):
+        self.completed.start()
         self.timer.start()
         QTimer.singleShot(100, self.poll)
 
 
 class History(QWidget):
+    """CPU + GPU graph with no giant decorative empty metric cards."""
     def __init__(self):
         super().__init__()
-        self.values = deque(maxlen=100)
-        self.setMinimumHeight(190)
+        self.cpu = deque(maxlen=100)
+        self.gpu = deque(maxlen=100)
+        self.setMinimumHeight(175)
 
-    def add(self, value):
-        self.values.append(max(0.0, min(100.0, value)))
+    def add(self, cpu, gpu):
+        self.cpu.append(max(0.0, min(100.0, float(cpu))))
+        self.gpu.append(None if gpu is None else max(0.0, min(100.0, float(gpu))))
         self.update()
 
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(self.rect()).adjusted(10, 10, -10, -14)
-        if rect.width() <= 0:
+        area = QRectF(self.rect()).adjusted(36, 12, -10, -22)
+        if area.width() <= 0 or area.height() <= 0:
             return
-        painter.setPen(QPen(QColor("#334b65"), 1))
-        for i in range(1, 4):
-            y = rect.top() + rect.height() * i / 4
-            painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
-        points = list(self.values)
-        if len(points) < 2:
-            return
-        painter.setPen(QPen(QColor("#6ecaff"), 2.5))
-        for i in range(1, len(points)):
-            x1 = rect.left() + rect.width() * (i - 1) / (len(points) - 1)
-            x2 = rect.left() + rect.width() * i / (len(points) - 1)
-            y1 = rect.bottom() - rect.height() * points[i - 1] / 100
-            y2 = rect.bottom() - rect.height() * points[i] / 100
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        painter.setPen(QPen(QColor("#45505a"), 1))
+        for i in range(5):
+            y = area.top() + area.height() * i / 4
+            painter.drawLine(QPointF(area.left(), y), QPointF(area.right(), y))
+            painter.setPen(QColor("#a5b1ba"))
+            painter.drawText(QPointF(1, y + 4), f"{100 - i * 25:>3}")
+            painter.setPen(QPen(QColor("#45505a"), 1))
+        for samples, color in ((self.cpu, "#b5c6d1"), (self.gpu, "#c2ae87")):
+            values = list(samples)
+            if len(values) < 2:
+                continue
+            painter.setPen(QPen(QColor(color), 2))
+            for i in range(1, len(values)):
+                if values[i] is None or values[i - 1] is None:
+                    continue
+                x1 = area.left() + area.width() * (i - 1) / 99
+                x2 = area.left() + area.width() * i / 99
+                y1 = area.bottom() - area.height() * values[i - 1] / 100
+                y2 = area.bottom() - area.height() * values[i] / 100
+                painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
 
 class DesktopMonitor(QWidget):
-    """Independent pop-out window sharing a single telemetry sampler."""
+    """Full monitoring workspace in a *separate* Qt window, shared sampler."""
     def __init__(self, hub):
         super().__init__()
         self.setWindowTitle("UASM • Desktop Monitor")
-        self.resize(900, 620)
-        outer = QVBoxLayout(self)
-        body, layout = page("Desktop Monitor", "Live statistics • separate Qt window")
-        outer.addWidget(scroll(body))
-        grid = QGridLayout()
-        self.cpu, self.ram, self.down, self.up = (QLabel("—") for _ in range(4))
-        for i, (title, metric) in enumerate((
-            ("CPU", self.cpu), ("Memory", self.ram),
-            ("Download", self.down), ("Upload", self.up),
+        self.resize(1040, 700)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(10)
+        title_row = QHBoxLayout()
+        heading = text("Desktop Monitor")
+        heading.setObjectName("heading")
+        title_row.addWidget(heading)
+        title_row.addStretch()
+        self.host = text("Sampling…", muted=True)
+        title_row.addWidget(self.host)
+        layout.addLayout(title_row)
+
+        # Eight small, information-rich meters instead of four giant cards.
+        self.values = {}
+        strip = QGridLayout()
+        strip.setHorizontalSpacing(9)
+        strip.setVerticalSpacing(8)
+        for index, key in enumerate((
+            "CPU", "GPU", "Memory", "VRAM", "CPU Temp", "GPU Temp", "Down", "Up",
         )):
-            box, inner = card(title)
-            metric.setObjectName("value")
+            frame = QFrame()
+            frame.setObjectName("card")
+            inner = QVBoxLayout(frame)
+            inner.setContentsMargins(12, 9, 12, 9)
+            inner.setSpacing(3)
+            inner.addWidget(text(key, muted=True))
+            metric = QLabel("—")
+            metric.setObjectName("compactValue")
             inner.addWidget(metric)
-            grid.addWidget(box, i // 2, i % 2)
-        layout.addLayout(grid)
-        box, inner = card("CPU history")
+            self.values[key] = metric
+            strip.addWidget(frame, index // 4, index % 4)
+        layout.addLayout(strip)
+
+        graph_box, graph_layout = card("Live load · CPU (silver)  /  GPU (sand)")
+        graph_layout.setContentsMargins(12, 9, 12, 7)
         self.graph = History()
-        inner.addWidget(self.graph)
-        layout.addWidget(box)
-        self.extra = text("Waiting for telemetry…", muted=True)
-        layout.addWidget(self.extra)
-        layout.addStretch()
+        graph_layout.addWidget(self.graph)
+        layout.addWidget(graph_box, 2)
+
+        lower = QGridLayout()
+        lower.setSpacing(9)
+        process_box, process_layout = card("Top processes")
+        self.process_table = QTableWidget(0, 3)
+        self.process_table.setHorizontalHeaderLabels(["Process", "CPU", "RAM"])
+        self.process_table.horizontalHeader().setStretchLastSection(True)
+        self.process_table.verticalHeader().hide()
+        self.process_table.setShowGrid(False)
+        self.process_table.setAlternatingRowColors(True)
+        self.process_table.setMinimumHeight(205)
+        process_layout.addWidget(self.process_table)
+        lower.addWidget(process_box, 0, 0)
+        summary_box, summary_layout = card("System & storage")
+        self.gpu_name = text("GPU: checking…", muted=True)
+        summary_layout.addWidget(self.gpu_name)
+        self.usage = text("RAM: —")
+        summary_layout.addWidget(self.usage)
+        self.uptime = text("Uptime: —")
+        summary_layout.addWidget(self.uptime)
+        self.root_disk = text("Storage: —")
+        summary_layout.addWidget(self.root_disk)
+        self.disk_progress = QProgressBar()
+        self.disk_progress.setRange(0, 100)
+        self.disk_progress.setTextVisible(False)
+        summary_layout.addWidget(self.disk_progress)
+        summary_layout.addStretch()
+        lower.addWidget(summary_box, 0, 1)
+        lower.setColumnStretch(0, 3)
+        lower.setColumnStretch(1, 2)
+        layout.addLayout(lower, 2)
         hub.sample.connect(self.update_stats)
 
-    def update_stats(self, snapshot):
-        self.cpu.setText(f"{snapshot.cpu:.0f}%")
-        self.ram.setText(f"{snapshot.ram:.0f}%")
-        self.down.setText(readable_rate(snapshot.down_bytes_per_sec))
-        self.up.setText(readable_rate(snapshot.up_bytes_per_sec))
-        self.graph.add(snapshot.cpu)
-        temperature = "unavailable" if snapshot.temperature is None else f"{snapshot.temperature:.0f}°C"
-        self.extra.setText(
-            f"{snapshot.hostname}  •  RAM {snapshot.used_gb:.1f}/{snapshot.total_gb:.1f} GiB"
-            f"  •  CPU temperature {temperature}  •  {len(snapshot.per_cpu)} logical threads"
+    def update_stats(self, data):
+        self.values["CPU"].setText(f"{data.cpu:.0f}%")
+        self.values["GPU"].setText("N/A" if data.gpu.load is None else f"{data.gpu.load:.0f}%")
+        self.values["Memory"].setText(f"{data.ram:.0f}%")
+        self.values["VRAM"].setText(
+            "N/A" if data.gpu.vram_total is None or not data.gpu.vram_total else
+            f"{100 * (data.gpu.vram_used or 0) / data.gpu.vram_total:.0f}%"
         )
+        self.values["CPU Temp"].setText("N/A" if data.temperature is None else f"{data.temperature:.0f} °C")
+        self.values["GPU Temp"].setText("N/A" if data.gpu.temperature is None else f"{data.gpu.temperature:.0f} °C")
+        self.values["Down"].setText(readable_rate(data.down_bytes_per_sec))
+        self.values["Up"].setText(readable_rate(data.up_bytes_per_sec))
+        self.graph.add(data.cpu, data.gpu.load)
+        self.host.setText(data.hostname)
+        self.gpu_name.setText(f"GPU: {data.gpu.name} · {data.gpu.source}")
+        self.usage.setText(f"RAM: {data.used_gb:.1f} / {data.total_gb:.1f} GiB")
+        hours, mins = divmod(data.uptime_seconds // 60, 60)
+        self.uptime.setText(f"Uptime: {hours}h {mins}m · {len(data.per_cpu)} CPU threads")
+        self.root_disk.setText(data.storage_label)
+        self.disk_progress.setValue(int(data.root_used_percent or 0))
+        self.process_table.setRowCount(len(data.top_processes))
+        for row, proc in enumerate(data.top_processes):
+            for col, value in enumerate((proc.name, f"{proc.cpu:.1f}%", f"{proc.memory:.1f}%")):
+                self.process_table.setItem(row, col, QTableWidgetItem(value))
 
 
 class ControlCenter(QWidget):
