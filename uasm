@@ -41,4 +41,22 @@ if [[ "$#" -eq 0 ]]; then
   set -- help
 fi
 
+# Optional Qt entrypoints, without importing Qt in the headless runtime.
+case "${1:-}" in
+  gui)
+    shift
+    exec "$REPO_DIR/UniversalMonitorQt.sh" "$@"
+    ;;
+  dashboard)
+    shift
+    exec "$REPO_DIR/UniversalMonitorQt.sh" --dashboard-only "$@"
+    ;;
+esac
+
+if [[ "${1:-}" == "help" ]]; then
+  /usr/bin/env python3 "$RUNTIME_SCRIPT" help
+  printf '\nQt preview (optional): uasm gui | uasm dashboard\n'
+  exit 0
+fi
+
 exec /usr/bin/env python3 "$RUNTIME_SCRIPT" "$@"

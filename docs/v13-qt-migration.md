@@ -8,7 +8,10 @@ The main runtime and Arduino firmware remain on v12.1 while migration happens.
 ~~~bash
 cd ~/ArduinoUniversalSystemMonitor
 # "uasm update" already creates .venv on existing installations.
-./.venv/bin/python3 -m pip install -r requirements-qt.txt
+# Fedora 44/45 (recommended distro packages):
+sudo dnf install -y python3-pyside6 python3-psutil python3-pyserial
+# Other distros may instead use:
+# ./.venv/bin/python3 -m pip install -r requirements-qt.txt
 ./UniversalMonitorQt.sh
 ./UniversalMonitorQt.sh --dashboard-only
 # The unified CLI also supports "uasm gui" / "uasm dashboard".
