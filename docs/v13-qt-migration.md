@@ -41,6 +41,27 @@ Keep the existing Java application installed during feature migration. Do not
 install Qt on headless Fedora/Debian servers; their Python service and CLI do
 not import the new GUI.
 
+## Second pass — October 2026
+
+- New graphite/slate theme with transparent labels (fixes dark text rectangles)
+- Compact dashboard with CPU/GPU/RAM/VRAM, CPU/GPU temperatures, network, uptime,
+  process table, and root storage; CPU/GPU graph with separate muted lines
+- AMD Radeon GPU monitoring through amdgpu sysfs (works with Fedora's AMD stack)
+  plus NVIDIA fallback using nvidia-smi; unsupported GPU fields display N/A
+- Actual UNO R4 WiFi UDP discovery on port 5001 using firmware `UAM_DISCOVER`
+  and `UAM_HERE|ip|port|name|target_host|target_hostname` response format.
+  Scans run off-thread; selection fills fixed host/port, but does NOT save or
+  change pairing without your explicit Save click.
+- 'Found via UDP' != 'TCP endpoint reachable' != 'actively receiving stats'.
+  True live sender transport status and firmware pairing still need integration.
+- Telemetry probes run in a worker thread, and CPU/GPU/process readings are shared
+  between the main app and the independent pop-out window.
+
+For users testing in a separate Git worktree: the config shown belongs to the
+preview checkout, not necessarily the original running systemd sender. Automatic
+UDP discovery runs even when that preview has discovery disabled by default;
+scanning is a read-only troubleshooting action, not a sender preference change.
+
 ## First working vertical slice
 
 - Modern dark Qt Widgets Control Center with sidebar and native pop-out monitor
@@ -65,7 +86,7 @@ available until all those features and the pop-out tabs are migrated.
 ## Tests
 
 ~~~bash
-python3 -m unittest discover -s tests -p 'test_qt_backend.py'
+python3 -m unittest discover -s tests -p 'test_qt_*.py'
 QT_QPA_PLATFORM=offscreen ./.venv/bin/python3 -m uasm_qt --smoke
 QT_QPA_PLATFORM=offscreen ./.venv/bin/python3 -m uasm_qt --dashboard-only --smoke
 ~~~
