@@ -4,10 +4,11 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import socket
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
-from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QProcess, QTimer, Signal
+from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QProcess, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtNetwork import QAbstractSocket, QTcpSocket
 from PySide6.QtWidgets import (
@@ -21,6 +22,7 @@ from .backend import (
     ConfigError, ConfigStore, ROOT, TelemetrySampler, drives, readable_rate,
     serial_devices, service_state, version,
 )
+from .wifi import discover as discover_wifi
 
 STYLE = """
 /* Neutral graphite theme with restrained silver/steel accents. */
@@ -275,6 +277,21 @@ class DesktopMonitor(QWidget):
                 self.process_table.setItem(row, col, QTableWidgetItem(value))
 
 
+class WifiScanWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, discovery_port):
+        super().__init__()
+        self.discovery_port = discovery_port
+
+    def run(self):
+        try:
+            self.completed.emit(discover_wifi(port=self.discovery_port))
+        except (OSError, ValueError) as exc:
+            self.failed.emit(str(exc))
+
+
 class ControlCenter(QWidget):
     def __init__(self, hub):
         super().__init__()
@@ -282,6 +299,8 @@ class ControlCenter(QWidget):
         self.store = ConfigStore()
         self.dashboard = None
         self.processes = []
+        self.wifi_worker = None
+        self.wifi_boards = []
         self.setWindowTitle("UASM • Qt Control Center (v13 Preview)")
         self.resize(1110, 750)
         root = QHBoxLayout(self)
@@ -337,6 +356,7 @@ class ControlCenter(QWidget):
         self.health_timer.timeout.connect(self.refresh_status)
         self.health_timer.start(12000)
         QTimer.singleShot(200, self.refresh_status)
+        QTimer.singleShot(650, self.scan_wifi)
 
     def select(self, index):
         self.stack.setCurrentIndex(index)
@@ -355,11 +375,11 @@ class ControlCenter(QWidget):
             inner.addWidget(metric)
             grid.addWidget(box, i // 2, i % 2)
         layout.addLayout(grid)
-        box, inner = card("Arduino USB detection")
-        self.board_line = text("Scanning…")
+        box, inner = card("Arduino devices · USB + Wi-Fi")
+        self.board_line = text("Checking USB and scanning Wi-Fi…")
         inner.addWidget(self.board_line)
         inner.addWidget(text(
-            "Device detected ≠ live connection. Wi-Fi pairing status requires protocol verification.",
+            "USB presence or a UDP discovery reply does not prove an active sender connection.",
             muted=True,
         ))
         layout.addWidget(box)
@@ -372,15 +392,34 @@ class ControlCenter(QWidget):
         return scroll(body)
 
     def devices(self):
-        body, layout = page("Arduino Devices", "USB candidates; port detection does not open the serial device.")
-        layout.addWidget(action("Refresh Devices", self.refresh_devices))
-        self.device_label = text("Scanning…", muted=True)
+        body, layout = page("Arduino Devices", "Detect local USB boards and discover R4 Wi-Fi devices without changing settings.")
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(action("Refresh USB", self.refresh_devices))
+        toolbar.addWidget(action("Scan Wi-Fi · UDP", self.scan_wifi, primary=True))
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+        self.device_label = text("USB scan pending", muted=True)
         layout.addWidget(self.device_label)
         self.device_table = QTableWidget(0, 3)
         self.device_table.setHorizontalHeaderLabels(["Port", "Description", "Hardware ID"])
         self.device_table.horizontalHeader().setStretchLastSection(True)
         self.device_table.setMinimumHeight(250)
         layout.addWidget(self.device_table)
+        wifi_box, wifi_inner = card("Wi-Fi R4 discovery · UDP probe (default port 5001)")
+        self.wifi_status = text("Preparing network scan…", muted=True)
+        wifi_inner.addWidget(self.wifi_status)
+        self.wifi_table = QTableWidget(0, 4)
+        self.wifi_table.setHorizontalHeaderLabels(["Board", "Reply IP / TCP port", "Assigned host", "Assigned name"])
+        self.wifi_table.horizontalHeader().setStretchLastSection(True)
+        self.wifi_table.verticalHeader().hide()
+        self.wifi_table.setMaximumHeight(170)
+        wifi_inner.addWidget(self.wifi_table)
+        wifi_inner.addWidget(action("Use selected Wi-Fi board in Connections", self.use_selected_wifi))
+        wifi_inner.addWidget(text(
+            "Found = replied to a firmware UDP discovery request; not yet verified as a live telemetry stream.",
+            muted=True,
+        ))
+        layout.addWidget(wifi_box)
         box, inner = card("Firmware & board page profiles")
         inner.addWidget(text("Use the existing Java interface while native Qt flashing, profile editing and TFT previews are being migrated."))
         inner.addWidget(action("Open Legacy Control Center", self.open_legacy))
@@ -476,11 +515,90 @@ class ControlCenter(QWidget):
     def refresh_devices(self):
         found = serial_devices()
         self.device_label.setText(f"{len(found)} USB serial candidate(s)")
-        self.board_line.setText(", ".join(item.port for item in found) if found else "No USB serial board found")
+        self.update_board_summary(found)
         self.device_table.setRowCount(len(found))
         for row, entry in enumerate(found):
             for col, value in enumerate((entry.port, entry.description, entry.hardware_id)):
                 self.device_table.setItem(row, col, QTableWidgetItem(value))
+
+    def update_board_summary(self, found=None):
+        if found is None:
+            found = serial_devices()
+        usb_label = f"{len(found)} USB candidate(s)"
+        wifi_label = f"{len(self.wifi_boards)} Wi-Fi reply/replies"
+        self.board_line.setText(usb_label + "  ·  " + wifi_label)
+        if self.wifi_boards:
+            self.board_line.setToolTip(", ".join(
+                f"{board.name} {board.address}:{board.tcp_port} → {board.target_host or board.target_hostname or 'unassigned'}"
+                for board in self.wifi_boards
+            ))
+
+    def scan_wifi(self):
+        if self.wifi_worker is not None and self.wifi_worker.isRunning():
+            return
+        # Network scans are explicit; never rely on the preview worktree's
+        # local config matching the running sender installation.
+        self.wifi_status.setText("Sending UAM_DISCOVER to LAN broadcast…")
+        self.wifi_worker = WifiScanWorker(self.discovery_port.value())
+        self.wifi_worker.completed.connect(self.scan_complete)
+        self.wifi_worker.failed.connect(self.scan_failed)
+        self.wifi_worker.finished.connect(self.wifi_scan_finished)
+        self.wifi_worker.start()
+
+    def wifi_scan_finished(self):
+        worker = self.wifi_worker
+        self.wifi_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def scan_failed(self, error):
+        self.wifi_status.setText(f"Discovery error: {error}")
+
+    def scan_complete(self, boards):
+        self.wifi_boards = list(boards)
+        self.wifi_table.setRowCount(len(self.wifi_boards))
+        for row, board in enumerate(self.wifi_boards):
+            cells = (
+                board.name,
+                f"{board.address}:{board.tcp_port}",
+                board.target_host or "Not specified",
+                board.target_hostname or "Not specified",
+            )
+            for col, value in enumerate(cells):
+                self.wifi_table.setItem(row, col, QTableWidgetItem(value))
+        if self.wifi_boards:
+            self.wifi_status.setText(
+                f"{len(self.wifi_boards)} UNO R4 discovery reply/replies received. "
+                "Select one to fill its endpoint (not saved yet)."
+            )
+        else:
+            self.wifi_status.setText(
+                "No R4 discovery replies. Ensure the board is powered, on this LAN, "
+                "using compatible R4 firmware, and UDP broadcasts are allowed."
+            )
+        self.update_board_summary()
+
+    def use_selected_wifi(self):
+        selected = self.wifi_table.currentRow()
+        if not 0 <= selected < len(self.wifi_boards):
+            self.wifi_status.setText("Select a discovered board row first.")
+            return
+        board = self.wifi_boards[selected]
+        self.host.setText(board.address)
+        self.port.setValue(board.tcp_port)
+        self.wifi.setChecked(True)
+        self.connection_result.setText(
+            f"{board.name} at {board.address}:{board.tcp_port}. "
+            f"Assigned host: {board.target_host or board.target_hostname or 'unspecified'}. "
+            "These fields have NOT been saved and the board stream is not verified."
+        )
+        self.select(2)
+
+    def closeEvent(self, event):
+        # A discovery thread may be finishing a 1.5s socket timeout.
+        if self.wifi_worker is not None and self.wifi_worker.isRunning():
+            self.wifi_worker.wait(3500)
+        super().closeEvent(event)
 
     def refresh_drives(self):
         rows = drives()
