@@ -28,6 +28,10 @@ jobs:
         run: |
           python -m compileall -q uasm_qt
           python -m unittest discover -s tests -p 'test_qt_backend.py' -v
+      - name: Install Linux Qt shared libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-cursor0
       - name: Smoke test both Qt windows offscreen
         env:
           QT_QPA_PLATFORM: offscreen
