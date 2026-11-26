@@ -26,7 +26,7 @@ SERVICE_NAME = "arduino-monitor.service"
 EDITABLE_CONFIG = frozenset({
     "wifi_enabled", "wifi_host", "wifi_port", "wifi_auto_discovery",
     "wifi_discovery_port", "prefer_usb", "debug_enabled",
-    "qbittorrent_enabled",
+    "qbittorrent_enabled", "qt_disk0_mount", "qt_disk1_mount",
 })
 
 
@@ -87,7 +87,12 @@ class ConfigStore:
             host = values["wifi_host"]
             if not isinstance(host, str) or len(host) > 253 or "\n" in host:
                 raise ConfigError("Wi-Fi host must be a valid-sized hostname or IP")
-        for key in EDITABLE_CONFIG - {"wifi_host", "wifi_port", "wifi_discovery_port"}:
+        for key in ("qt_disk0_mount", "qt_disk1_mount"):
+            if key in values:
+                value = values[key]
+                if not isinstance(value, str) or len(value) > 1024 or any(ord(ch) < 32 for ch in value):
+                    raise ConfigError(f"{key} must be a mount path or an empty string")
+        for key in EDITABLE_CONFIG - {"wifi_host", "wifi_port", "wifi_discovery_port", "qt_disk0_mount", "qt_disk1_mount"}:
             if key in values and type(values[key]) is not bool:
                 raise ConfigError(f"{key} must be true or false")
 
@@ -298,6 +303,26 @@ def drives() -> list[tuple[str, str, int, int, float]]:
             continue
         result.append((partition.mountpoint, partition.device, usage.used, usage.total, usage.percent))
     return sorted(result, key=lambda row: row[0])
+
+
+def mount_key(path: str) -> str:
+    """Normalize Windows drive letter casing and separators without resolving mounts."""
+    if sys.platform == "win32":
+        import ntpath
+        return ntpath.normcase(ntpath.normpath(path))
+    return os.path.normpath(path)
+
+
+def disk_assignments(config: dict, rows: list) -> tuple[str, str]:
+    """Default Disk0 to the system volume; leave Disk1 explicitly unassigned."""
+    return (str(config.get("qt_disk0_mount", system_volume()) or ""),
+            str(config.get("qt_disk1_mount", "") or ""))
+
+
+def disk_percent(mount: str, rows: list) -> float | None:
+    if not mount:
+        return None
+    return next((row[4] for row in rows if mount_key(row[0]) == mount_key(mount)), None)
 
 
 def readable_rate(value: float) -> str:

@@ -131,6 +131,15 @@ If loopback binding is unavailable, leave the server disabled rather than
 exposing hardware control to the LAN. N/A remains valid without sensors.
 Set UASM_LHM_PORT in the launching shell for a different local port.
 
+## Disk0 and Disk1 assignments
+
+Use Storage → choose Disk0 and Disk1 → Save Disk Assignments in Qt. The
+preview sender reads these machine-local mount selections at startup.
+Disk0 defaults to the system volume and Disk1 is unassigned until selected.
+Unavailable selections remain saved, rather than falling back to another drive.
+Old firmware represents missing/unassigned disk percentages as zero.
+This does not change legacy Linux storage target IDs or the running v12.1 service.
+
 ## Remaining v13 migration work
 
 Native Arduino TFT preview, page profiles, firmware flashing, Wi-Fi

@@ -56,3 +56,9 @@ class WindowsSenderTests(unittest.TestCase):
         self.assertEqual(fields[17], "40")
         self.assertEqual(fields[22], "TEST/PC")
         self.assertTrue(encoded.endswith("\n"))
+        rows = [(f"/disk{i}", f"dev{i}", 100, 200, float(i + 20)) for i in range(10)]
+        with patch("uasm_qt.sender.drives", return_value=rows):
+            fields = packet(data, {"qt_disk0_mount": "/disk9", "qt_disk1_mount": "/disk2"}).decode("ascii").rstrip("\n").split("|")
+            self.assertEqual(fields[18:20], ["29", "22"])
+            missing = packet(data, {"qt_disk0_mount": "/missing", "qt_disk1_mount": ""}).decode("ascii").rstrip("\n").split("|")
+            self.assertEqual(missing[18:20], ["0", "0"])

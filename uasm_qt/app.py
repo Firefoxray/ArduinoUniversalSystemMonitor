@@ -12,14 +12,14 @@ from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QProcess, QThread, QTim
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtNetwork import QAbstractSocket, QTcpSocket
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QProgressBar, QScrollArea,
     QSpinBox, QStackedWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
 from .backend import (
-    ConfigError, ConfigStore, ROOT, TelemetrySampler, drives, readable_rate,
+    ConfigError, ConfigStore, ROOT, TelemetrySampler, disk_assignments, mount_key, drives, readable_rate,
     serial_devices, service_state, version,
 )
 from .wifi import discover as discover_wifi
@@ -479,12 +479,30 @@ class ControlCenter(QWidget):
         return scroll(body)
 
     def storage(self):
-        body, layout = page("Storage", "Local filesystem capacity; this page doesn't change Arduino disk assignments.")
-        layout.addWidget(action("Refresh Mounts", self.refresh_drives))
+        body, layout = page("Storage", "Choose the volumes shown on the Arduino Home page.")
+        box, inner = card("Arduino disk assignments")
+        grid = QGridLayout()
+        self.disk_choices = [QComboBox(), QComboBox()]
+        self.disk_choices_loaded = False
+        for index, choice in enumerate(self.disk_choices):
+            grid.addWidget(text(f"Disk{index}"), index, 0)
+            grid.addWidget(choice, index, 1)
+        grid.setColumnStretch(1, 1)
+        inner.addLayout(grid)
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(action("Refresh Mounts", self.refresh_drives))
+        toolbar.addWidget(action("Save Disk Assignments", self.save_disk_assignments, primary=True))
+        inner.addLayout(toolbar)
+        self.disk_status = text("Preview sender only; the original Linux service is not modified.", muted=True)
+        inner.addWidget(self.disk_status)
+        layout.addWidget(box)
         self.drive_table = QTableWidget(0, 4)
         self.drive_table.setHorizontalHeaderLabels(["Mount", "Device", "Used / Total", "Use"])
+        self.drive_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.drive_table.horizontalHeader().setStretchLastSection(True)
-        self.drive_table.setMinimumHeight(380)
+        self.drive_table.setMinimumHeight(260)
+        self.drive_table.verticalHeader().hide()
+        self.drive_table.setAlternatingRowColors(True)
         layout.addWidget(self.drive_table)
         layout.addStretch()
         QTimer.singleShot(400, self.refresh_drives)
@@ -621,11 +639,49 @@ class ControlCenter(QWidget):
 
     def refresh_drives(self):
         rows = drives()
+        if self.disk_choices_loaded:
+            selected = [choice.currentData() or "" for choice in self.disk_choices]
+        else:
+            try:
+                selected = disk_assignments(self.store.load(), rows)
+            except ConfigError as exc:
+                self.disk_status.setText(str(exc))
+                return
+            self.disk_choices_loaded = True
+        for choice, current in zip(self.disk_choices, selected):
+            choice.clear()
+            choice.addItem("Unassigned", "")
+            matched = 0
+            for mount, device, used, total, percent in rows:
+                choice.addItem(f"{mount}  |  {percent:.0f}% used  |  {total / 1024**3:.1f} GiB", mount)
+                if current and mount_key(mount) == mount_key(current):
+                    matched = choice.count() - 1
+            if current and not matched:
+                choice.addItem(f"{current} (not currently mounted)", current)
+                matched = choice.count() - 1
+            choice.setCurrentIndex(matched)
         self.drive_table.setRowCount(len(rows))
         for row, (mount, device, used, total, percent) in enumerate(rows):
             cells = (mount, device, f"{used / 1024**3:.1f} / {total / 1024**3:.1f} GiB", f"{percent:.0f}%")
             for col, value in enumerate(cells):
                 self.drive_table.setItem(row, col, QTableWidgetItem(value))
+
+    def save_disk_assignments(self):
+        if not self.disk_choices_loaded:
+            return
+        first, second = (choice.currentData() or "" for choice in self.disk_choices)
+        if first and second and mount_key(first) == mount_key(second):
+            self.disk_status.setText("Choose two different mounted volumes, or leave one unassigned.")
+            return
+        try:
+            self.store.save_local({"qt_disk0_mount": first, "qt_disk1_mount": second})
+        except (ConfigError, OSError) as exc:
+            self.disk_status.setText(f"Could not save: {exc}")
+            return
+        self.disk_status.setText(
+            f"Saved Disk0: {first or 'unassigned'} | Disk1: {second or 'unassigned'}. "
+            "Restart the preview sender to apply; the stable Linux service is unchanged."
+        )
 
     def load_connections(self):
         try:

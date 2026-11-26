@@ -9,11 +9,11 @@ import psutil
 import serial
 from serial.tools import list_ports
 
-from .backend import TelemetrySampler, drives
+from .backend import ConfigError, ConfigStore, TelemetrySampler, disk_assignments, disk_percent, drives
 from .protocol import build_arduino_payload, clean_field
 
 
-def packet(snapshot):
+def packet(snapshot, config=None):
     def integer(value):
         return "0" if value is None else str(round(value))
     def temperature(value):
@@ -39,13 +39,16 @@ def packet(snapshot):
     processes += [("--", "--", "--")] * (6 - len(processes))
     cores = list(snapshot.per_cpu[:16])
     cores += [0] * (16 - len(cores))
-    mounts = drives()[:8]
-    lines = [clean_field(f"{mount} {percent:.0f}%", 30) for mount, _, _, _, percent in mounts]
+    mounts = drives()
+    disk0, disk1 = disk_assignments(config or {}, mounts)
+    # Resolve against ALL mounted volumes, not just the eight display rows.
+    # Preserve the legacy numeric format: unavailable/unassigned is 0 on old TFT firmware.
+    lines = [clean_field(f"{mount} {percent:.0f}%", 30) for mount, _, _, _, percent in mounts[:8]]
     lines += ["--"] * (8 - len(lines))
     data = {
         "cpu_total": round(snapshot.cpu), "per_core": [round(x) for x in cores],
-        "ram_pct": round(snapshot.ram), "disk0_pct": integer(snapshot.root_used_percent),
-        "disk1_pct": 0, "cpu_temp": temperature(snapshot.temperature),
+        "ram_pct": round(snapshot.ram), "disk0_pct": integer(disk_percent(disk0, mounts)),
+        "disk1_pct": integer(disk_percent(disk1, mounts)), "cpu_temp": temperature(snapshot.temperature),
         "os_name": clean_field("Windows" if sys.platform == "win32" else snapshot.os_name, 24),
         "host_name": clean_field(snapshot.hostname, 24), "ip": clean_field(host_ip(), 18),
         "uptime": f"{snapshot.uptime_seconds // 3600}h {(snapshot.uptime_seconds // 60) % 60}m",
@@ -74,6 +77,13 @@ def main(argv=None):
     ports = list_ports.comports()
     if not any(p.device.casefold() == args.serial.casefold() and p.vid == 0x2341 for p in ports):
         parser.error("The selected port was not detected with Arduino USB vendor ID 2341.")
+    store = ConfigStore()
+    try:
+        config = store.load()
+    except ConfigError as exc:
+        parser.error(str(exc))
+    disk0, disk1 = disk_assignments(config, [])
+    print(f"Disk0: {disk0 or 'unassigned'} | Disk1: {disk1 or 'unassigned'}", flush=True)
     sampler = TelemetrySampler()
     try:
         with serial.Serial(args.serial, 115200, timeout=0.5, write_timeout=2) as board:
@@ -83,7 +93,7 @@ def main(argv=None):
             time.sleep(args.interval)
             frames = 0
             while True:
-                payload = packet(sampler.sample())
+                payload = packet(sampler.sample(), config)
                 written = board.write(payload)
                 if written != len(payload):
                     raise OSError("Incomplete serial write")
