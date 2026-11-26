@@ -164,3 +164,30 @@ python3 -m unittest discover -s tests -p 'test_qt_*.py'
 QT_QPA_PLATFORM=offscreen ./.venv/bin/python3 -m uasm_qt --smoke
 QT_QPA_PLATFORM=offscreen ./.venv/bin/python3 -m uasm_qt --dashboard-only --smoke
 ~~~
+
+## Legacy Java feature parity checklist
+
+Source: existing UniversalMonitorControlCenter.java and earlier UI walkthroughs.
+Status is for the Qt preview, not a claim that all legacy features were complete.
+
+| Legacy area | Porting target / remaining work |
+| --- | --- |
+| Dashboard | Linux service start/stop/restart/status/startup; debug mirror; live TFT preview; remote targets; install/update/uninstall |
+| Flash | R3/Mega/R4 board selection, 2.8/3.5 inch variants, rotation, diff, custom sketch, cancellation, R4 Wi-Fi credentials |
+| Arduino Profiles | Per-board page selection, profile create/update/import/export, sync headers and apply/flash |
+| Monitor | USB and Wi-Fi policy, fixed endpoint/discovery, board and assigned host IDs, pairing reset, modules, qBittorrent, macro mode |
+| Storage I/O | Disk0/Disk1 preview assignments implemented; monitored mount selection, live read/write/utilization and Linux integration pending |
+| Logs | Service logs and preview sender logs implemented; RayFetch/CLI actions, log filtering and shared diagnostics pending |
+| Settings | Light/dark/black modes, efficiency, logging, debug controls, app management |
+| Pop-out Main | CPU/RAM/GPU/VRAM/temps/history and processes implemented; richer per-thread and network views, service/stream controls pending |
+| Pop-out Storage | Capacity, per-drive I/O graphs |
+| Pop-out SSH Stats | Saved target integration, probe (legacy scaffold), eventual live remote telemetry |
+| Pop-out Gaming Mode | MangoHud/FPS/frame times/1% lows (legacy partial), platform-specific data sources |
+| Pop-out Settings | Themes, refresh/efficiency, fullscreen, shared log and debug settings |
+
+Design rule: concise control labels and live statuses; use Qt tooltips and small
+focusable information controls for help, keeping essential warnings, errors,
+confirmation prompts and actual operation outcomes visible. Do not port the old
+plaintext sudo password storage. Keep platform privilege prompts and service
+ownership explicit. Prioritize Wi-Fi telemetry and Windows sensor verification,
+then Linux controls/shared sender, live Arduino preview, flashing and profiles.

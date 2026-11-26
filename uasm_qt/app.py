@@ -30,6 +30,9 @@ STYLE = """
 /* Neutral graphite theme with restrained silver/steel accents. */
 QWidget { background: #181c20; color: #e4e8eb; font-family: "Noto Sans", "Segoe UI", sans-serif; font-size: 13px; }
 QLabel, QCheckBox { background: transparent; }
+QToolTip { color: #edf1f4; background-color: #353d45; border: 1px solid #667580; padding: 6px; }
+QPushButton:disabled { color: #879099; background: #292e33; border-color: #3a4148; }
+QPushButton#primary:disabled { color: #879099; background: #292e33; border-color: #3a4148; }
 QFrame#sidebar { background: #20252b; border-right: 1px solid #3a424a; }
 QFrame#card { background: #242a30; border: 1px solid #3c454e; border-radius: 9px; }
 QLabel#heading { font-size: 23px; font-weight: 700; }
@@ -63,11 +66,27 @@ def text(content, muted=False):
     return widget
 
 
-def action(name, callback, primary=False):
+def action(name, callback, primary=False, tip=None):
     widget = QPushButton(name)
     if primary:
         widget.setObjectName("primary")
     widget.clicked.connect(callback)
+    if tip:
+        widget.setToolTip(tip)
+        widget.setAccessibleDescription(tip)
+    return widget
+
+
+def help_tip(layout, message):
+    """Small focusable help control; tooltip also available on click/tap."""
+    from PySide6.QtWidgets import QToolTip
+    widget = QPushButton("ⓘ")
+    widget.setFixedSize(28, 28)
+    widget.setAccessibleName("Help")
+    widget.setAccessibleDescription(message)
+    widget.setToolTip(message)
+    widget.clicked.connect(lambda: QToolTip.showText(widget.mapToGlobal(widget.rect().bottomLeft()), message, widget))
+    layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignRight)
     return widget
 
 
@@ -389,30 +408,29 @@ class ControlCenter(QWidget):
         box, inner = card("Arduino devices · USB + Wi-Fi")
         self.board_line = text("Checking USB and scanning Wi-Fi…")
         inner.addWidget(self.board_line)
-        inner.addWidget(text(
-            "USB presence or a UDP discovery reply does not prove an active sender connection.",
-            muted=True,
-        ))
+        help_tip(inner, "USB presence or a UDP discovery reply does not prove an active sender connection.")
         layout.addWidget(box)
         if self.sender:
             sender_box, sender_inner = card("Windows USB sender")
-            self.sender_line = text("Stopped · select your Arduino USB port.", muted=True)
+            self.sender_line = text("Stopped", muted=True)
+            self.sender_line.setToolTip("Successful USB writes do not prove display acceptance.")
             sender_inner.addWidget(self.sender_line)
             port_row = QHBoxLayout()
             port_row.addWidget(text("Arduino port"))
             self.sender_port = QComboBox()
+            self.sender_port.setToolTip("Select the Arduino USB serial port, such as COM3.")
             self.sender_port.currentIndexChanged.connect(self.sync_sender_buttons)
             port_row.addWidget(self.sender_port, 1)
             port_row.addWidget(action("Refresh ports", self.refresh_sender_ports))
             sender_inner.addLayout(port_row)
             controls = QHBoxLayout()
-            self.start_sender_button = action("Start", self.start_preview_sender, primary=True)
-            self.stop_sender_button = action("Stop", self.sender.stop)
-            self.restart_sender_button = action("Restart", self.restart_preview_sender)
+            self.start_sender_button = action("Start", self.start_preview_sender, primary=True, tip="Start sending live stats to the selected USB Arduino.")
+            self.stop_sender_button = action("Stop", self.sender.stop, tip="Stop only this window’s sender and release its serial port.")
+            self.restart_sender_button = action("Restart", self.restart_preview_sender, tip="Restart this sender and reload saved disk assignments and local settings.")
             for widget in (self.start_sender_button, self.stop_sender_button, self.restart_sender_button):
                 controls.addWidget(widget)
             sender_inner.addLayout(controls)
-            sender_inner.addWidget(text("Only this application's USB sender is controlled. Stop any older PowerShell sender first. Closing Control Center stops this sender.", muted=True))
+            help_tip(sender_inner, "Only this application’s sender is controlled. Stop any older PowerShell sender first. Closing Control Center stops this sender.")
             layout.addWidget(sender_box)
         row = QHBoxLayout()
         row.addWidget(action("Refresh", self.refresh_status))
@@ -426,8 +444,8 @@ class ControlCenter(QWidget):
     def devices(self):
         body, layout = page("Arduino Devices", "Detect local USB boards and discover R4 Wi-Fi devices without changing settings.")
         toolbar = QHBoxLayout()
-        toolbar.addWidget(action("Refresh USB", self.refresh_devices))
-        toolbar.addWidget(action("Scan Wi-Fi · UDP", self.scan_wifi, primary=True))
+        toolbar.addWidget(action("Refresh USB", self.refresh_devices, tip="Enumerate serial devices without opening a port."))
+        toolbar.addWidget(action("Scan Wi-Fi · UDP", self.scan_wifi, primary=True, tip="Discover compatible R4 boards on the local network without changing pairing."))
         toolbar.addStretch()
         layout.addLayout(toolbar)
         self.device_label = text("USB scan pending", muted=True)
@@ -435,22 +453,21 @@ class ControlCenter(QWidget):
         self.device_table = QTableWidget(0, 3)
         self.device_table.setHorizontalHeaderLabels(["Port", "Description", "Hardware ID"])
         self.device_table.horizontalHeader().setStretchLastSection(True)
-        self.device_table.setMinimumHeight(250)
+        self.device_table.setMinimumHeight(150)
+        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.device_table)
         wifi_box, wifi_inner = card("Wi-Fi R4 discovery · UDP probe (default port 5001)")
         self.wifi_status = text("Preparing network scan…", muted=True)
         wifi_inner.addWidget(self.wifi_status)
         self.wifi_table = QTableWidget(0, 4)
         self.wifi_table.setHorizontalHeaderLabels(["Board", "Reply IP / TCP port", "Assigned host", "Assigned name"])
+        self.wifi_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.wifi_table.horizontalHeader().setStretchLastSection(True)
         self.wifi_table.verticalHeader().hide()
         self.wifi_table.setMaximumHeight(170)
         wifi_inner.addWidget(self.wifi_table)
-        wifi_inner.addWidget(action("Use selected Wi-Fi board in Connections", self.use_selected_wifi))
-        wifi_inner.addWidget(text(
-            "Found = replied to a firmware UDP discovery request; not yet verified as a live telemetry stream.",
-            muted=True,
-        ))
+        wifi_inner.addWidget(action("Use selected Wi-Fi board in Connections", self.use_selected_wifi, tip="Fill the selected board’s host and port. Does not save, pair or connect."))
+        help_tip(wifi_inner, "Found means the firmware replied to UDP discovery; active telemetry is not verified.")
         layout.addWidget(wifi_box)
         box, inner = card("Firmware & board page profiles")
         if sys.platform == "linux":
@@ -469,15 +486,21 @@ class ControlCenter(QWidget):
         self.wifi = QCheckBox("Wi-Fi enabled")
         self.discover = QCheckBox("UDP discovery enabled")
         self.usb = QCheckBox("Prefer USB if present")
+        self.wifi.setToolTip("Enable Wi-Fi transport in the saved configuration. Windows Wi-Fi sending is pending.")
+        self.discover.setToolTip("Allow UDP discovery when resolving a board. Manual discovery works independently.")
+        self.usb.setToolTip("Prefer USB if available. The current Windows preview sender only uses USB.")
         for checkbox in (self.wifi, self.discover, self.usb):
             inner.addWidget(checkbox)
         grid = QGridLayout()
         self.host = QLineEdit()
         self.host.setPlaceholderText("Board IP or hostname; blank for discovery")
+        self.host.setToolTip("Address of the Arduino, not the computer. A fixed endpoint is preferred for multiple boards.")
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
+        self.port.setToolTip("TCP port the Arduino listens on, usually 5000.")
         self.discovery_port = QSpinBox()
         self.discovery_port.setRange(1, 65535)
+        self.discovery_port.setToolTip("UDP discovery port used by the Arduino firmware, usually 5001.")
         for i, (field, widget) in enumerate((
             ("Fixed Arduino host", self.host),
             ("TCP port", self.port),
@@ -488,18 +511,16 @@ class ControlCenter(QWidget):
         inner.addLayout(grid)
         row = QHBoxLayout()
         row.addWidget(action("Reload", self.load_connections))
-        row.addWidget(action("Test TCP", self.test_tcp))
-        row.addWidget(action("Save Local Settings", self.save_connections, primary=True))
+        row.addWidget(action("Test TCP", self.test_tcp, tip="Check endpoint reachability only, not pairing or telemetry acceptance."))
+        row.addWidget(action("Save Local Settings", self.save_connections, primary=True, tip="Save this checkout’s local configuration. Does not flash the board or modify another installation."))
         inner.addLayout(row)
         self.connection_result = text("", muted=True)
         inner.addWidget(self.connection_result)
         layout.addWidget(box)
-        layout.addWidget(text(
-            "Saves only this checkout’s config/monitor_config.local.json. "
-            + ("Restart the sender in the matching installation to apply. " if sys.platform == "linux" else "Windows Wi-Fi sending is not implemented yet. ")
-            + "TCP testing checks reachability, not pairing or a successful Arduino handshake.",
-            muted=True,
-        ))
+        help_tip(inner,
+            "Settings apply to this checkout only. "
+            + ("Restart the matching sender to apply." if sys.platform == "linux" else "Windows Wi-Fi sending is pending.")
+        )
         layout.addStretch()
         self.socket = QTcpSocket(self)
         self.socket.connected.connect(self.tcp_connected)
@@ -515,18 +536,20 @@ class ControlCenter(QWidget):
         self.disk_choices_loaded = False
         for index, choice in enumerate(self.disk_choices):
             grid.addWidget(text(f"Disk{index}"), index, 0)
+            choice.setToolTip(f"Choose the mounted volume shown in Disk{index} on the Arduino home page.")
             grid.addWidget(choice, index, 1)
         grid.setColumnStretch(1, 1)
         inner.addLayout(grid)
         toolbar = QHBoxLayout()
         toolbar.addWidget(action("Refresh Mounts", self.refresh_drives))
-        toolbar.addWidget(action("Save Disk Assignments", self.save_disk_assignments, primary=True))
+        toolbar.addWidget(action("Save Disk Assignments", self.save_disk_assignments, primary=True, tip="Persist the selected mounts; restart the preview sender to apply."))
         inner.addLayout(toolbar)
-        self.disk_status = text("Preview sender only; the original Linux service is not modified.", muted=True)
+        self.disk_status = text("Preview sender only", muted=True)
+        self.disk_status.setToolTip("These assignments do not modify the original Linux service.")
         inner.addWidget(self.disk_status)
         layout.addWidget(box)
         if self.sender:
-            layout.addWidget(action("Save assignments & restart USB sender", self.save_and_restart_sender))
+            layout.addWidget(action("Save & restart sender", self.save_and_restart_sender, tip="Save the selected disks and restart the GUI-owned USB sender if running."))
         self.drive_table = QTableWidget(0, 4)
         self.drive_table.setHorizontalHeaderLabels(["Mount", "Device", "Used / Total", "Use"])
         self.drive_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -612,8 +635,9 @@ class ControlCenter(QWidget):
         if not self.sender:
             return
         self.metrics[7].setText(state)
+        self.metrics[7].setToolTip("Status of this application’s sender, not an installed Windows service.")
         port = self.sender.port or "no port started"
-        self.sender_line.setText(f"{state} · {port} · USB writes do not verify display acceptance.")
+        self.sender_line.setText(f"{state} · {port}")
         self.footer.setText(f"Windows Qt preview • managed USB sender: {state} • Wi-Fi sending pending")
         self.sync_sender_buttons()
 
@@ -769,7 +793,7 @@ class ControlCenter(QWidget):
             return False
         self.disk_status.setText(
             f"Saved Disk0: {first or 'unassigned'} | Disk1: {second or 'unassigned'}. "
-            "Restart the preview sender to apply; the stable Linux service is unchanged."
+            "Restart to apply."
         )
         return True
 
