@@ -45,7 +45,11 @@ class SenderControl(QObject):
         self.buffer = ""
         self._status("Starting")
         self.output.emit(f"\nStarting preview USB sender on {port}…")
-        self.process.start(sys.executable, ["-u", "-m", "uasm_qt.sender", "--serial", port, "--managed"])
+        self.process.start(sys.executable, self.arguments(port))
+        self.changed.emit()
+
+    def arguments(self, port):
+        return ["-u", "-m", "uasm_qt.sender", "--serial", port, "--managed"]
 
     def _started(self):
         if not self.stopping:
