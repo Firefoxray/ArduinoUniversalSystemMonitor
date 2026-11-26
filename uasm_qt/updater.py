@@ -42,8 +42,13 @@ class PreviewUpdater:
     def preflight(self):
         if self.git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}") != UPSTREAM:
             raise UpdateError("This updater requires the v13 preview tracking branch. Stable main is not updated here.")
-        if self.git("status", "--porcelain", "--untracked-files=normal"):
-            raise UpdateError("Local changes or untracked files found. Review git status before updating.")
+        status = self.git("status", "--porcelain", "--untracked-files=normal")
+        if status:
+            lines = status.splitlines()
+            details = "\n".join(lines[:15])
+            if len(lines) > 15:
+                details += f"\n… and {len(lines) - 15} more"
+            raise UpdateError(f"Local changes or untracked files found. Review git status before updating:\n\n{details}")
         return self.git("rev-parse", "HEAD")
 
     def check(self):

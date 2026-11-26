@@ -16,3 +16,8 @@ R3_MEGA_MonitorScreen35/page_config.local.h
 config/board_page_profiles.properties
 *display_config.local.h
 .last_update_source
+
+# Python-generated files (Qt preview and tests)
+__pycache__/
+*.py[cod]
+.pytest_cache/
