@@ -88,7 +88,7 @@ py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m uasm_qt --dashboard-only
 ~~~
 
-This is a GUI preview, **not a Windows sender**. CPU, RAM, storage, network,
+This is a development preview with an opt-in Windows USB sender, not an installed Windows service. CPU, RAM, storage, network,
 USB enumeration and R4 UDP discovery use cross-platform libraries. AMD GPU
 and CPU temperature support on Windows still need native collectors; missing
 data is shown as N/A. Windows does not invoke systemd, journalctl or the Linux
@@ -110,8 +110,10 @@ sender, flash a board, install a service, or modify configuration.
 
 ## Windows USB sender and optional sensors (experimental)
 
-The Windows Control Center still does not manage the sender. Close any other
-program using the R4 serial port, then explicitly run:
+On Windows, close any older PowerShell sender, open Overview, select the
+Arduino USB port and use Start / Stop / Restart. Logs shows the managed
+sender output. Closing Control Center stops its own sender only.
+The same sender can also run independently in PowerShell:
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m uasm_qt.sender --serial COM3
@@ -120,9 +122,9 @@ program using the R4 serial port, then explicitly run:
 Only the specified detected Arduino USB port is opened at 115200 baud. This
 sends the existing 73-field v12.1 monitor packet, not firmware or pairing
 commands. Stop with Ctrl+C. Successful serial writes are not display ACKs.
-Disk1, battery, GPU clock and unsupported numeric fields retain legacy
-placeholder values; this is not full feature parity. Wi-Fi sending and
-GUI start/stop controls remain unimplemented.
+Battery, GPU clock and unsupported numeric fields retain legacy placeholder
+values; this is not full feature parity. Wi-Fi sending remains unimplemented.
+The preview does not install a Windows service or manage unrelated processes.
 
 For Windows temperatures and AMD GPU metrics, run LibreHardwareMonitor and
 enable its web server on loopback only (127.0.0.1, port 8085). The preview reads
@@ -134,11 +136,19 @@ Set UASM_LHM_PORT in the launching shell for a different local port.
 ## Disk0 and Disk1 assignments
 
 Use Storage → choose Disk0 and Disk1 → Save Disk Assignments in Qt. The
-preview sender reads these machine-local mount selections at startup.
+preview sender reads these machine-local mount selections at startup. On
+Windows, Save assignments & restart USB sender applies them to an already
+running GUI-owned sender, or saves them for the next start.
 Disk0 defaults to the system volume and Disk1 is unassigned until selected.
 Unavailable selections remain saved, rather than falling back to another drive.
 Old firmware represents missing/unassigned disk percentages as zero.
 This does not change legacy Linux storage target IDs or the running v12.1 service.
+
+## Release packaging backlog
+
+Add a Windows launcher/shortcut with the UASM icon, eventually a packaged
+executable or installer and separate background service/autostart support.
+Keep Linux desktop launcher integration and service controls as separate tasks.
 
 ## Remaining v13 migration work
 

@@ -5,6 +5,7 @@ import argparse
 import socket
 import sys
 import time
+import threading
 import psutil
 import serial
 from serial.tools import list_ports
@@ -67,15 +68,20 @@ def packet(snapshot, config=None):
     return build_arduino_payload(data).encode("ascii", errors="replace")
 
 
+def arduino_usb_ports():
+    """Only ports that meet the preview sender's explicit vendor check."""
+    return [p.device for p in list_ports.comports() if p.vid == 0x2341]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True, help="Explicit Arduino USB port (e.g. COM3)")
     parser.add_argument("--interval", type=float, default=1.0)
+    parser.add_argument("--managed", action="store_true", help="Stop when the GUI closes stdin or sends stop")
     args = parser.parse_args(argv)
     if not 0.5 <= args.interval <= 10:
         parser.error("Interval must be between 0.5 and 10 seconds.")
-    ports = list_ports.comports()
-    if not any(p.device.casefold() == args.serial.casefold() and p.vid == 0x2341 for p in ports):
+    if not any(port.casefold() == args.serial.casefold() for port in arduino_usb_ports()):
         parser.error("The selected port was not detected with Arduino USB vendor ID 2341.")
     store = ConfigStore()
     try:
@@ -84,15 +90,27 @@ def main(argv=None):
         parser.error(str(exc))
     disk0, disk1 = disk_assignments(config, [])
     print(f"Disk0: {disk0 or 'unassigned'} | Disk1: {disk1 or 'unassigned'}", flush=True)
+    stop = threading.Event()
+    if args.managed:
+        def watch_parent():
+            try:
+                for line in sys.stdin:
+                    if line.strip().lower() == "stop":
+                        break
+            finally:
+                stop.set()
+        threading.Thread(target=watch_parent, daemon=True).start()
     sampler = TelemetrySampler()
     try:
         with serial.Serial(args.serial, 115200, timeout=0.5, write_timeout=2) as board:
             print(f"Opened {args.serial} at 115200; Ctrl+C to stop.", flush=True)
-            time.sleep(2)
+            if stop.wait(2):
+                return 0
             sampler.sample()
-            time.sleep(args.interval)
+            if stop.wait(args.interval):
+                return 0
             frames = 0
-            while True:
+            while not stop.is_set():
                 payload = packet(sampler.sample(), config)
                 written = board.write(payload)
                 if written != len(payload):
@@ -100,13 +118,14 @@ def main(argv=None):
                 frames += 1
                 if frames == 1 or frames % 10 == 0:
                     print(f"USB frames written: {frames} (display acceptance not verified)", flush=True)
-                time.sleep(args.interval)
+                stop.wait(args.interval)
     except KeyboardInterrupt:
         print("Sender stopped.")
         return 0
     except (OSError, serial.SerialException) as exc:
         print(f"USB sender error: {exc}", file=sys.stderr)
         return 1
+    return 0
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@ from .backend import (
     serial_devices, service_state, version,
 )
 from .wifi import discover as discover_wifi
+from .sender import arduino_usb_ports
+from .sender_control import SenderControl
 
 STYLE = """
 /* Neutral graphite theme with restrained silver/steel accents. */
@@ -301,6 +303,7 @@ class ControlCenter(QWidget):
         self.processes = []
         self.wifi_worker = None
         self.wifi_boards = []
+        self.sender = SenderControl(ROOT, self) if sys.platform == "win32" else None
         self.setWindowTitle("UASM • Qt Control Center (v13 Preview)")
         self.resize(1110, 750)
         root = QHBoxLayout(self)
@@ -350,6 +353,12 @@ class ControlCenter(QWidget):
         main.addWidget(self.footer)
         root.addWidget(container, 1)
         self.select(0)
+        if self.sender:
+            self.sender.status.connect(self.sender_status_changed)
+            self.sender.output.connect(self.sender_output)
+            self.sender.changed.connect(self.sync_sender_buttons)
+            self.refresh_sender_ports()
+            self.sender_status_changed(self.sender.state)
         hub.sample.connect(self.update_stats)
         hub.error.connect(lambda error: self.footer.setText(f"Telemetry error: {error}"))
         self.health_timer = QTimer(self)
@@ -385,6 +394,26 @@ class ControlCenter(QWidget):
             muted=True,
         ))
         layout.addWidget(box)
+        if self.sender:
+            sender_box, sender_inner = card("Windows USB sender")
+            self.sender_line = text("Stopped · select your Arduino USB port.", muted=True)
+            sender_inner.addWidget(self.sender_line)
+            port_row = QHBoxLayout()
+            port_row.addWidget(text("Arduino port"))
+            self.sender_port = QComboBox()
+            self.sender_port.currentIndexChanged.connect(self.sync_sender_buttons)
+            port_row.addWidget(self.sender_port, 1)
+            port_row.addWidget(action("Refresh ports", self.refresh_sender_ports))
+            sender_inner.addLayout(port_row)
+            controls = QHBoxLayout()
+            self.start_sender_button = action("Start", self.start_preview_sender, primary=True)
+            self.stop_sender_button = action("Stop", self.sender.stop)
+            self.restart_sender_button = action("Restart", self.restart_preview_sender)
+            for widget in (self.start_sender_button, self.stop_sender_button, self.restart_sender_button):
+                controls.addWidget(widget)
+            sender_inner.addLayout(controls)
+            sender_inner.addWidget(text("Only this application's USB sender is controlled. Stop any older PowerShell sender first. Closing Control Center stops this sender.", muted=True))
+            layout.addWidget(sender_box)
         row = QHBoxLayout()
         row.addWidget(action("Refresh", self.refresh_status))
         if sys.platform == "linux":
@@ -428,7 +457,7 @@ class ControlCenter(QWidget):
             inner.addWidget(text("Use the existing Java interface while native Qt flashing, profile editing and TFT previews are being migrated."))
             inner.addWidget(action("Open Legacy Control Center", self.open_legacy))
         else:
-            inner.addWidget(text("Windows preview: board detection only. Native flashing, page profiles and sender support are not yet implemented."))
+            inner.addWidget(text("Windows preview: USB sender controls are on Overview. Native flashing, page profiles and Wi-Fi sending are not yet implemented."))
         layout.addWidget(box)
         layout.addStretch()
         QTimer.singleShot(300, self.refresh_devices)
@@ -467,7 +496,7 @@ class ControlCenter(QWidget):
         layout.addWidget(box)
         layout.addWidget(text(
             "Saves only this checkout’s config/monitor_config.local.json. "
-            + ("Restart the sender in the matching installation to apply. " if sys.platform == "linux" else "Windows sender support is not implemented yet. ")
+            + ("Restart the sender in the matching installation to apply. " if sys.platform == "linux" else "Windows Wi-Fi sending is not implemented yet. ")
             + "TCP testing checks reachability, not pairing or a successful Arduino handshake.",
             muted=True,
         ))
@@ -496,6 +525,8 @@ class ControlCenter(QWidget):
         self.disk_status = text("Preview sender only; the original Linux service is not modified.", muted=True)
         inner.addWidget(self.disk_status)
         layout.addWidget(box)
+        if self.sender:
+            layout.addWidget(action("Save assignments & restart USB sender", self.save_and_restart_sender))
         self.drive_table = QTableWidget(0, 4)
         self.drive_table.setHorizontalHeaderLabels(["Mount", "Device", "Used / Total", "Use"])
         self.drive_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -509,11 +540,12 @@ class ControlCenter(QWidget):
         return scroll(body)
 
     def logs(self):
-        body, layout = page("Service Logs", "Latest journalctl entries, read only." if sys.platform == "linux" else "Windows sender/service logs are not implemented yet.")
+        body, layout = page("Service Logs", "Latest journalctl entries, read only." if sys.platform == "linux" else "Output from this Control Center’s USB sender.")
         if sys.platform == "linux":
             layout.addWidget(action("Refresh Logs", self.refresh_logs))
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
+        self.log_view.setMaximumBlockCount(600)
         layout.addWidget(self.log_view, 1)
         return body
 
@@ -545,9 +577,64 @@ class ControlCenter(QWidget):
     def refresh_status(self):
         # This quick systemd query runs only every 12 seconds, not every frame.
         state, enabled = service_state()
-        self.metrics[7].setText(state if sys.platform == "linux" else "Preview only")
-        self.footer.setText(f"Monitor: {state} ({enabled})  •  Runtime: {version()}  •  Qt preview" if sys.platform == "linux" else "Windows Qt preview • sender/service not implemented • no Arduino telemetry sent")
+        if self.sender:
+            self.sender_status_changed(self.sender.state)
+        else:
+            self.metrics[7].setText(state)
+            self.footer.setText(f"Monitor: {state} ({enabled})  •  Runtime: {version()}  •  Qt preview")
         self.refresh_devices()
+
+    def refresh_sender_ports(self):
+        if not self.sender:
+            return
+        previous = self.sender_port.currentData()
+        self.sender_port.blockSignals(True)
+        self.sender_port.clear()
+        for port in arduino_usb_ports():
+            self.sender_port.addItem(port, port)
+        if previous:
+            index = self.sender_port.findData(previous)
+            if index >= 0:
+                self.sender_port.setCurrentIndex(index)
+        self.sender_port.blockSignals(False)
+        self.sync_sender_buttons()
+
+    def sync_sender_buttons(self, *_args):
+        if not self.sender or not hasattr(self, "start_sender_button"):
+            return
+        selected = bool(self.sender_port.currentData())
+        self.start_sender_button.setEnabled(selected and not self.sender.running and not self.sender.stopping)
+        self.stop_sender_button.setEnabled(self.sender.running and not self.sender.stopping)
+        self.restart_sender_button.setEnabled(selected and self.sender.running and not self.sender.stopping)
+        self.sender_port.setEnabled(not self.sender.running and not self.sender.stopping)
+
+    def sender_status_changed(self, state):
+        if not self.sender:
+            return
+        self.metrics[7].setText(state)
+        port = self.sender.port or "no port started"
+        self.sender_line.setText(f"{state} · {port} · USB writes do not verify display acceptance.")
+        self.footer.setText(f"Windows Qt preview • managed USB sender: {state} • Wi-Fi sending pending")
+        self.sync_sender_buttons()
+
+    def sender_output(self, line):
+        self.log_view.appendPlainText(line)
+
+    def start_preview_sender(self):
+        self.sender.start(self.sender_port.currentData())
+
+    def restart_preview_sender(self):
+        if self.sender.running:
+            self.sender.restart(self.sender.port)
+
+    def save_and_restart_sender(self):
+        if not self.save_disk_assignments():
+            return
+        if self.sender.running:
+            self.sender.restart(self.sender.port)
+            self.disk_status.setText(self.disk_status.text() + " Restart requested.")
+        else:
+            self.disk_status.setText(self.disk_status.text() + " Start the USB sender from Overview.")
 
     def refresh_devices(self):
         found = serial_devices()
@@ -632,6 +719,8 @@ class ControlCenter(QWidget):
         self.select(2)
 
     def closeEvent(self, event):
+        if self.sender:
+            self.sender.shutdown()
         # A discovery thread may be finishing a 1.5s socket timeout.
         if self.wifi_worker is not None and self.wifi_worker.isRunning():
             self.wifi_worker.wait(3500)
@@ -668,20 +757,21 @@ class ControlCenter(QWidget):
 
     def save_disk_assignments(self):
         if not self.disk_choices_loaded:
-            return
+            return False
         first, second = (choice.currentData() or "" for choice in self.disk_choices)
         if first and second and mount_key(first) == mount_key(second):
             self.disk_status.setText("Choose two different mounted volumes, or leave one unassigned.")
-            return
+            return False
         try:
             self.store.save_local({"qt_disk0_mount": first, "qt_disk1_mount": second})
         except (ConfigError, OSError) as exc:
             self.disk_status.setText(f"Could not save: {exc}")
-            return
+            return False
         self.disk_status.setText(
             f"Saved Disk0: {first or 'unassigned'} | Disk1: {second or 'unassigned'}. "
             "Restart the preview sender to apply; the stable Linux service is unchanged."
         )
+        return True
 
     def load_connections(self):
         try:
@@ -713,7 +803,7 @@ class ControlCenter(QWidget):
         except (ConfigError, OSError) as exc:
             QMessageBox.critical(self, "Save failed", str(exc))
             return
-        self.connection_result.setText("Saved local overrides in this checkout. " + ("Restart the matching Linux sender to apply." if sys.platform == "linux" else "Windows sender is not implemented."))
+        self.connection_result.setText("Saved local overrides in this checkout. " + ("Restart the matching Linux sender to apply." if sys.platform == "linux" else "USB sending is managed on Overview; Wi-Fi sending is pending."))
 
     def test_tcp(self):
         host = self.host.text().strip()
