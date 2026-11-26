@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import sys
 from dataclasses import asdict
 
 from .backend import TelemetrySampler, serial_devices, service_state, version
@@ -28,6 +29,10 @@ def main(argv=None):
         "wifi_discovery": None,
         "note": "Detection only; no serial ports opened or telemetry sent to boards.",
     }
+    if sys.platform == "win32":
+        from .windows_sensors import read_lhm_status
+        _, _, status = read_lhm_status()
+        result["windows_sensors"] = status
     if args.wifi:
         try:
             result["wifi_discovery"] = [asdict(board) for board in discover(port=args.discovery_port)]

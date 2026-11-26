@@ -5,6 +5,7 @@ import argparse
 import subprocess
 import sys
 import socket
+from datetime import datetime
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -25,6 +26,7 @@ from .backend import (
 from .wifi import discover as discover_wifi
 from .sender import arduino_usb_ports
 from .sender_control import SenderControl
+from .updater import PreviewUpdater
 
 STYLE = """
 /* Neutral graphite theme with restrained silver/steel accents. */
@@ -313,6 +315,24 @@ class WifiScanWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class UpdateWorker(QThread):
+    def __init__(self, updater, plan=None, parent=None):
+        super().__init__(parent)
+        self.updater, self.plan = updater, plan
+        self.result = None
+        self.failure = ""
+
+    def run(self):
+        try:
+            if self.plan is None:
+                self.result = self.updater.check()
+            else:
+                self.updater.apply(self.plan)
+                self.result = self.plan
+        except Exception as exc:
+            self.failure = str(exc)
+
+
 class ControlCenter(QWidget):
     def __init__(self, hub):
         super().__init__()
@@ -322,6 +342,10 @@ class ControlCenter(QWidget):
         self.processes = []
         self.wifi_worker = None
         self.wifi_boards = []
+        self.update_worker = None
+        self.update_busy = False
+        self.last_sender_state = None
+        self.last_usb_ports = None
         self.sender = SenderControl(ROOT, self) if sys.platform == "win32" else None
         self.setWindowTitle("UASM • Qt Control Center (v13 Preview)")
         self.resize(1110, 750)
@@ -365,6 +389,8 @@ class ControlCenter(QWidget):
         header = QHBoxLayout()
         header.addWidget(text("Ray Co. Universal System Monitor", muted=True))
         header.addStretch()
+        self.update_button = action("Check for updates", self.check_updates, tip="Check the v13 tracking branch; download only after confirmation.")
+        header.addWidget(self.update_button)
         header.addWidget(action("Open Desktop Monitor", self.open_monitor, primary=True))
         main.addLayout(header)
         main.addWidget(self.stack, 1)
@@ -372,6 +398,7 @@ class ControlCenter(QWidget):
         main.addWidget(self.footer)
         root.addWidget(container, 1)
         self.select(0)
+        self.app_log(f"Control Center started · {sys.platform} · runtime {version()}")
         if self.sender:
             self.sender.status.connect(self.sender_status_changed)
             self.sender.output.connect(self.sender_output)
@@ -379,12 +406,78 @@ class ControlCenter(QWidget):
             self.refresh_sender_ports()
             self.sender_status_changed(self.sender.state)
         hub.sample.connect(self.update_stats)
-        hub.error.connect(lambda error: self.footer.setText(f"Telemetry error: {error}"))
+        hub.error.connect(self.telemetry_error)
         self.health_timer = QTimer(self)
         self.health_timer.timeout.connect(self.refresh_status)
         self.health_timer.start(12000)
         QTimer.singleShot(200, self.refresh_status)
         QTimer.singleShot(650, self.scan_wifi)
+
+    def telemetry_error(self, error):
+        self.footer.setText(f"Telemetry error: {error}")
+        self.app_log(f"Telemetry error: {error}")
+
+    def app_log(self, message):
+        self.log_view.appendPlainText(f"[{datetime.now():%H:%M:%S}] {message}")
+
+    def check_updates(self):
+        self.launch_update_worker()
+
+    def launch_update_worker(self, plan=None):
+        if self.update_busy:
+            return
+        self.update_busy = True
+        self.update_button.setEnabled(False)
+        self.update_button.setText("Downloading…" if plan else "Checking…")
+        self.app_log("Applying confirmed update" if plan else "Checking Git for updates")
+        self.update_worker = UpdateWorker(PreviewUpdater(ROOT), plan, self)
+        self.update_worker.finished.connect(self.update_finished)
+        self.update_worker.start()
+
+    def update_finished(self):
+        worker = self.update_worker
+        self.update_worker = None
+        self.update_busy = False
+        self.update_button.setEnabled(True)
+        self.update_button.setText("Check for updates")
+        failure, plan, applying = worker.failure, worker.result, worker.plan is not None
+        worker.deleteLater()
+        if failure:
+            self.app_log(f"Update blocked: {failure}")
+            QMessageBox.warning(self, "UASM update", failure)
+            return
+        if not applying:
+            if not plan.behind:
+                self.app_log("Preview is up to date")
+                QMessageBox.information(self, "UASM update", "You're up to date.")
+                return
+            answer = QMessageBox.question(
+                self, "Update and restart",
+                f"{plan.behind} new commit(s):\n\n{plan.summary}\n\n"
+                "Download and restart Control Center? Its USB sender will stop; start it again after reopening. "
+                "Your local settings will be preserved.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.app_log("Update cancelled")
+                return
+            if self.sender:
+                self.sender.shutdown()
+            self.launch_update_worker(plan)
+            return
+        self.app_log(f"Update applied: {plan.target[:8]}")
+        try:
+            result = QProcess.startDetached(sys.executable, ["-m", "uasm_qt"], str(ROOT))
+            ok = result[0] if isinstance(result, tuple) else result
+        except Exception as exc:
+            ok = False
+            self.app_log(f"Restart failed: {exc}")
+        if ok:
+            if self.dashboard is not None:
+                self.dashboard.close()
+            self.close()
+            QApplication.instance().quit()
+        else:
+            QMessageBox.warning(self, "Update installed", "Could not relaunch automatically. Close and reopen UASM manually.")
 
     def select(self, index):
         self.stack.setCurrentIndex(index)
@@ -563,13 +656,22 @@ class ControlCenter(QWidget):
         return scroll(body)
 
     def logs(self):
-        body, layout = page("Service Logs", "Latest journalctl entries, read only." if sys.platform == "linux" else "Output from this Control Center’s USB sender.")
+        body, layout = page("Logs", "Application activity and sender output.")
+        row = QHBoxLayout()
+        row.addWidget(action("Clear", lambda: self.log_view.clear()))
+        row.addWidget(action("Copy", lambda: QApplication.clipboard().setText(self.log_view.toPlainText())))
         if sys.platform == "linux":
-            layout.addWidget(action("Refresh Logs", self.refresh_logs))
+            row.addWidget(action("Fetch service logs", self.refresh_logs))
+        row.addStretch()
+        layout.addLayout(row)
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(600)
         layout.addWidget(self.log_view, 1)
+        if sys.platform == "linux":
+            self.service_log_view = QPlainTextEdit()
+            self.service_log_view.setReadOnly(True)
+            layout.addWidget(self.service_log_view, 1)
         return body
 
     def diagnostics(self):
@@ -634,6 +736,9 @@ class ControlCenter(QWidget):
     def sender_status_changed(self, state):
         if not self.sender:
             return
+        if self.last_sender_state != state:
+            self.app_log(f"USB sender: {state}")
+            self.last_sender_state = state
         self.metrics[7].setText(state)
         self.metrics[7].setToolTip("Status of this application’s sender, not an installed Windows service.")
         port = self.sender.port or "no port started"
@@ -642,7 +747,7 @@ class ControlCenter(QWidget):
         self.sync_sender_buttons()
 
     def sender_output(self, line):
-        self.log_view.appendPlainText(line)
+        self.app_log(line)
 
     def start_preview_sender(self):
         self.sender.start(self.sender_port.currentData())
@@ -662,6 +767,10 @@ class ControlCenter(QWidget):
 
     def refresh_devices(self):
         found = serial_devices()
+        ports = tuple(item.port for item in found)
+        if ports != self.last_usb_ports:
+            self.app_log("USB candidates: " + (", ".join(ports) or "none"))
+            self.last_usb_ports = ports
         self.device_label.setText(f"{len(found)} USB serial candidate(s)")
         self.update_board_summary(found)
         self.device_table.setRowCount(len(found))
@@ -687,6 +796,7 @@ class ControlCenter(QWidget):
         # Network scans are explicit; never rely on the preview worktree's
         # local config matching the running sender installation.
         self.wifi_status.setText("Sending UAM_DISCOVER to LAN broadcast…")
+        self.app_log(f"Wi-Fi scan started on UDP {self.discovery_port.value()}")
         self.wifi_worker = WifiScanWorker(self.discovery_port.value())
         self.wifi_worker.completed.connect(self.scan_complete)
         self.wifi_worker.failed.connect(self.scan_failed)
@@ -701,9 +811,13 @@ class ControlCenter(QWidget):
 
     def scan_failed(self, error):
         self.wifi_status.setText(f"Discovery error: {error}")
+        self.app_log(f"Wi-Fi discovery error: {error}")
 
     def scan_complete(self, boards):
         self.wifi_boards = list(boards)
+        self.app_log(f"Wi-Fi scan: {len(boards)} replies")
+        for board in boards:
+            self.app_log(f"Discovered {board.name} at {board.address}:{board.tcp_port}")
         self.wifi_table.setRowCount(len(self.wifi_boards))
         for row, board in enumerate(self.wifi_boards):
             cells = (
@@ -743,6 +857,9 @@ class ControlCenter(QWidget):
         self.select(2)
 
     def closeEvent(self, event):
+        if self.update_busy:
+            event.ignore()
+            return
         if self.sender:
             self.sender.shutdown()
         # A discovery thread may be finishing a 1.5s socket timeout.
@@ -870,9 +987,10 @@ class ControlCenter(QWidget):
         process.start()
 
     def refresh_logs(self):
-        self.run_command("journalctl", ["--no-pager", "-n", "120", "-u", "arduino-monitor.service"], self.log_view)
+        self.run_command("journalctl", ["--no-pager", "-n", "120", "-u", "arduino-monitor.service"], self.service_log_view)
 
     def run_diagnostics(self):
+        self.app_log("Running diagnostics")
         args = [str(ROOT / "UniversalArduinoMonitor.py"), "doctor"] if sys.platform == "linux" else ["-m", "uasm_qt.probe"]
         self.run_command(sys.executable, args, self.doctor_view)
 

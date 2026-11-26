@@ -150,11 +150,21 @@ Add a Windows launcher/shortcut with the UASM icon, eventually a packaged
 executable or installer and separate background service/autostart support.
 Keep Linux desktop launcher integration and service controls as separate tasks.
 
+## Preview update and logging
+
+The Control Center checks the tracked v13 branch, refuses dirty or diverged
+checkouts, requests confirmation, then fast-forwards and relaunches. No resets,
+service installation or dependency upgrades. If dependencies change, update
+manually. The GUI-owned USB sender stops for the update; start it again after
+relaunch. Application logs include startup, discovery, sender and updater events.
+Windows diagnostics report whether the local LibreHardwareMonitor endpoint is
+reachable. Process CPU percentages are normalized to total logical CPU capacity.
+
 ## Remaining v13 migration work
 
 Native Arduino TFT preview, page profiles, firmware flashing, Wi-Fi
 discovery/pairing/credential provisioning, qBittorrent controls, remote SSH
-profiles, gaming/MangoHud and storage I/O graphs. Keep the legacy Java windows
+profiles and storage I/O graphs. Gaming and macro mode are intentionally excluded from v13. Keep the legacy Java windows
 available until all those features and the pop-out tabs are migrated.
 
 ## Tests
@@ -175,14 +185,14 @@ Status is for the Qt preview, not a claim that all legacy features were complete
 | Dashboard | Linux service start/stop/restart/status/startup; debug mirror; live TFT preview; remote targets; install/update/uninstall |
 | Flash | R3/Mega/R4 board selection, 2.8/3.5 inch variants, rotation, diff, custom sketch, cancellation, R4 Wi-Fi credentials |
 | Arduino Profiles | Per-board page selection, profile create/update/import/export, sync headers and apply/flash |
-| Monitor | USB and Wi-Fi policy, fixed endpoint/discovery, board and assigned host IDs, pairing reset, modules, qBittorrent, macro mode |
+| Monitor | USB and Wi-Fi policy, fixed endpoint/discovery, board and assigned host IDs, pairing reset, modules, qBittorrent (macro mode retired from v13 scope) |
 | Storage I/O | Disk0/Disk1 preview assignments implemented; monitored mount selection, live read/write/utilization and Linux integration pending |
 | Logs | Service logs and preview sender logs implemented; RayFetch/CLI actions, log filtering and shared diagnostics pending |
 | Settings | Light/dark/black modes, efficiency, logging, debug controls, app management |
 | Pop-out Main | CPU/RAM/GPU/VRAM/temps/history and processes implemented; richer per-thread and network views, service/stream controls pending |
 | Pop-out Storage | Capacity, per-drive I/O graphs |
 | Pop-out SSH Stats | Saved target integration, probe (legacy scaffold), eventual live remote telemetry |
-| Pop-out Gaming Mode | MangoHud/FPS/frame times/1% lows (legacy partial), platform-specific data sources |
+| Pop-out Gaming Mode | Dropped from v13 scope by project owner |
 | Pop-out Settings | Themes, refresh/efficiency, fullscreen, shared log and debug settings |
 
 Design rule: concise control labels and live statuses; use Qt tooltips and small

@@ -124,13 +124,17 @@ def read_gpu() -> GPU:
 
 def top_processes(limit: int = 6) -> tuple[ProcessRow, ...]:
     rows: list[ProcessRow] = []
+    logical_cpus = max(1, psutil.cpu_count() or 1)
     for process in psutil.process_iter(["name", "memory_percent"]):
         try:
             # Nonblocking; first poll initializes per-process CPU delta.
-            cpu = max(0.0, process.cpu_percent(interval=None))
+            name = str(process.info.get("name") or process.pid)
+            if process.pid == 0 or name.casefold() in {"system idle process", "idle"}:
+                continue
+            cpu = min(100.0, max(0.0, process.cpu_percent(interval=None) / logical_cpus))
             ram = float(process.info.get("memory_percent") or 0)
             if cpu or ram:
-                rows.append(ProcessRow(str(process.info.get("name") or process.pid), cpu, ram))
+                rows.append(ProcessRow(name, cpu, ram))
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             continue
     rows.sort(key=lambda row: (row.cpu, row.memory), reverse=True)

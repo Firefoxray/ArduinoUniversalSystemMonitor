@@ -87,14 +87,21 @@ def parse_tree(tree):
     return cpu_temp, max(candidates, key=lambda gpu: (gpu.vram_total or 0, gpu.load is not None))
 
 
-def read_lhm():
-    """Poll only a loopback endpoint; failure is ordinary on machines without LHM."""
+def read_lhm_status():
+    """Poll loopback and report whether the endpoint or sensor mapping failed."""
     try:
         port = int(os.environ.get("UASM_LHM_PORT", "8085"))
         if not 1 <= port <= 65535:
-            return None, None
+            return None, None, "Invalid UASM_LHM_PORT"
         opener = request.build_opener(request.ProxyHandler({}), NoRedirect())
         with opener.open(f"http://127.0.0.1:{port}/data.json", timeout=1.2) as response:
-            return parse_tree(json.loads(response.read(2_000_000)))
-    except (OSError, ValueError, TypeError):
-        return None, None
+            cpu, gpu = parse_tree(json.loads(response.read(2_000_000)))
+            status = f"Local LHM endpoint reachable on port {port}; CPU temperature: {'found' if cpu is not None else 'missing'}; GPU: {gpu.name if gpu else 'missing'}"
+            return cpu, gpu, status
+    except (OSError, ValueError, TypeError) as exc:
+        return None, None, f"LHM unavailable: {exc}"
+
+
+def read_lhm():
+    cpu, gpu, _status = read_lhm_status()
+    return cpu, gpu
