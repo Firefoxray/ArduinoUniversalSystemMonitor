@@ -231,6 +231,7 @@ class TelemetrySampler:
         psutil.cpu_percent(interval=None, percpu=True)
         self._extras_time = 0.0
         self._gpu = GPU()
+        self._windows_temperature = None
         self._processes: tuple[ProcessRow, ...] = ()
         self._disk_percent: float | None = None
         self._disk_label = "Storage unavailable"
@@ -249,7 +250,12 @@ class TelemetrySampler:
         self._last_time = current_time
         memory = psutil.virtual_memory()
         if current_time - self._extras_time >= 4.0:
-            self._gpu = read_gpu()
+            if sys.platform == "win32":
+                from .windows_sensors import read_lhm
+                self._windows_temperature, windows_gpu = read_lhm()
+                self._gpu = windows_gpu or read_gpu()
+            else:
+                self._gpu = read_gpu()
             self._processes = top_processes(6)
             try:
                 volume = system_volume()
@@ -265,7 +271,7 @@ class TelemetrySampler:
             ram=float(memory.percent),
             used_gb=(memory.total - memory.available) / 1024**3,
             total_gb=memory.total / 1024**3,
-            temperature=_temperature(),
+            temperature=self._windows_temperature if sys.platform == "win32" else _temperature(),
             down_bytes_per_sec=down,
             up_bytes_per_sec=up,
             per_cpu=tuple(psutil.cpu_percent(interval=None, percpu=True)),

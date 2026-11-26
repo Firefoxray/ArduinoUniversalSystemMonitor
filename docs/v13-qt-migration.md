@@ -108,6 +108,29 @@ The probe reads telemetry and enumerates ports without opening them; the
 optional discovery sends only a UDP query. It does not stop the production
 sender, flash a board, install a service, or modify configuration.
 
+## Windows USB sender and optional sensors (experimental)
+
+The Windows Control Center still does not manage the sender. Close any other
+program using the R4 serial port, then explicitly run:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m uasm_qt.sender --serial COM3
+~~~
+
+Only the specified detected Arduino USB port is opened at 115200 baud. This
+sends the existing 73-field v12.1 monitor packet, not firmware or pairing
+commands. Stop with Ctrl+C. Successful serial writes are not display ACKs.
+Disk1, battery, GPU clock and unsupported numeric fields retain legacy
+placeholder values; this is not full feature parity. Wi-Fi sending and
+GUI start/stop controls remain unimplemented.
+
+For Windows temperatures and AMD GPU metrics, run LibreHardwareMonitor and
+enable its web server on loopback only (127.0.0.1, port 8085). The preview reads
+its local data.json endpoint; no driver or web server is installed by UASM.
+If loopback binding is unavailable, leave the server disabled rather than
+exposing hardware control to the LAN. N/A remains valid without sensors.
+Set UASM_LHM_PORT in the launching shell for a different local port.
+
 ## Remaining v13 migration work
 
 Native Arduino TFT preview, page profiles, firmware flashing, Wi-Fi
