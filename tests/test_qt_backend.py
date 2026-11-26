@@ -1,12 +1,13 @@
 """Backend regression tests; no Qt libraries or attached Arduino required."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from uasm_qt.backend import ConfigError, ConfigStore, readable_rate, version, _temperature
+from uasm_qt.backend import ConfigError, ConfigStore, readable_rate, version, _temperature, system_volume
 
 
 class ConfigStoreTests(unittest.TestCase):
@@ -41,7 +42,8 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(local["wifi_port"], 5051)
         self.assertFalse(self.store.load()["prefer_usb"])
         self.assertEqual(self.store.shared.read_text(), shared)
-        self.assertEqual(self.store.local.stat().st_mode & 0o777, 0o600)
+        if os.name == "posix":
+            self.assertEqual(self.store.local.stat().st_mode & 0o777, 0o600)
 
     def test_invalid_port_does_not_write(self):
         original = self.store.local.read_text()
@@ -64,19 +66,25 @@ class ConfigStoreTests(unittest.TestCase):
     def test_readonly_version(self):
         self.assertEqual(version(self.root), "v12.1")
 
+    def test_system_volume(self):
+        with patch("uasm_qt.backend.sys.platform", "win32"), patch.dict(os.environ, {"SystemDrive": "D:"}):
+            self.assertEqual(system_volume(), "D:\\")
+        with patch("uasm_qt.backend.sys.platform", "linux"):
+            self.assertEqual(system_volume(), "/")
+
     def test_rate_formatting(self):
         self.assertEqual(readable_rate(0), "0 B/s")
         self.assertEqual(readable_rate(1024**2), "1.0 MiB/s")
 
     def test_temperature_ignores_non_cpu_sensors(self):
         temp = lambda label, current: SimpleNamespace(label=label, current=current)
-        with patch("uasm_qt.backend.psutil.sensors_temperatures", return_value={
+        with patch("uasm_qt.backend.psutil.sensors_temperatures", create=True, return_value={
             "amdgpu": [temp("junction", 85)],
             "nvme": [temp("Composite", 46)],
             "coretemp": [temp("Core 0", 54), temp("Package id 0", 49)],
         }):
             self.assertEqual(_temperature(), 49.0)
-        with patch("uasm_qt.backend.psutil.sensors_temperatures", return_value={
+        with patch("uasm_qt.backend.psutil.sensors_temperatures", create=True, return_value={
             "amdgpu": [temp("edge", 45)],
         }):
             self.assertIsNone(_temperature())

@@ -387,7 +387,8 @@ class ControlCenter(QWidget):
         layout.addWidget(box)
         row = QHBoxLayout()
         row.addWidget(action("Refresh", self.refresh_status))
-        row.addWidget(action("Legacy Flash & Profiles", self.open_legacy))
+        if sys.platform == "linux":
+            row.addWidget(action("Legacy Flash & Profiles", self.open_legacy))
         row.addStretch()
         layout.addLayout(row)
         layout.addStretch()
@@ -423,8 +424,11 @@ class ControlCenter(QWidget):
         ))
         layout.addWidget(wifi_box)
         box, inner = card("Firmware & board page profiles")
-        inner.addWidget(text("Use the existing Java interface while native Qt flashing, profile editing and TFT previews are being migrated."))
-        inner.addWidget(action("Open Legacy Control Center", self.open_legacy))
+        if sys.platform == "linux":
+            inner.addWidget(text("Use the existing Java interface while native Qt flashing, profile editing and TFT previews are being migrated."))
+            inner.addWidget(action("Open Legacy Control Center", self.open_legacy))
+        else:
+            inner.addWidget(text("Windows preview: board detection only. Native flashing, page profiles and sender support are not yet implemented."))
         layout.addWidget(box)
         layout.addStretch()
         QTimer.singleShot(300, self.refresh_devices)
@@ -462,8 +466,9 @@ class ControlCenter(QWidget):
         inner.addWidget(self.connection_result)
         layout.addWidget(box)
         layout.addWidget(text(
-            "Saves only config/monitor_config.local.json. Restart the monitor service after saving. "
-            "TCP testing checks reachability, not pairing or a successful Arduino handshake.",
+            "Saves only this checkout’s config/monitor_config.local.json. "
+            + ("Restart the sender in the matching installation to apply. " if sys.platform == "linux" else "Windows sender support is not implemented yet. ")
+            + "TCP testing checks reachability, not pairing or a successful Arduino handshake.",
             muted=True,
         ))
         layout.addStretch()
@@ -486,16 +491,17 @@ class ControlCenter(QWidget):
         return scroll(body)
 
     def logs(self):
-        body, layout = page("Service Logs", "Latest journalctl entries, read only.")
-        layout.addWidget(action("Refresh Logs", self.refresh_logs))
+        body, layout = page("Service Logs", "Latest journalctl entries, read only." if sys.platform == "linux" else "Windows sender/service logs are not implemented yet.")
+        if sys.platform == "linux":
+            layout.addWidget(action("Refresh Logs", self.refresh_logs))
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         layout.addWidget(self.log_view, 1)
         return body
 
     def diagnostics(self):
-        body, layout = page("Diagnostics", "Use existing UASM doctor without installing or modifying anything.")
-        layout.addWidget(action("Run Doctor", self.run_diagnostics))
+        body, layout = page("Diagnostics", "Read-only local hardware and runtime diagnostics.")
+        layout.addWidget(action("Run Doctor" if sys.platform == "linux" else "Run Preview Diagnostics", self.run_diagnostics))
         self.doctor_view = QPlainTextEdit()
         self.doctor_view.setReadOnly(True)
         layout.addWidget(self.doctor_view, 1)
@@ -521,8 +527,8 @@ class ControlCenter(QWidget):
     def refresh_status(self):
         # This quick systemd query runs only every 12 seconds, not every frame.
         state, enabled = service_state()
-        self.metrics[7].setText(state)
-        self.footer.setText(f"Monitor: {state} ({enabled})  •  Runtime: {version()}  •  Qt preview")
+        self.metrics[7].setText(state if sys.platform == "linux" else "Preview only")
+        self.footer.setText(f"Monitor: {state} ({enabled})  •  Runtime: {version()}  •  Qt preview" if sys.platform == "linux" else "Windows Qt preview • sender/service not implemented • no Arduino telemetry sent")
         self.refresh_devices()
 
     def refresh_devices(self):
@@ -651,7 +657,7 @@ class ControlCenter(QWidget):
         except (ConfigError, OSError) as exc:
             QMessageBox.critical(self, "Save failed", str(exc))
             return
-        self.connection_result.setText("Saved local overrides. Restart arduino-monitor.service to apply.")
+        self.connection_result.setText("Saved local overrides in this checkout. " + ("Restart the matching Linux sender to apply." if sys.platform == "linux" else "Windows sender is not implemented."))
 
     def test_tcp(self):
         host = self.host.text().strip()
@@ -697,7 +703,8 @@ class ControlCenter(QWidget):
         self.run_command("journalctl", ["--no-pager", "-n", "120", "-u", "arduino-monitor.service"], self.log_view)
 
     def run_diagnostics(self):
-        self.run_command(sys.executable, [str(ROOT / "UniversalArduinoMonitor.py"), "doctor"], self.doctor_view)
+        args = [str(ROOT / "UniversalArduinoMonitor.py"), "doctor"] if sys.platform == "linux" else ["-m", "uasm_qt.probe"]
+        self.run_command(sys.executable, args, self.doctor_view)
 
     def open_legacy(self):
         path = ROOT / "UniversalMonitorControlCenter.sh"

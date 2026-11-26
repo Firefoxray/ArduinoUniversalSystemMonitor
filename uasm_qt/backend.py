@@ -103,7 +103,8 @@ class ConfigStore:
                 delete=False
             ) as stream:
                 temporary = stream.name
-                os.chmod(temporary, 0o600)
+                if os.name == "posix":
+                    os.chmod(temporary, 0o600)
                 json.dump(current, stream, indent=2, ensure_ascii=False)
                 stream.write("\n")
                 stream.flush()
@@ -157,6 +158,8 @@ def service_state() -> tuple[str, str]:
 
 def run_doctor(root: Path = ROOT) -> str:
     """Read-only CLI diagnostics; never invokes install, flash, or update."""
+    if sys.platform != "linux":
+        return "Legacy sender doctor is Linux-only. Use python -m uasm_qt.probe instead."
     try:
         result = subprocess.run(
             [sys.executable, str(root / "UniversalArduinoMonitor.py"), "doctor"],
@@ -211,6 +214,13 @@ class Snapshot:
     storage_label: str
 
 
+def system_volume() -> str:
+    """Select Windows' system drive or the Linux root filesystem."""
+    if sys.platform == "win32":
+        return os.environ.get("SystemDrive", "C:").rstrip("\\/") + "\\"
+    return "/"
+
+
 class TelemetrySampler:
     """Lightweight local stats. One sampler is shared across Qt windows."""
 
@@ -242,9 +252,10 @@ class TelemetrySampler:
             self._gpu = read_gpu()
             self._processes = top_processes(6)
             try:
-                usage = psutil.disk_usage("/")
+                volume = system_volume()
+                usage = psutil.disk_usage(volume)
                 self._disk_percent = float(usage.percent)
-                self._disk_label = f"/ · {usage.used / 1024**3:.0f} / {usage.total / 1024**3:.0f} GiB"
+                self._disk_label = f"{volume} · {usage.used / 1024**3:.0f} / {usage.total / 1024**3:.0f} GiB"
             except (OSError, PermissionError):
                 self._disk_percent = None
                 self._disk_label = "Root filesystem unavailable"

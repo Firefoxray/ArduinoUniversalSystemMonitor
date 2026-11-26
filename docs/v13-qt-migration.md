@@ -76,6 +76,38 @@ config/monitor_config.local.json with atomic replacement. Existing Wi-Fi
 firmware credentials, shared config, page profiles and Arduino sketches are not
 modified. Restart the sender service manually after changing connection settings.
 
+## Windows native preview and headless Linux testing
+
+Clone the feature branch into a separate Windows checkout, then run from PowerShell:
+
+~~~powershell
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-qt.txt
+.\.venv\Scripts\python.exe -m uasm_qt
+# Independent dashboard:
+.\.venv\Scripts\python.exe -m uasm_qt --dashboard-only
+~~~
+
+This is a GUI preview, **not a Windows sender**. CPU, RAM, storage, network,
+USB enumeration and R4 UDP discovery use cross-platform libraries. AMD GPU
+and CPU temperature support on Windows still need native collectors; missing
+data is shown as N/A. Windows does not invoke systemd, journalctl or the Linux
+Java launcher from the GUI. Local configuration stays in the preview checkout.
+
+On an existing Linux headless machine with psutil and pyserial installed,
+run the following from the preview worktree (no Qt installation required):
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_qt_*.py' -v
+python3 -m uasm_qt.probe
+# Optional explicit Wi-Fi discovery:
+python3 -m uasm_qt.probe --wifi
+~~~
+
+The probe reads telemetry and enumerates ports without opening them; the
+optional discovery sends only a UDP query. It does not stop the production
+sender, flash a board, install a service, or modify configuration.
+
 ## Remaining v13 migration work
 
 Native Arduino TFT preview, page profiles, firmware flashing, Wi-Fi
