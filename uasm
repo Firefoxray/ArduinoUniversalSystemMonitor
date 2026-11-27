@@ -53,10 +53,30 @@ case "${1:-}" in
     ;;
 esac
 
+# Repair must work before importing the runtime, even after a Python upgrade.
+if [[ "$1" == update || "$1" == --update ]]; then
+  if [[ "$#" -ne 1 ]]; then
+    echo "Usage: uasm update" >&2
+    exit 2
+  fi
+  exec bash "$REPO_DIR/scripts/update.sh"
+fi
+
+# Match the systemd service interpreter, not an activated virtual environment.
+if ! /usr/bin/python3 -c 'import psutil, serial' >/dev/null 2>&1; then
+  echo "UASM runtime dependencies missing or broken in /usr/bin/python3." >&2
+  if [[ "$1" == doctor ]]; then
+    /usr/bin/python3 -c 'import psutil' >/dev/null 2>&1 && echo "[OK] psutil" || echo "[FAIL] psutil"
+    /usr/bin/python3 -c 'import serial' >/dev/null 2>&1 && echo "[OK] pyserial" || echo "[FAIL] pyserial"
+  fi
+  echo "Run 'uasm update' from the stable main checkout to repair dependencies." >&2
+  exit 1
+fi
+
 if [[ "${1:-}" == "help" ]]; then
-  /usr/bin/env python3 "$RUNTIME_SCRIPT" help
+  /usr/bin/python3 "$RUNTIME_SCRIPT" help
   printf '\nQt preview (optional): uasm gui | uasm dashboard\n'
   exit 0
 fi
 
-exec /usr/bin/env python3 "$RUNTIME_SCRIPT" "$@"
+exec /usr/bin/python3 "$RUNTIME_SCRIPT" "$@"
