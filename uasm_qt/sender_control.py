@@ -44,16 +44,19 @@ class SenderControl(QObject):
         self.port = port
         self.buffer = ""
         self._status("Starting")
-        self.output.emit(f"\nStarting preview USB sender on {port}…")
+        self.output.emit(f"\nStarting preview sender on {port}…")
         self.process.start(sys.executable, self.arguments(port))
         self.changed.emit()
 
     def arguments(self, port):
+        if port.startswith("wifi:"):
+            endpoint, discovery_port = port[5:].rsplit(":", 1)
+            return ["-u", "-m", "uasm_qt.sender", "--wifi", endpoint, "--discovery-port", discovery_port, "--managed"]
         return ["-u", "-m", "uasm_qt.sender", "--serial", port, "--managed"]
 
     def _started(self):
         if not self.stopping:
-            self._status("Opening USB")
+            self._status("Connecting Wi-Fi" if self.port.startswith("wifi:") else "Opening USB")
 
     def _read(self):
         chunk = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
@@ -62,8 +65,15 @@ class SenderControl(QObject):
             line, self.buffer = self.buffer.split("\n", 1)
             line = line.rstrip("\r")
             self.output.emit(line)
-            if not self.stopping and line.startswith("USB frames written:"):
-                self._status("Sending USB")
+            if not self.stopping:
+                if line.startswith("USB frames written:"):
+                    self._status("Sending USB")
+                elif line.startswith("Wi-Fi frames written:"):
+                    self._status("Sending Wi-Fi")
+                elif line.startswith("Wi-Fi retry:"):
+                    self._status("Reconnecting Wi-Fi")
+                elif line.startswith("Wi-Fi pairing accepted:"):
+                    self._status("Paired Wi-Fi")
         if len(self.buffer) > 8192:
             self.output.emit(self.buffer[:8192])
             self.buffer = ""

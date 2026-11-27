@@ -201,3 +201,18 @@ confirmation prompts and actual operation outcomes visible. Do not port the old
 plaintext sudo password storage. Keep platform privilege prompts and service
 ownership explicit. Prioritize Wi-Fi telemetry and Windows sensor verification,
 then Linux controls/shared sender, live Arduino preview, flashing and profiles.
+
+## Windows Wi-Fi sender (first preview)
+
+Stop USB sending first. Keep the R4 powered (use a separate USB power source
+if needed), scan in Devices or Overview and choose the Wi-Fi target on Overview.
+The assignment column matches all advertised host/hostname restrictions against
+the local identity and route. Only boards assigned to this PC are eligible for
+this preview; unassigned/other-host boards are not claimed. The sender checks
+fresh UDP discovery before each connection, sends the existing UAM_PAIR
+handshake, requires PAIR_OK, then sends the unchanged telemetry frames. Transient
+network failures retry with a delay; pairing rejection stops. No firmware reset,
+flashing or automatic selection of a different board. One target at a time;
+legacy Linux services remain untouched. Windows connection preferences are not
+yet an automatic transport policy. A successful TCP write does not confirm the
+physical display rendered the packet. Manual click-triggered updates only.

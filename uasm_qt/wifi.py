@@ -99,3 +99,75 @@ def discover(timeout: float = 1.5, port: int = 5001, magic: str = "UAM_DISCOVER"
             if board is not None:
                 found[(board.address, board.tcp_port)] = board
     return list(found.values())
+
+
+def route_ipv4(address, port):
+    """Resolve the interface used for this destination, without transmitting data."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect((address, port))
+        return sock.getsockname()[0]
+
+
+def assignment(board, local_ip=None, hostname=None):
+    """Match firmware semantics: every nonempty advertised target must match."""
+    host = board.target_host.strip().casefold()
+    name = board.target_hostname.strip().casefold()
+    if not host and not name:
+        return "Unassigned"
+    actual_name = (hostname if hostname is not None else socket.gethostname()).strip().casefold()
+    if name and name != actual_name:
+        return "Other PC"
+    if host:
+        try:
+            actual_ip = local_ip if local_ip is not None else route_ipv4(board.address, board.tcp_port)
+        except OSError:
+            return "Unknown"
+        if not actual_ip:
+            return "Unknown"
+        if host != actual_ip.casefold():
+            return "Other PC"
+    return "This PC"
+
+
+class PairingRejected(RuntimeError):
+    """Do not retry a refused or invalid firmware handshake."""
+
+
+def pair_socket(sock, hostname=None):
+    """Use the exact firmware protocol and the TCP socket's local IP."""
+    hostname = (hostname if hostname is not None else socket.gethostname()).strip()
+    local_ip = sock.getsockname()[0]
+    if not hostname or any(ch in hostname for ch in "|\r\n") or len(hostname.encode("utf-8")) > 63:
+        raise PairingRejected("Invalid local hostname")
+    hello = f"UAM_PAIR|{hostname}|{local_ip}\n".encode("utf-8")
+    if len(hello) > 96:
+        raise PairingRejected("Local identity exceeds firmware handshake limit")
+    sock.sendall(hello)
+    response = bytearray()
+    deadline = time.monotonic() + 3.0
+    while b"\n" not in response and len(response) < 128:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Firmware pairing response timed out")
+        sock.settimeout(remaining)
+        chunk = sock.recv(128 - len(response))
+        if not chunk:
+            raise ConnectionError("Board disconnected during pairing")
+        response.extend(chunk)
+    line = bytes(response).split(b"\n", 1)[0].strip()
+    if line != b"PAIR_OK" or b"\n" not in response:
+        raise PairingRejected(f"Firmware response: {line.decode('utf-8', errors='replace')}")
+    sock.settimeout(2.0)
+    return local_ip
+
+
+def verified_board(address, port, discovery_port=5001):
+    """Refuse to claim an unassigned or foreign board, even on reconnection."""
+    boards = discover(port=discovery_port)
+    board = next((b for b in boards if b.address == address and b.tcp_port == port), None)
+    if board is None:
+        raise ConnectionError("Selected board did not answer discovery; check power and USB activity")
+    state = assignment(board)
+    if state != "This PC":
+        raise PairingRejected(f"{board.name}: {state}; no pairing changes made")
+    return board

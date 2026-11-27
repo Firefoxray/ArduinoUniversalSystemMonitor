@@ -23,7 +23,7 @@ from .backend import (
     ConfigError, ConfigStore, ROOT, TelemetrySampler, disk_assignments, mount_key, drives, readable_rate,
     serial_devices, service_state, version,
 )
-from .wifi import discover as discover_wifi
+from .wifi import discover as discover_wifi, assignment
 from .sender import arduino_usb_ports
 from .sender_control import SenderControl
 from .updater import PreviewUpdater
@@ -342,6 +342,7 @@ class ControlCenter(QWidget):
         self.processes = []
         self.wifi_worker = None
         self.wifi_boards = []
+        self.last_scan_port = 5001
         self.update_worker = None
         self.update_busy = False
         self.last_sender_state = None
@@ -504,26 +505,27 @@ class ControlCenter(QWidget):
         help_tip(inner, "USB presence or a UDP discovery reply does not prove an active sender connection.")
         layout.addWidget(box)
         if self.sender:
-            sender_box, sender_inner = card("Windows USB sender")
+            sender_box, sender_inner = card("Windows Arduino sender")
             self.sender_line = text("Stopped", muted=True)
-            self.sender_line.setToolTip("Successful USB writes do not prove display acceptance.")
+            self.sender_line.setToolTip("Successful transport writes do not prove display acceptance. Wi-Fi pairing is verified separately.")
             sender_inner.addWidget(self.sender_line)
             port_row = QHBoxLayout()
-            port_row.addWidget(text("Arduino port"))
+            port_row.addWidget(text("Target"))
             self.sender_port = QComboBox()
-            self.sender_port.setToolTip("Select the Arduino USB serial port, such as COM3.")
+            self.sender_port.setToolTip("Select a USB port or a discovered Wi-Fi board assigned to this PC.")
             self.sender_port.currentIndexChanged.connect(self.sync_sender_buttons)
             port_row.addWidget(self.sender_port, 1)
-            port_row.addWidget(action("Refresh ports", self.refresh_sender_ports))
+            port_row.addWidget(action("Refresh USB", self.refresh_sender_ports))
+            port_row.addWidget(action("Scan Wi-Fi", self.scan_wifi))
             sender_inner.addLayout(port_row)
             controls = QHBoxLayout()
-            self.start_sender_button = action("Start", self.start_preview_sender, primary=True, tip="Start sending live stats to the selected USB Arduino.")
-            self.stop_sender_button = action("Stop", self.sender.stop, tip="Stop only this window’s sender and release its serial port.")
+            self.start_sender_button = action("Start", self.start_preview_sender, primary=True, tip="Start sending live stats to the selected USB or assigned Wi-Fi board.")
+            self.stop_sender_button = action("Stop", self.sender.stop, tip="Stop only this window’s sender and close its connection.")
             self.restart_sender_button = action("Restart", self.restart_preview_sender, tip="Restart this sender and reload saved disk assignments and local settings.")
             for widget in (self.start_sender_button, self.stop_sender_button, self.restart_sender_button):
                 controls.addWidget(widget)
             sender_inner.addLayout(controls)
-            help_tip(sender_inner, "Only this application’s sender is controlled. Stop any older PowerShell sender first. Closing Control Center stops this sender.")
+            help_tip(sender_inner, "One explicitly selected target at a time. Stop older PowerShell senders first. For Wi-Fi, stop USB telemetry and power the R4 without an active USB data connection if needed. Closing Control Center stops its sender.")
             layout.addWidget(sender_box)
         row = QHBoxLayout()
         row.addWidget(action("Refresh", self.refresh_status))
@@ -552,8 +554,8 @@ class ControlCenter(QWidget):
         wifi_box, wifi_inner = card("Wi-Fi R4 discovery · UDP probe (default port 5001)")
         self.wifi_status = text("Preparing network scan…", muted=True)
         wifi_inner.addWidget(self.wifi_status)
-        self.wifi_table = QTableWidget(0, 4)
-        self.wifi_table.setHorizontalHeaderLabels(["Board", "Reply IP / TCP port", "Assigned host", "Assigned name"])
+        self.wifi_table = QTableWidget(0, 5)
+        self.wifi_table.setHorizontalHeaderLabels(["Board", "Reply IP / TCP port", "Assigned host", "Assigned name", "Assignment"])
         self.wifi_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.wifi_table.horizontalHeader().setStretchLastSection(True)
         self.wifi_table.verticalHeader().hide()
@@ -567,7 +569,7 @@ class ControlCenter(QWidget):
             inner.addWidget(text("Use the existing Java interface while native Qt flashing, profile editing and TFT previews are being migrated."))
             inner.addWidget(action("Open Legacy Control Center", self.open_legacy))
         else:
-            inner.addWidget(text("Windows preview: USB sender controls are on Overview. Native flashing, page profiles and Wi-Fi sending are not yet implemented."))
+            inner.addWidget(text("Windows sender controls are on Overview. Native flashing and page profiles are pending."))
         layout.addWidget(box)
         layout.addStretch()
         QTimer.singleShot(300, self.refresh_devices)
@@ -579,9 +581,9 @@ class ControlCenter(QWidget):
         self.wifi = QCheckBox("Wi-Fi enabled")
         self.discover = QCheckBox("UDP discovery enabled")
         self.usb = QCheckBox("Prefer USB if present")
-        self.wifi.setToolTip("Enable Wi-Fi transport in the saved configuration. Windows Wi-Fi sending is pending.")
+        self.wifi.setToolTip("Legacy transport policy. Windows preview uses an explicitly selected target on Overview.")
         self.discover.setToolTip("Allow UDP discovery when resolving a board. Manual discovery works independently.")
-        self.usb.setToolTip("Prefer USB if available. The current Windows preview sender only uses USB.")
+        self.usb.setToolTip("Legacy USB preference. Windows preview uses the explicit target selected on Overview.")
         for checkbox in (self.wifi, self.discover, self.usb):
             inner.addWidget(checkbox)
         grid = QGridLayout()
@@ -612,7 +614,7 @@ class ControlCenter(QWidget):
         layout.addWidget(box)
         help_tip(inner,
             "Settings apply to this checkout only. "
-            + ("Restart the matching sender to apply." if sys.platform == "linux" else "Windows Wi-Fi sending is pending.")
+            + ("Restart the matching sender to apply." if sys.platform == "linux" else "Windows preview uses explicit target selection on Overview.")
         )
         layout.addStretch()
         self.socket = QTcpSocket(self)
@@ -642,7 +644,7 @@ class ControlCenter(QWidget):
         inner.addWidget(self.disk_status)
         layout.addWidget(box)
         if self.sender:
-            layout.addWidget(action("Save & restart sender", self.save_and_restart_sender, tip="Save the selected disks and restart the GUI-owned USB sender if running."))
+            layout.addWidget(action("Save & restart sender", self.save_and_restart_sender, tip="Save the selected disks and restart the GUI-owned sender if running."))
         self.drive_table = QTableWidget(0, 4)
         self.drive_table.setHorizontalHeaderLabels(["Mount", "Device", "Used / Total", "Use"])
         self.drive_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -710,13 +712,17 @@ class ControlCenter(QWidget):
         self.refresh_devices()
 
     def refresh_sender_ports(self):
-        if not self.sender:
+        if not self.sender or self.sender.running or self.sender.stopping:
             return
         previous = self.sender_port.currentData()
         self.sender_port.blockSignals(True)
         self.sender_port.clear()
         for port in arduino_usb_ports():
-            self.sender_port.addItem(port, port)
+            self.sender_port.addItem(f"USB · {port}", port)
+        for board in self.wifi_boards:
+            if assignment(board) == "This PC":
+                self.sender_port.addItem(f"Wi-Fi · {board.name} ({board.address}:{board.tcp_port})",
+                                         f"wifi:{board.address}:{board.tcp_port}:{self.last_scan_port}")
         if previous:
             index = self.sender_port.findData(previous)
             if index >= 0:
@@ -737,13 +743,17 @@ class ControlCenter(QWidget):
         if not self.sender:
             return
         if self.last_sender_state != state:
-            self.app_log(f"USB sender: {state}")
+            self.app_log(f"Sender: {state}")
             self.last_sender_state = state
         self.metrics[7].setText(state)
         self.metrics[7].setToolTip("Status of this application’s sender, not an installed Windows service.")
-        port = self.sender.port or "no port started"
+        port = self.sender.port or "no target started"
+        if port.startswith("wifi:"):
+            port = "Wi-Fi " + port[5:].rsplit(":", 1)[0]
         self.sender_line.setText(f"{state} · {port}")
-        self.footer.setText(f"Windows Qt preview • managed USB sender: {state} • Wi-Fi sending pending")
+        self.footer.setText(f"Windows Qt preview • managed sender: {state}")
+        if state == "Stopped":
+            self.refresh_sender_ports()
         self.sync_sender_buttons()
 
     def sender_output(self, line):
@@ -763,7 +773,7 @@ class ControlCenter(QWidget):
             self.sender.restart(self.sender.port)
             self.disk_status.setText(self.disk_status.text() + " Restart requested.")
         else:
-            self.disk_status.setText(self.disk_status.text() + " Start the USB sender from Overview.")
+            self.disk_status.setText(self.disk_status.text() + " Start the sender from Overview.")
 
     def refresh_devices(self):
         found = serial_devices()
@@ -797,7 +807,8 @@ class ControlCenter(QWidget):
         # local config matching the running sender installation.
         self.wifi_status.setText("Sending UAM_DISCOVER to LAN broadcast…")
         self.app_log(f"Wi-Fi scan started on UDP {self.discovery_port.value()}")
-        self.wifi_worker = WifiScanWorker(self.discovery_port.value())
+        self.last_scan_port = self.discovery_port.value()
+        self.wifi_worker = WifiScanWorker(self.last_scan_port)
         self.wifi_worker.completed.connect(self.scan_complete)
         self.wifi_worker.failed.connect(self.scan_failed)
         self.wifi_worker.finished.connect(self.wifi_scan_finished)
@@ -825,9 +836,12 @@ class ControlCenter(QWidget):
                 f"{board.address}:{board.tcp_port}",
                 board.target_host or "Not specified",
                 board.target_hostname or "Not specified",
+                assignment(board),
             )
             for col, value in enumerate(cells):
-                self.wifi_table.setItem(row, col, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                item.setToolTip(value)
+                self.wifi_table.setItem(row, col, item)
         if self.wifi_boards:
             self.wifi_status.setText(
                 f"{len(self.wifi_boards)} UNO R4 discovery reply/replies received. "
@@ -839,6 +853,8 @@ class ControlCenter(QWidget):
                 "using compatible R4 firmware, and UDP broadcasts are allowed."
             )
         self.update_board_summary()
+        if self.sender:
+            self.refresh_sender_ports()
 
     def use_selected_wifi(self):
         selected = self.wifi_table.currentRow()
@@ -944,9 +960,12 @@ class ControlCenter(QWidget):
         except (ConfigError, OSError) as exc:
             QMessageBox.critical(self, "Save failed", str(exc))
             return
-        self.connection_result.setText("Saved local overrides in this checkout. " + ("Restart the matching Linux sender to apply." if sys.platform == "linux" else "USB sending is managed on Overview; Wi-Fi sending is pending."))
+        self.connection_result.setText("Saved local overrides in this checkout. " + ("Restart the matching Linux sender to apply." if sys.platform == "linux" else "Choose the discovered Wi-Fi or USB target on Overview."))
 
     def test_tcp(self):
+        if self.sender and self.sender.running:
+            self.connection_result.setText("Stop the preview sender before testing TCP.")
+            return
         host = self.host.text().strip()
         if not host:
             self.connection_result.setText("Enter a fixed IP/hostname to test TCP.")
