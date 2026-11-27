@@ -1,0 +1,4 @@
+# Optional GUI only — not a dependency of the headless sender.
+PySide6>=6.8,<7
+psutil>=6
+pyserial>=3.5

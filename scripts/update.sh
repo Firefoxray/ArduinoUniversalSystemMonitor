@@ -70,7 +70,7 @@ install_missing_prereqs() {
 ensure_system_runtime_dependencies() {
     detect_distro
 
-    if /usr/bin/env python3 -c 'import psutil, serial' >/dev/null 2>&1; then
+    if /usr/bin/python3 -c 'import psutil, serial' >/dev/null 2>&1; then
         return 0
     fi
 
@@ -92,7 +92,7 @@ ensure_system_runtime_dependencies() {
             ;;
     esac
 
-    /usr/bin/env python3 -c 'import psutil, serial'
+    /usr/bin/python3 -c 'import psutil, serial'
 }
 
 refresh_python_paths() {
@@ -260,22 +260,22 @@ refresh_cli_launchers() {
 
 echo "==== Ray Co Arduino Monitor Updater ===="
 
+# Never run stable installer/repair steps from a development worktree.
+if ! command -v git >/dev/null 2>&1; then
+    echo "Git is required. Install git before running the updater." >&2
+    exit 1
+fi
+if [[ ! -e "$PROJECT_DIR/.git" ]] || ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Not a UASM Git checkout: $PROJECT_DIR. Refusing to replace existing files." >&2
+    exit 1
+fi
+if [[ "$(git -C "$PROJECT_DIR" branch --show-current)" != main ]]; then
+    echo "Stable updater requires main. For v13, use the Qt preview updater or git pull --ff-only." >&2
+    exit 1
+fi
+
 install_missing_prereqs
 ensure_system_runtime_dependencies
-
-if [[ ! -d "$PROJECT_DIR/.git" ]]; then
-    echo "Warning: $PROJECT_DIR is not a git repository."
-    if [[ -d "$SCRIPT_DIR/../.git" ]]; then
-        echo "Using script location repo instead: $SCRIPT_DIR/.."
-        PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-        refresh_python_paths
-    else
-        echo "Cloning fresh repository into $PROJECT_DIR ..."
-        rm -rf "$PROJECT_DIR"
-        git clone https://github.com/Firefoxray/ArduinoUniversalSystemMonitor.git "$PROJECT_DIR"
-        refresh_python_paths
-    fi
-fi
 
 detect_repo_owner
 cd "$PROJECT_DIR"
@@ -289,7 +289,7 @@ fi
 echo "[1/7] Checking GitHub for new changes..."
 if git_remote_has_updates main; then
     echo "Updates found on origin/main. Pulling latest changes from GitHub..."
-    run_as_repo_user "git pull origin main"
+    run_as_repo_user "git pull --ff-only origin main"
     GIT_UPDATED=1
     fix_repo_ownership
 else
